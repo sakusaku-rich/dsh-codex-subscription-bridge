@@ -1,0 +1,4 @@
+# This development adapter refuses live connections until authority isolation is verified.
+- insert:
+    - id: llm-codex-subscription
+      name: dsh-codex-subscription-bridge

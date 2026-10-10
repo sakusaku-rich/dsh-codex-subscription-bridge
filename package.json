@@ -1,0 +1,14 @@
+{
+  "name": "dsh-codex-subscription-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A guarded DeepSeek Harness bridge to managed Codex ChatGPT subscription authentication",
+  "engines": { "node": ">=22.23.2 <23" },
+  "exports": { ".": "./src/index.js", "./cordis.patch.yml": "./cordis.patch.yml" },
+  "files": ["src", "cordis.patch.yml", "README.md", "SECURITY.md", "docs"],
+  "scripts": { "check": "node scripts/check.mjs", "test": "node --test test/*.test.mjs", "verify": "npm run check && npm test" },
+  "peerDependencies": { "@deepseek-ai/cordis": "4.0.4", "@deepseek-ai/dsh-llm": "0.2.0-rc.2" },
+  "devDependencies": { "@deepseek-ai/cordis": "4.0.4", "@deepseek-ai/dsh-llm": "0.2.0-rc.2" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
