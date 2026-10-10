@@ -1,0 +1,12 @@
+node_modules/
+dist/
+lib/
+coverage/
+artifacts/
+work/
+.env*
+*.log
+*.key
+*.pem
+*.p12
+.DS_Store
