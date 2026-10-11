@@ -46,7 +46,9 @@ The private dedicated directory is selected from launcher-inherited HOME,
 not project dotenv. Credentials use a versioned ChatGPT-only schema. API keys
 are not accepted. Files are bounded to 64 KiB, opened without following symlinks,
 checked for ownership and permissions, and replaced atomically through private
-exclusive temporary files after fsync. The directory itself cannot be a symlink.
+exclusive temporary files after fsync. The directory itself cannot be a symlink. Credential entries are checked before
+open, opened with `O_NOFOLLOW | O_NONBLOCK`, and checked again on the descriptor,
+so a FIFO cannot block before file-type validation.
 
 A private directory lock serializes read-refresh-write, explicit login, and
 logout across processes. Waiters reread the store after acquiring the lock.
@@ -98,3 +100,15 @@ credentials and identifiers are never copied into diagnostics. Failure payloads
 are reconstructed from the allowlists even if an Error message was mutated.
 Empty string text deltas are valid no-op text updates; non-string and oversized
 deltas remain invalid.
+
+
+## Security-fixed Node baseline
+
+Node 22.23.3 is the verified baseline (Undici 6.28.1, OpenSSL 3.5.8). Both manifests,
+lockfiles, and development version files specify the updated Node requirement.
+The public adapter and authentication CLI reject older/unverified runtimes.
+The owner's temporary profile uses a dedicated official macOS arm64 binary;
+its SHA-256 was checked against the official release value
+`23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53`.
+No global Node installation or existing account store was migrated.
+[Official release](https://nodejs.org/en/blog/release/v22.23.3).

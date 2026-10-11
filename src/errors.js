@@ -5,6 +5,7 @@ const messages = Object.freeze({
   AUTH_BUSY: 'The authentication store is busy. A crashed owner may require manual lock recovery.',
   RATE_LIMITED: 'The subscription service rate or usage limit was reached.',
   PLATFORM_UNSUPPORTED: 'This bridge currently supports macOS only.',
+  NODE_VERSION_UNSUPPORTED: 'Use the supported Node.js 22 runtime, version 22.23.3 or newer.',
   VERSION_UNSUPPORTED: 'This Codex version is not supported.',
   CONFIG_INVALID: 'The bridge configuration is invalid.',
   INPUT_UNSUPPORTED: 'Only bounded text conversations without tool execution history or generation overrides are supported.',

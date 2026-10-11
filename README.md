@@ -21,9 +21,11 @@ publication, and PR creation have not been performed.
 
 ## Authentication
 
-Node.js 22.23.2 and a POSIX filesystem with private ownership/permissions are the
+Node.js 22.23.3 and a POSIX filesystem with private ownership/permissions are the
 current baseline. macOS is tested; other platforms remain unverified. No Codex
-CLI installation is required by the new adapter.
+CLI installation is required by the new adapter. `.node-version` and `.nvmrc`
+pin 22.23.3 for development. The public adapter and authentication CLI refuse
+older or unverified Node major versions before accessing credentials.
 
 From the repository:
 
