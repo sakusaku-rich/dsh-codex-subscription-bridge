@@ -147,3 +147,27 @@ vulnerabilities; this is not a security guarantee.
 No real direct OAuth login, token refresh, catalog request, model request, latency
 measurement, or direct Web conversation has been performed. The earlier managed
 app-server account smoke check must not be counted as direct-transport evidence.
+
+
+## Non-SSE MIME compatibility correction — 2026-10-11
+
+The owner reported successful dedicated device login and model selection, then
+`PROTOCOL_INVALID` on conversation dispatch. Two separately authorized fixed
+short requests investigated the failure without printing or storing credentials,
+account IDs, prompts, or response text. The first isolated rejection at the
+Content-Type guard after HTTP 200. The second confirmed a 6992-byte SSE-framed
+body while the normalized media type was outside the diagnostic's known MIME
+set. The exact MIME value was not retained; do not claim a particular header.
+The authenticated catalog advertised `gpt-6.1-sol`.
+
+The adapter now relies on bounded SSE frames, validated events, and explicit
+successful completion rather than rejecting by MIME. Two regression tests
+exercise missing/non-SSE headers and rejection of HTML, JSON errors, truncated
+frames and unknown events. The packaged Harness SDK fixture uses an
+`application/octet-stream` header to exercise the public adapter.
+
+Verification passed 69 tests, with three historical Codex tests skipped, and
+packaged Harness profile/CLI/SDK verification passed. The correction was applied
+to the existing temporary Web profile without changing its dedicated login.
+No further real request was sent after those two authorizations. Successful
+real generation through the corrected parser remains for the owner's UI check.

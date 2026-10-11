@@ -6,9 +6,12 @@ subscription backend using a dedicated ChatGPT OAuth login.
 ## Status
 
 The direct implementation passes synthetic authentication, refresh, streaming,
-cancellation, and packaged Harness CLI/SDK verification. Real dedicated OAuth
-login, service compatibility, model availability, latency, and Web UI operation
-are not yet verified. Previous app-server smoke results do not validate this
+cancellation, and packaged Harness CLI/SDK verification. The owner confirmed
+dedicated login and model selection. Authorized diagnostics confirmed an
+authenticated catalog advertising `gpt-6.1-sol` and an HTTP 200 SSE-framed
+response with a non-SSE MIME header. Successful generation through the corrected
+adapter, real refresh/revocation, latency, and full Web UI operation remain
+unverified. Previous app-server smoke results do not validate this
 transport. Do not treat this prototype as a completed security audit.
 
 The public adapter no longer launches Codex or reads its credential store. The
