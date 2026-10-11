@@ -19,10 +19,15 @@ old app-server implementation and tests remain development references and are
 excluded from the shipped package. Normal-profile installation, public
 publication, and PR creation have not been performed.
 
+For an isolated source-checkout installation, update, and removal, follow
+[the installation guide](docs/INSTALL.md). See the [support matrix](docs/INSTALL.md#support-and-prerequisites)
+and [local recovery guide](docs/RECOVERY.md). No public npm release exists yet.
+
 ## Authentication
 
 Node.js 22.23.3 and a POSIX filesystem with private ownership/permissions are the
-current baseline. macOS is tested; other platforms remain unverified. No Codex
+current baseline. The initial target is macOS CLI/Web; other OSes are rejected
+before authentication. Desktop is not supported by this target. No Codex
 CLI installation is required by the new adapter. `.node-version` and `.nvmrc`
 pin 22.23.3 for development. The public adapter and authentication CLI refuse
 older or unverified Node major versions before accessing credentials.
@@ -32,6 +37,7 @@ From the repository:
 ```sh
 node src/auth-cli.js login
 node src/auth-cli.js status
+node src/auth-cli.js doctor
 node src/auth-cli.js logout
 ```
 
@@ -88,6 +94,7 @@ script was added. Native Node HTTPS/fetch handles the fixed service destinations
 npm ci --ignore-scripts
 npm run verify
 npm ci --ignore-scripts --prefix verification/runtime
+npm run test:install
 DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
 ```
 

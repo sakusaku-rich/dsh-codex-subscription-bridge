@@ -31,7 +31,9 @@ All normal tests use disposable stores and in-memory HTTPS fixtures. No real
 OAuth flow, refresh, subscription request, or normal-profile installation is
 included. Each real account activity requires explicit authorization.
 
-The direct implementation has not yet been verified against real services.
+The owner confirmed dedicated login and model selection; authorized diagnostics
+received a real SSE-framed response. Successful generation through the current
+adapter, real refresh/revocation and complete Web behavior remain unverified.
 Inherited app-server smoke results do not validate it. No finite audit proves
 absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
 

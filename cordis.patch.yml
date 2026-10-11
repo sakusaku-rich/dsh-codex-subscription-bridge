@@ -1,4 +1,4 @@
-# This development adapter refuses live connections until authority isolation is verified.
+# Register the direct text provider; a dedicated OAuth login is required.
 - insert:
     - id: llm-codex-subscription
       name: dsh-codex-subscription-bridge

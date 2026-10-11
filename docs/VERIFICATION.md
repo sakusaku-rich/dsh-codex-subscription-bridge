@@ -268,3 +268,33 @@ skipped. Packaged Harness CLI/SDK synthetic conversation and shutdown passed.
 No real account request was sent. These two corrections do not complete the
 remaining public-release live verification, CI, license or reporting-channel
 preparation described in the workspace audit.
+
+## Installation, support contract, and recovery UX — 2026-10-11
+
+The initial target is macOS CLI/SDK and standalone Web; other OSes are refused
+by package metadata and pre-authentication platform admission. Desktop is not
+claimed as supported. Verification used macOS 26.6.2 / Apple Silicon with Node
+22.23.3. Intel/other OS/Desktop checks remain separate work.
+
+The new source installer creates only a fresh isolated directory, packs the
+local artifact, records integrity/commit/runtime, disables lifecycle scripts,
+uses an empty private HOME, and refuses overwrite. Auth/start helpers use the
+same HOME and required Node; shell paths with spaces/apostrophes are covered.
+A generated Web profile was started on localhost, reached an authenticated HTML
+page via GET, and was stopped without OAuth login or model requests.
+
+Doctor is read-only and secret-free. Missing stores are not created, locks are
+not acquired/stolen/removed, expired grants are not refreshed, and fixed state/
+action labels guide safe manual recovery. Dedicated tests cover missing,
+expired, insecure, locked and refresh-uncertain states. The English guides cover
+source installation, immutable updates, removal, support scope and lock recovery.
+Current-facing patch/security statements were updated from the old app-server
+assumptions.
+
+Root verification passed 94 tests with three historical Codex tests skipped;
+the separately scoped installer integration test passed, and packaged Harness
+CLI/SDK verification passed. The installer test requires the pinned full runtime
+and is invoked by npm run test:install; basic root verification retains its small
+peer dependency baseline. No normal profile or existing credential store was
+modified. Real first response on the guide path, live recovery, CI, license,
+security reporting channel and publication remain outstanding.
