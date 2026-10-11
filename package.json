@@ -32,7 +32,6 @@
     "check": "node scripts/check.mjs",
     "test": "node --test test/*.test.mjs",
     "verify": "npm run check && npm test",
-    "test:isolation": "node --test test/real-isolation.test.mjs",
     "test:profile": "node scripts/verify-profile.mjs",
     "prepare:profile": "node scripts/prepare-profile.mjs",
     "test:install": "node --test test/integration/prepare-profile.test.mjs"

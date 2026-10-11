@@ -54,7 +54,7 @@ try {
   const cache = join(root, 'npm-cache');
   const packed = JSON.parse(execFileSync(process.execPath, [npmCli, 'pack', '--ignore-scripts', '--json', '--pack-destination', root, '--cache', cache], { encoding: 'utf8', env }))[0];
   assert.ok(packed.files.some((file) => file.path === 'src/auth-cli.js'));
-  assert.equal(packed.files.some((file) => file.path === 'src/process.js'), false);
+  assert.equal(packed.files.some((file) => /^(assets|test|scripts|verification)\//u.test(file.path)), false);
   await writeFile(join(profile, 'package.json'), JSON.stringify({ private: true, type: 'module',
     dependencies: { 'dsh-codex-subscription-bridge': `file:${join(root, packed.filename)}` },
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dsh-codex-subscription-bridge'] } } }));
