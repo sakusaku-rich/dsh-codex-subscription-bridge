@@ -138,6 +138,15 @@ export class SubscriptionBridge {
         if (controller.signal.aborted) throw new BridgeError(timedOut ? 'TIMEOUT' : 'ABORTED');
         const event = await rpc.next(controller.signal);
         const params = object(event.params);
+        if (['deprecationNotice', 'account/rateLimits/updated'].includes(event.method)) continue;
+        if (event.method === 'remoteControl/status/changed') {
+          if (params.status !== 'disabled') throw new BridgeError('PROTOCOL_INVALID');
+          continue;
+        }
+        if (event.method === 'thread/started') {
+          if (object(params.thread).id !== threadId) throw new BridgeError('PROTOCOL_INVALID');
+          continue;
+        }
         if (params.threadId !== threadId) throw new BridgeError('PROTOCOL_INVALID');
         if (event.method === 'item/agentMessage/delta') {
           if (params.turnId !== turnId) throw new BridgeError('PROTOCOL_INVALID');
@@ -159,7 +168,7 @@ export class SubscriptionBridge {
         } else if (event.method === 'item/started' || event.method === 'item/completed') {
           const item = object(params.item);
           if (params.turnId !== turnId || !['userMessage', 'agentMessage', 'reasoning', 'plan'].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID');
-        } else if (event.method === 'turn/started' || event.method === 'thread/started' || event.method === 'thread/tokenUsage/updated') {
+        } else if (event.method === 'turn/started' || event.method === 'thread/status/changed' || event.method === 'thread/tokenUsage/updated') {
           // Metadata is deliberately not copied to Harness.
         } else if (event.method.startsWith('item/reasoning/')) {
           if (params.turnId !== turnId) throw new BridgeError('PROTOCOL_INVALID');
