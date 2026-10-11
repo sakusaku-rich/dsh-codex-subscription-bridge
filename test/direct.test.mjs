@@ -131,6 +131,22 @@ test('cancelled login never replaces an existing grant and releases the store lo
   await assert.rejects(store.login(() => controller.abort(), controller.signal), { code: 'ABORTED' });
   assert.equal(await readFile(join(root, 'auth/auth.json'), 'utf8'), original); await store.logout();
 }));
+test('device login honors slow_down backoff and terminal poll results', () => fixture(async root => {
+  let polls = 0;
+  const store = new AuthStore(join(root, 'auth'), new Http(async url => {
+    if (url.endsWith('/usercode')) return json({ device_auth_id: 'synthetic-device', user_code: 'ABCD-EFGH', interval: 0 });
+    if (url.endsWith('/deviceauth/token')) { polls++; return polls === 1 ? json({ error: 'slow_down' }, 400) : json({ authorization_code: 'synthetic-code', code_verifier: 'synthetic-verifier' }); }
+    return json(tokens());
+  }));
+  await store.login(() => {}); assert.equal(polls, 2); assert.equal(claims(await store.token()).exp > Date.now() / 1000, true);
+  const terminal = new AuthStore(join(root, 'auth-2'), new Http(async url => {
+    if (url.endsWith('/usercode')) return json({ device_auth_id: 'synthetic-device', user_code: 'ABCD-EFGH', interval: 0 });
+    if (url.endsWith('/deviceauth/token')) return json({ error: 'expired_token' }, 403);
+    return json(tokens());
+  }));
+  await assert.rejects(terminal.login(() => {}), { code: 'AUTH_REQUIRED' });
+  await assert.rejects(terminal.transaction(() => terminal.read()), { code: 'AUTH_REQUIRED' });
+}));
 test('paused stream deadlines cancel its reader and release request capacity', async () => {
   let cancelled = false;
   const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => {

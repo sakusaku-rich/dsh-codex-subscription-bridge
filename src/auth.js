@@ -183,7 +183,7 @@ export class AuthStore {
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: CLIENT_ID }) }, signal, MAX_AUTH));
       string(device.device_auth_id, 1024); string(device.user_code, 128);
       if (!/^[A-Za-z0-9-]{1,128}$/u.test(device.user_code)) throw new BridgeError('PROTOCOL_INVALID');
-      const interval = Number(device.interval ?? 5);
+      let interval = Number(device.interval ?? 5);
       if (!Number.isFinite(interval) || interval < 0 || interval > 60) throw new BridgeError('PROTOCOL_INVALID');
       announce({ url: `${ISSUER}/codex/device`, code: device.user_code });
       const timeout = AbortSignal.timeout(15 * 60_000); const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -194,7 +194,20 @@ export class AuthStore {
         const response = await this.http.open(`${ISSUER}/api/accounts/deviceauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ device_auth_id: device.device_auth_id, user_code: device.user_code }) }, pollSignal);
         if (!response.ok) {
-          await response.body?.cancel().catch(() => {});
+          // Bounded body parse; missing or unparseable bodies keep the legacy
+          // pending semantics below.
+          let payload;
+          try { payload = object(await readJson(response, MAX_AUTH, pollSignal)); }
+          catch (error) { if (pollSignal.aborted) throw abortFailure(pollSignal); }
+          if (payload) {
+            const value = payload.error; const name = typeof value === 'string' ? value : value?.code;
+            // RFC 8628 section 3.5: slow_down raises the polling interval.
+            if (name === 'slow_down') { interval = Math.min(60, interval + 5); continue; }
+            // authorization_pending keeps polling at the current interval.
+            if (name === 'authorization_pending') continue;
+            // Terminal grants end the login instead of polling to the deadline.
+            if (name === 'expired_token' || name === 'access_denied') throw new BridgeError('AUTH_REQUIRED');
+          }
           if (pollSignal.aborted) throw abortFailure(pollSignal);
           if ([403, 404].includes(response.status)) continue;
           throw statusError(response.status);
