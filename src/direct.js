@@ -122,7 +122,10 @@ export class DirectBridge {
           const block = getBlock(event.item_id, event.content_index);
           if (block.ended) throw new BridgeError('PROTOCOL_INVALID');
           let text;
-          if (event.type.endsWith('.delta')) text = string(event.delta, 256 * 1024);
+          if (event.type.endsWith('.delta')) {
+            if (typeof event.delta !== 'string' || Buffer.byteLength(event.delta) > 256 * 1024) throw new BridgeError('PROTOCOL_INVALID');
+            text = event.delta;
+          }
           else {
             if (typeof event.text !== 'string' || !event.text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID');
             text = event.text.slice(block.text.length);

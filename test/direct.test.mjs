@@ -217,3 +217,19 @@ test('a persisted pre-dispatch refresh intent blocks replay after process restar
   let calls = 0; const restarted = new AuthStore(directory, new Http(async () => { calls++; return json(tokens()); }));
   await assert.rejects(restarted.token(), { code: 'AUTH_REQUIRED' }); assert.equal(calls, 0);
 }));
+test('empty text deltas are accepted without inventing text or ending a block', async () => {
+  const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(
+    { ...delta, delta: '' }, delta, { ...delta, delta: '' }, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed,
+  )));
+  const chunks = await collect(bridge.stream(input()));
+  assert.deepEqual(chunks.filter(chunk => chunk.type === 'text-delta').map(chunk => chunk.text), ['Hello']);
+  assert.equal(chunks.filter(chunk => chunk.type === 'block-start').length, 1);
+  assert.equal(chunks.filter(chunk => chunk.type === 'block-end').length, 1);
+  assert.equal(chunks.at(-1).reason.kind, 'stop'); await bridge.close();
+});
+test('accepting empty deltas still refuses invalid types and oversized deltas', async () => {
+  for (const value of [null, 1, {}, 'x'.repeat(256 * 1024 + 1)]) {
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse({ ...delta, delta: value }, completed)));
+    await assert.rejects(collect(bridge.stream(input())), { code: 'PROTOCOL_INVALID' }); await bridge.close();
+  }
+});
