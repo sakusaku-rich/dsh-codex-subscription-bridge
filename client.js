@@ -116,7 +116,7 @@ window.__ModuleLoader__.load({
       const alertText = error || state?.phase === 'failed' ? error || safeError(state.error) : null;
       return frame([
         h('h2', { className: 'dshcsb-title' }, 'ChatGPT subscription'),
-        h('p', { className: 'dshcsb-subtitle' }, 'Connect using a dedicated ChatGPT device login. Existing Codex and Hermes logins are not imported.'),
+        h('p', { className: 'dshcsb-subtitle' }, 'Connect using a dedicated ChatGPT device login. Existing logins are not imported.'),
         h('div', { className: 'dshcsb-status', role: 'status', 'aria-live': 'polite' },
           h('p', { className: 'dshcsb-row' }, h(Dot, { tone: localDot[local] ?? 'idle' }), localText),
           h('p', { className: 'dshcsb-row' }, h(Dot, { tone: state ? phaseDot[state.phase] : 'busy' }), state ? labels[state.phase] : 'Checking authentication…'),
