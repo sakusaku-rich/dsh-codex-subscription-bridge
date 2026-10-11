@@ -1,3 +1,7 @@
+> Direct migration: the public adapter now uses dedicated OAuth and HTTPS.
+> App-server results below are historical and do not validate the new transport.
+> See [direct design](DIRECT.md) and the current README.
+
 # Prototype verification
 
 Verified on 2026-10-11 with Node.js 22.23.2 on macOS:
@@ -121,3 +125,25 @@ models, long-session behavior, or general vulnerability absence.
 
 No normal Harness profile was installed or modified. Desktop/Web GUI behavior
 and real keyring access remain unverified. No PR or public package was created.
+
+## Direct migration verification — 2026-10-11
+
+The public adapter now uses dedicated device-code OAuth and direct HTTPS. Normal
+verification passed 67 tests; three opt-in real-Codex tests were skipped because
+they concern the historical transport. Seventeen new direct tests cover private
+storage, API-key/symlink rejection, refresh serialization including separate
+Node processes, grant quarantine versus quota preservation, logout, destination
+and redirect constraints, bounded JSON/SSE, auth-aware catalog caching, catalog
+compatibility fallback, text streaming, unsupported execution items, EOF/failure,
+cancellation, paused-reader timeout cleanup, dedicated synthetic device login,
+and cancellation without overwriting an existing grant.
+
+The actual npm tarball passed pinned Harness profile composition, public CLI/SDK
+registration, missing-auth refusal, synthetic direct conversation, and shutdown.
+Its file list excludes legacy app-server/process/isolation code and assets. No
+new dependency or install hook was added. Root npm audit reported zero known
+vulnerabilities; this is not a security guarantee.
+
+No real direct OAuth login, token refresh, catalog request, model request, latency
+measurement, or direct Web conversation has been performed. The earlier managed
+app-server account smoke check must not be counted as direct-transport evidence.

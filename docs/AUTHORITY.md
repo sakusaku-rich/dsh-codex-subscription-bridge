@@ -1,3 +1,7 @@
+> Direct migration: the public adapter now uses dedicated OAuth and HTTPS.
+> App-server results below are historical and do not validate the new transport.
+> See [direct design](DIRECT.md) and the current README.
+
 # Authority isolation
 
 ## Current decision
