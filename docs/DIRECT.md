@@ -70,13 +70,18 @@ Lock acquisition is bounded to 30 seconds. Login holds its lock while awaiting
 approval (at most 15 minutes); concurrent use may return `AUTH_BUSY`. Locks are
 not automatically stolen, because doing so can allow concurrent refresh. A
 crashed owner can leave `auth.lock`: stop all users of this store before manually
-removing that directory. No automatic lock-removal or token-export command exists.
+removing that directory. A lock disappearing between an unsuccessful acquisition
+and its metadata check triggers another bounded acquisition attempt. Insecure
+locks remain rejected. No automatic lock-removal or token-export command exists.
 
 ## Bounds and remaining differences
 
 Four concurrent owned operations (including cancellation cleanup), 30-second discovery deadline, 120-second turn
 deadline, 15-second JSON request timeout, 1 MiB JSON/event frames, 4 MiB aggregate
-SSE, 4096 SSE frames, 128 text blocks, and 256 KiB input/output text are enforced.
+SSE, 4096 SSE frames, 128 output text blocks, 128 input messages with at most
+64 blocks each, and 256 KiB input/output text are enforced. JSON bodies use one
+fixed payload buffer and yield after bounded byte/read work, including empty
+fragments, so cancellation and deadline timers can run.
 Pre-aborted requests are rejected before store preparation. Cancelled operations
 retain their admission slot until owned work and cleanup settle. SSE framing is
 incremental, using a fixed frame buffer and bounded byte/read work batches with

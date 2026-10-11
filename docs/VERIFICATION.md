@@ -104,3 +104,22 @@ audits reported zero known vulnerabilities. Source/reference searches found no
 remaining obsolete transport imports, configuration assets or instructions.
 Shared input controls remain covered by transport-independent text tests.
 No real account operations were performed.
+
+## JSON ingestion and lock contention corrections (2026-10-11)
+
+JSON response bodies now use a fixed buffer bounded by their payload limit
+instead of retaining a Buffer for every chunk. Empty chunks add no retained
+payload; bounded read/byte batches yield to the event loop and recheck abort.
+Synthetic indefinitely ready empty/one-byte streams are cancelled by caller
+abort and deadline timers. Split UTF-8 and exact/over-limit payloads remain covered.
+
+A legitimate owner can release auth.lock after another process receives EEXIST
+but before its metadata check. ENOENT now retries acquisition within the original
+30-second deadline. Permission/type/symlink checks, cancellation and no-stealing
+semantics remain enforced. A subprocess fixture deterministically imposes that
+interleaving and checks release, insecure replacement, symlink, abort and deadline.
+
+Root verification passed 56 tests without failures or skips. The isolated
+installer test and packaged Harness CLI/SDK synthetic conversation passed.
+No real account operation was performed. Private security reporting and
+authorized real-account E2E verification remain separate release requirements.
