@@ -5,6 +5,7 @@ import { DirectBridge } from './direct.js';
 import { AuthStore, authDirectory } from './auth.js';
 import { authenticationEnvironment } from './environment.js';
 import { BridgeError, failure } from './errors.js';
+import { installAuthUi } from './auth-ui.js';
 export const name = 'dsh-codex-subscription-bridge';
 export const inject = ['llm'];
 class SubscriptionAdapter extends LlmAdapter {
@@ -32,5 +33,10 @@ export function apply(ctx, config = {}) {
   if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).length) throw new BridgeError('CONFIG_INVALID');
   const adapter = new SubscriptionAdapter(authenticationEnvironment(ctx));
   ctx.effect(() => { const unregister = ctx.llm.registerAdapter([PROVIDER], adapter);
-    return async () => { unregister(); await adapter.bridge.close(); }; }, 'codex-subscription: register direct adapter');
+    let active = true;
+    installAuthUi(ctx, adapter.bridge.auth, () => {
+      adapter.bridge.cache = undefined;
+      if (active) unregister.replace([PROVIDER]);
+    });
+    return async () => { active = false; unregister(); await adapter.bridge.close(); }; }, 'codex-subscription: register direct adapter');
 }

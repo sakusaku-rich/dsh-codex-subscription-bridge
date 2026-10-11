@@ -1,5 +1,5 @@
 const messages = Object.freeze({
-  AUTH_REQUIRED: 'A dedicated subscription login is required. Run dsh-codex-subscription-auth login.',
+  AUTH_REQUIRED: 'A dedicated subscription login is required. Open ChatGPT subscription in Harness settings or run dsh-codex-subscription-auth login.',
   AUTH_STORE_INVALID: 'The dedicated authentication store is invalid or insecure.',
   AUTH_BUSY: 'The authentication store is busy. A crashed owner may require manual lock recovery.',
   RATE_LIMITED: 'The subscription service rate or usage limit was reached.',

@@ -9,7 +9,8 @@
   },
   "exports": {
     ".": "./src/index.js",
-    "./cordis.patch.yml": "./cordis.patch.yml"
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./client": "./client.js"
   },
   "files": [
     "src/index.js",
@@ -27,7 +28,9 @@
     "SECURITY.md",
     "docs",
     "LICENSE",
-    "AGENTS.md"
+    "AGENTS.md",
+    "src/auth-ui.js",
+    "client.js"
   ],
   "scripts": {
     "check": "node scripts/check.mjs",
@@ -37,7 +40,8 @@
     "prepare:profile": "node scripts/prepare-profile.mjs",
     "test:install": "node --test test/integration/prepare-profile.test.mjs",
     "test:desktop": "node scripts/verify-desktop.mjs",
-    "prepare:desktop": "node scripts/prepare-desktop.mjs"
+    "prepare:desktop": "node scripts/prepare-desktop.mjs",
+    "test:auth-ui": "node --test test/integration/auth-ui-http.test.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -50,6 +54,14 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
     }
   },
   "bin": {
