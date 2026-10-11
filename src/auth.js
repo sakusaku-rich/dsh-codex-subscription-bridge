@@ -57,9 +57,15 @@ export class AuthStore {
     const deadline = Date.now() + 30_000;
     for (;;) {
       if (signal?.aborted) throw new BridgeError('ABORTED');
+      if (Date.now() >= deadline) throw new BridgeError('AUTH_BUSY');
       try { await mkdir(lock, { mode: 0o700 }); break; }
       catch (error) { if (error.code !== 'EEXIST') throw new BridgeError('AUTH_STORE_INVALID'); }
-      privateInfo(await lstat(lock), true);
+      try { privateInfo(await lstat(lock), true); }
+      catch (error) {
+        // The legitimate owner may release between mkdir(EEXIST) and lstat.
+        if (error.code === 'ENOENT') continue;
+        throw error instanceof BridgeError ? error : new BridgeError('AUTH_STORE_INVALID');
+      }
       if (Date.now() >= deadline) throw new BridgeError('AUTH_BUSY');
       await delay(50, undefined, { signal }).catch(() => { throw new BridgeError('ABORTED'); });
     }
