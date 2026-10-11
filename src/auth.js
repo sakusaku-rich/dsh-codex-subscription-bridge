@@ -52,6 +52,7 @@ export class AuthStore {
     privateInfo(await lstat(this.directory), true);
   }
   async transaction(task, signal) {
+    if (signal?.aborted) throw new BridgeError('ABORTED');
     await this.prepare(); const lock = join(this.directory, 'auth.lock');
     const deadline = Date.now() + 30_000;
     for (;;) {

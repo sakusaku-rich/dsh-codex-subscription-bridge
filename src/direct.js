@@ -47,38 +47,52 @@ export async function* events(body, signal, track = promise => promise) {
 export class DirectBridge {
   constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000 } = {}) {
     this.auth = auth; this.http = http; this.cacheMs = cacheMs; this.turnTimeoutMs = turnTimeoutMs;
-    this.active = new Set(); this.pending = new Set(); this.closed = false; this.shutdownTimeoutMs = shutdownTimeoutMs;
+    this.active = new Set(); this.owners = new WeakMap(); this.pending = new Set(); this.closed = false; this.shutdownTimeoutMs = shutdownTimeoutMs;
   }
-  track(promise) {
-    this.pending.add(promise);
-    promise.then(() => this.pending.delete(promise), () => this.pending.delete(promise));
+  track(promise, owner) {
+    this.pending.add(promise); owner?.work.add(promise);
+    const settled = () => { this.pending.delete(promise); owner?.work.delete(promise); owner?.tryRelease(); };
+    promise.then(settled, settled);
     return promise;
   }
-  own(task) {
+  own(task, signal) {
     if (this.closed) return Promise.reject(new BridgeError('CLOSED'));
-    return this.track(Promise.resolve().then(task));
+    if (signal?.aborted) return Promise.reject(new BridgeError('ABORTED'));
+    return this.track(Promise.resolve().then(() => {
+      if (signal?.aborted) throw new BridgeError('ABORTED');
+      return task();
+    }), this.owners.get(signal));
   }
   controller(signal, timeoutMs) {
     if (this.closed) throw new BridgeError('CLOSED');
+    if (signal?.aborted) throw new BridgeError('ABORTED');
     if (this.active.size >= 4) throw new BridgeError('LIMIT_EXCEEDED');
-    const controller = new AbortController(); const timeout = setTimeout(() => { controller.timedOut = true; controller.abort(); }, timeoutMs);
+    const controller = new AbortController(); controller.work = new Set();
+    this.owners.set(controller.signal, controller);
+    const timeout = setTimeout(() => { controller.timedOut = true; controller.abort(); }, timeoutMs);
     const cancel = () => controller.abort(); signal?.addEventListener('abort', cancel, { once: true });
-    if (signal?.aborted) cancel(); this.active.add(controller);
-    controller.release = () => { clearTimeout(timeout); signal?.removeEventListener('abort', cancel); this.active.delete(controller); };
-    controller.signal.addEventListener('abort', controller.release, { once: true });
-    if (controller.signal.aborted) controller.release();
+    this.active.add(controller);
+    controller.tryRelease = () => {
+      if ((controller.finished || controller.abortDispatched) && !controller.work.size) this.active.delete(controller);
+    };
+    controller.release = () => { clearTimeout(timeout); signal?.removeEventListener('abort', cancel); controller.finished = true; controller.tryRelease(); };
+    controller.signal.addEventListener('abort', () => {
+      clearTimeout(timeout); signal?.removeEventListener('abort', cancel);
+      // Let every abort listener register its reader/transport cleanup first.
+      queueMicrotask(() => { controller.abortDispatched = true; controller.tryRelease(); });
+    }, { once: true });
     return controller;
   }
   async catalog(signal, fresh = false) {
     try {
       // Always reread/refresh authentication first, including metadata cache hits.
-      const token = await this.own(() => this.auth.token(signal));
+      const token = await this.own(() => this.auth.token(signal), signal);
       const identity = createHash('sha256').update(token).digest('hex');
       if (!fresh && this.cache?.identity === identity && this.cache.expires > Date.now()) return this.cache.models;
       // Match the reference's catalog compatibility selectors, not a CLI identity.
       let result;
       for (const version of ['99.0.0', '0.0.0']) {
-        result = object(await this.own(() => this.http.json(`${BASE}/models?client_version=${version}`, { headers: headers(token) }, signal)));
+        result = object(await this.own(() => this.http.json(`${BASE}/models?client_version=${version}`, { headers: headers(token) }, signal), signal));
         if (!Array.isArray(result.models) || result.models.length > 512) throw new BridgeError('PROTOCOL_INVALID');
         if (result.models.length) break;
       }
@@ -97,7 +111,7 @@ export class DirectBridge {
       try { return await this.catalog(controller.signal); }
       catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); throw error; }
       finally { controller.release(); }
-    })());
+    })(), controller);
   }
   async listModels(signal) {
     if (this.closed) throw new BridgeError('CLOSED');
@@ -140,23 +154,23 @@ export class DirectBridge {
     try {
       const models = await this.catalog(controller.signal, true);
       if (!models.some(model => model.id === options.model)) throw new BridgeError('MODEL_UNAVAILABLE');
-      const token = await this.own(() => this.auth.token(controller.signal));
+      const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
       const instructions = history.filter(item => item.role === 'developer').map(item => item.content.map(block => block.text).join('\n')).join('\n');
       phase = 'HTTP_REQUEST';
       response = await this.own(async () => {
         const result = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({ model: options.model, instructions, input: history.filter(item => item.role !== 'developer'), store: false, stream: true }) }, controller.signal);
-        const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}));
+        const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}), controller);
         controller.signal.addEventListener('abort', cancel, { once: true });
         controller.removeBodyAbort = () => controller.signal.removeEventListener('abort', cancel);
         if (controller.signal.aborted) await cancel();
         return result;
-      });
+      }, controller.signal);
       if (!response.ok) { await response.body?.cancel(); throw statusError(response.status); }
       // The subscription backend can send valid SSE without an SSE MIME header.
       // Trust the bounded frame/event parser and terminal state, not Content-Type.
       phase = 'SSE_FRAME';
-      for await (const event of events(response.body, controller.signal, promise => this.track(promise))) {
+      for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller))) {
         try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
         if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
           phase = event.type.endsWith('.delta') ? 'SSE_TEXT_DELTA' : 'SSE_TEXT_COMPLETION';
@@ -195,7 +209,7 @@ export class DirectBridge {
       }
       if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
     } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }
-    finally { controller.abort(); controller.removeBodyAbort?.(); await this.track(Promise.resolve(response?.body?.cancel()).catch(() => {})); controller.release(); }
+    finally { controller.abort(); controller.removeBodyAbort?.(); await this.track(Promise.resolve(response?.body?.cancel()).catch(() => {}), controller); controller.release(); }
   }
   close() {
     this.closing ??= this.shutdown();
