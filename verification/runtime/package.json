@@ -1,0 +1,14 @@
+{
+  "name": "dsh-bridge-verification-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.0-rc.2"
+  },
+  "overrides": {
+    "@modelcontextprotocol/client": "2.2.0",
+    "@modelcontextprotocol/core": "2.2.0",
+    "fflate": "0.8.3"
+  }
+}
