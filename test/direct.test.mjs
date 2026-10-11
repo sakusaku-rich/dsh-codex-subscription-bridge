@@ -169,3 +169,25 @@ test('terminal text fills missing deltas and rejects inconsistent completed cont
     await bridge.close();
   }
 });
+test('valid SSE is accepted independently of the response MIME header', async () => {
+  for (const contentType of [null, 'application/octet-stream', 'application/json', 'text/event-stream']) {
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => {
+      if (url.includes('/models?')) return json({ models: [model] });
+      const response = sse(delta, completed);
+      if (contentType === null) response.headers.delete('content-type');
+      else response.headers.set('content-type', contentType);
+      return response;
+    }));
+    const chunks = await collect(bridge.stream(input()));
+    assert.equal(chunks.at(-1).reason.kind, 'stop');
+    assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello');
+    await bridge.close();
+  }
+});
+test('a non-SSE MIME header never turns HTML, JSON errors, or truncated SSE into success', async () => {
+  for (const body of ['<html>Upstream error</html>', JSON.stringify({ error: { message: 'synthetic-secret' } }), 'data: {"type":"response.completed"}\n', 'data: {"type":"unknown"}\n\n']) {
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : new Response(body, { headers: { 'content-type': 'application/octet-stream' } })));
+    await assert.rejects(collect(bridge.stream(input())), error => error.code === 'PROTOCOL_INVALID' && !error.message.includes('synthetic-secret'));
+    await bridge.close();
+  }
+});

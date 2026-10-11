@@ -106,7 +106,7 @@ process.stdout.write('PACKAGED_PROFILE_OK\\n');
 const store=new AuthStore(authDirectory(process.env));
 const token='x.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic'}})).toString('base64url')+'.x';
 await store.transaction(()=>store.write({access_token:token,refresh_token:'synthetic'}));
-globalThis.fetch=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list'}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'text/event-stream'}});
+globalThis.fetch=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list'}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'application/octet-stream'}});
 `);
   env.NODE_OPTIONS = `--import=${preload}`;
   const configured = launch(process.execPath, [cli, '--profile', profileName]); const configuredOutput = output(configured);

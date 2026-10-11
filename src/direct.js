@@ -114,7 +114,8 @@ export class DirectBridge {
       response = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({ model: options.model, instructions, input: history.filter(item => item.role !== 'developer'), store: false, stream: true }) }, controller.signal);
       if (!response.ok) { await response.body?.cancel(); throw statusError(response.status); }
-      if (!response.headers.get('content-type')?.startsWith('text/event-stream')) throw new BridgeError('PROTOCOL_INVALID');
+      // The subscription backend can send valid SSE without an SSE MIME header.
+      // Trust the bounded frame/event parser and terminal state, not Content-Type.
       for await (const event of events(response.body, controller.signal)) {
         string(event.type);
         if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
