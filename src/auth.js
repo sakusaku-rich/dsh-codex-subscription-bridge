@@ -141,6 +141,33 @@ export class AuthStore {
       finally { await response?.body?.cancel().catch(() => {}); }
     }, signal);
   }
+  /** Read-only local diagnosis; never refresh, acquire/remove locks, or print identities. */
+  async doctor() {
+    const result = { store: 'private', lock: 'absent', auth: 'not_checked', action: 'none' };
+    try { privateInfo(await lstat(this.directory), true); }
+    catch (error) {
+      if (error.code === 'ENOENT') return { ...result, store: 'missing', auth: 'missing', action: 'login' };
+      return { ...result, store: 'invalid', action: 'check_store_permissions' };
+    }
+    try {
+      privateInfo(await lstat(join(this.directory, 'auth.lock')), true);
+      return { ...result, lock: 'present_owner_unknown', action: 'stop_all_store_users_before_manual_recovery' };
+    } catch (error) {
+      if (error.code !== 'ENOENT') return { ...result, lock: 'invalid', action: 'check_store_permissions' };
+    }
+    try {
+      const tokens = await this.read();
+      const exp = claims(tokens.access_token).exp * 1000;
+      return { ...result, auth: exp <= Date.now() ? 'expired' : exp <= Date.now() + 120_000 ? 'refresh_due' : 'stored', action: 'none' };
+    } catch (error) {
+      if (error.code === 'AUTH_REQUIRED') {
+        let exists = true;
+        try { await lstat(join(this.directory, 'auth.json')); } catch (failure) { if (failure.code === 'ENOENT') exists = false; }
+        return { ...result, auth: exists ? 'relogin_required' : 'missing', action: 'login' };
+      }
+      return { ...result, auth: 'invalid', action: 'check_store_permissions' };
+    }
+  }
   async logout(signal) { return this.transaction(() => rm(join(this.directory, 'auth.json'), { force: true }), signal); }
   async login(announce, signal) {
     // Explicit login owns the store lock, so a concurrent logout cannot be undone.
