@@ -67,7 +67,7 @@ test('text streaming completes without replay state or native tools', async () =
   const start = fake.calls.find((call) => call.method === 'thread/start');
   assert.deepEqual(start.params.environments, []);
   assert.equal(start.params.ephemeral, true);
-  assert.deepEqual(fake.calls.find((call) => call.method === 'turn/start').params.sandboxPolicy.access.readableRoots, []);
+  assert.deepEqual(fake.calls.find((call) => call.method === 'turn/start').params.sandboxPolicy, { type: 'readOnly', networkAccess: false });
   assert.equal(fake.calls.some((call) => call.method === 'turn/interrupt'), false);
   assert.equal(fake.closed, 1);
 });

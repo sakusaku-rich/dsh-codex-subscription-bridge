@@ -129,7 +129,7 @@ export class SubscriptionBridge {
       if (history.length > 1) await rpc.request('thread/inject_items', { threadId, items: history.slice(0, -1) }, controller.signal);
       const turn = object(await rpc.request('turn/start', {
         threadId, model: options.model, approvalPolicy: 'never', environments: [],
-        sandboxPolicy: { type: 'readOnly', access: { type: 'restricted', includePlatformDefaults: false, readableRoots: [] } },
+        sandboxPolicy: { type: 'readOnly', networkAccess: false },
         input: history.at(-1).content.map((block) => ({ type: 'text', text: block.text })),
       }, controller.signal));
       turnId = string(object(turn.turn).id);
