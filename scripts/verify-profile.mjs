@@ -20,7 +20,7 @@ for (const [name, version] of [['@modelcontextprotocol/client', '2.2.0'], ['@mod
   assert.equal(JSON.parse(await readFile(join(modules, name, 'package.json'), 'utf8')).version, version, 'Use the locked security-fixed verification runtime.');
 }
 const root = await mkdtemp(join(tmpdir(), 'dsh-packaged-profile-'));
-const env = { HOME: join(root, 'home'), DSH_HOME: join(root, 'harness'), 
+const env = { HOME: join(root, 'home'), DSH_HOME: join(root, 'harness'),
   XDG_CONFIG_HOME: join(root, 'xdg'), XDG_CACHE_HOME: join(root, 'cache'), LANG: 'C.UTF-8',
   PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, DSH_TELEMETRY_DISABLED: 'true', DSH_PRIMARY_RUNTIME: '' };
 const profileName = 'subscription-bridge-verification';
