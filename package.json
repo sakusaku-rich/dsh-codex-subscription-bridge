@@ -33,7 +33,8 @@
     "verify": "npm run check && npm test",
     "test:isolation": "node --test test/real-isolation.test.mjs",
     "test:profile": "node scripts/verify-profile.mjs",
-    "prepare:profile": "node scripts/prepare-profile.mjs"
+    "prepare:profile": "node scripts/prepare-profile.mjs",
+    "test:install": "node --test test/integration/prepare-profile.test.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
