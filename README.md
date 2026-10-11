@@ -1,114 +1,97 @@
 # dsh-codex-subscription-bridge
 
-A minimal text provider for DeepSeek Harness using an existing managed Codex
-ChatGPT subscription login through the official local app-server.
+A minimal DeepSeek Harness text provider that connects directly to the Codex
+subscription backend using a dedicated ChatGPT OAuth login.
 
 ## Status
 
-The configured backend and packaged Harness SDK profile passed synthetic
-verification. An owner-authorized file-backed ChatGPT subscription smoke check
-also passed on 2026-10-11 with `gpt-5.6-sol`. Normal profile installation and
-Desktop/Web GUI verification have not been performed.
+The direct implementation passes synthetic authentication, refresh, streaming,
+cancellation, and packaged Harness CLI/SDK verification. Real dedicated OAuth
+login, service compatibility, model availability, latency, and Web UI operation
+are not yet verified. Previous app-server smoke results do not validate this
+transport. Do not treat this prototype as a completed security audit.
 
-The adapter connects only when a trusted absolute `executable` and an explicit
-`credentialStore` (`file` or `keyring`) are configured. Otherwise it returns
-`CONFIG_REQUIRED` without launching Codex. It accepts no tokens, custom OAuth,
-API-key fallback, arbitrary command arguments, or permission overrides.
+The public adapter no longer launches Codex or reads its credential store. The
+old app-server implementation and tests remain development references and are
+excluded from the shipped package. Normal-profile installation, public
+publication, and PR creation have not been performed.
 
-Implemented and verified:
+## Authentication
 
-- Managed ChatGPT-mode admission with token-free mode inspection.
-- API-key and external-token mode rejection before model dispatch.
-- Model discovery, streamed text, cancellation, and bounded process cleanup.
-- Fresh ephemeral request threads with reconstructed text history.
-- Authoritative configuration replacement, private HOME/cwd/state/log paths,
-  no workspace environments, and no forwarded Harness tools.
-- Packaged profile composition, public Harness CLI/SDK conversation, and shutdown.
-- Protection against project `.env` replacing the authentication location.
+Node.js 22.23.2 and a POSIX filesystem with private ownership/permissions are the
+current baseline. macOS is tested; other platforms remain unverified. No Codex
+CLI installation is required by the new adapter.
 
-Harness attaches tool declarations to ordinary requests. The bridge deliberately
-discards these declarations and their bookkeeping; it never sends them to Codex
-or returns Harness tool calls. Actual tool execution history, direct image/file
-blocks, and unsupported generation overrides are rejected. Start a fresh text
-conversation when switching from an agent session containing tool executions.
+From the repository:
 
-Codex retains the harmless internal `update_plan` tool in the verified policy.
-Read-only mode alone does not confine filesystem reads. Codex, the host, OS,
-and dependencies remain trusted; this is not a general-purpose OS sandbox.
+```sh
+node src/auth-cli.js login
+node src/auth-cli.js status
+node src/auth-cli.js logout
+```
 
-## Configuration
+The packaged command is `dsh-codex-subscription-auth`. `login` prints the fixed
+OpenAI device-login URL and a one-time code, then waits for browser approval.
+Device-code access must be enabled for the account/workspace. This initial
+version does not implement browser PKCE fallback or import Codex/Hermes tokens.
+Login is an explicit account operation; automated verification never runs a
+real login or submits real model requests.
 
-For an already installed bundle, the profile patch uses:
+Credentials are stored in `~/.dsh-codex-subscription-bridge/auth.json`, with a
+0700 directory and 0600 file. This is plaintext storage protected by filesystem
+permissions, not a keyring. Processes with the same user authority remain
+trusted. Never upload, paste, commit, or copy the file into an issue.
+
+`status` checks local credential structure without refreshing or contacting the
+service. `logout` removes this plugin's local login; it does not revoke tokens
+server-side or change Codex's login. Launch the authentication command and
+Harness with the same inherited HOME. Project `.env` authentication locations
+are not accepted. No tokens or custom endpoints are plugin configuration.
+
+## Harness configuration
+
+Use the bundle in an authorized profile. The adapter has no configuration keys:
 
 ```yaml
 - id: llm-codex-subscription
-  config:
-    executable: /absolute/path/to/trusted/codex
-    credentialStore: file
+  config: {}
 ```
 
-Choose the same credential storage mode as the existing Codex login. Select
-`keyring` explicitly for keyring-backed credentials. There is no `auto` migration
-fallback, no credential copying, and no new login flow. Real keyring access is
-not yet verified. Configuring these fields enables account discovery and model
-requests; do not configure a normal profile until its installation is authorized.
+Remove the old `executable` and `credentialStore` fields: they now fail with
+`CONFIG_INVALID`. The route remains `codex-subscription`, displayed as
+`Codex (ChatGPT subscription, text only)`.
 
-The route is `codex-subscription`, displayed as
-`Codex (ChatGPT subscription, text only)`. Discovery is bounded and uses the
-pinned CLI's catalog; actual model entitlement and subscription limits remain
-subject to the account and upstream service.
+The provider fetches visible subscription models directly. A 60-second
+in-memory catalog cache reduces repeated requests; authentication is reread on
+cache hits. Each conversation request freshly verifies the catalog and its
+credentials. Compatibility selectors follow the pinned Hermes reference;
+synthetic model aliases and unadvertised models are not added. Visibility does
+not prove entitlement to a successful request.
 
-## Development and verification
+Only bounded text history is sent, with `store: false` and no tool definitions.
+Harness tool declarations are ignored; executed tool history, images, files,
+and generation overrides are rejected. No conversation IDs are resumed or
+chained. Search, images, quota display, tool forwarding, and remote access are
+outside the initial migration.
 
-The verified baseline is macOS, Node.js 22.23.2, Codex CLI 0.144.6, Harness
-0.2.0-rc.2, and Cordis 4.0.4. Other Codex versions and platforms fail launcher admission; other Node/Harness
-versions are unsupported. The bridge
-adds no HTTP or credential library and communicates only through local stdio.
-Its host peers and development dependencies are locked in `package-lock.json`.
+## Development
+
+Harness 0.2.0-rc.2 and Cordis 4.0.4 remain pinned. No new dependency or installation
+script was added. Native Node HTTPS/fetch handles the fixed service destinations.
 
 ```sh
 npm ci --ignore-scripts
 npm run verify
-```
-
-To include the credential-free real-binary tests:
-
-```sh
-CODEX_ISOLATION_EXECUTABLE=/absolute/path/to/codex npm run verify
-```
-
-For the complete packaged Harness profile check:
-
-```sh
 npm ci --ignore-scripts --prefix verification/runtime
 DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
 ```
 
-The verification runtime pins security-fixed dependencies separately from the
-plugin. It does not update an existing Harness installation. See
-[Harness verification and dependency findings](docs/HARNESS.md).
+A real-account check is separate and requires authorization. The prepared
+`scripts/smoke-account.mjs --allow-real-account` command sends one fixed short
+prompt using the dedicated login. It may consume subscription quota and refresh
+this plugin's stored tokens. It has not been run for the direct implementation.
 
-A separately authorized real-account smoke check is prepared in
-`scripts/smoke-account.mjs`. It reads the catalog and requests one short fixed
-reply. It may consume subscription quota and Codex may refresh its own stored
-credentials. One explicitly authorized file-backed run passed; no additional
-model requests were performed.
-
-## Limits and project documents
-
-Search, images, quota display, remote access, and Harness tool forwarding are
-outside this MVP. Refresh/revocation behavior, entitlement to other models, long conversations,
-and Desktop/Web UI behavior remain unverified. No finite audit or test suite
-proves the absence of unknown vulnerabilities.
-
-This private repository has no selected distribution license. No PR or public
-package has been created. Repository content is in English.
-
-- [MVP requirements](docs/MVP.md)
-- [Authority isolation](docs/AUTHORITY.md)
-- [Verification record](docs/VERIFICATION.md)
-- [Harness verification](docs/HARNESS.md)
-- [Security requirements](SECURITY.md)
-- [Development instructions](AGENTS.md)
-
-This independent project is not affiliated with OpenAI or DeepSeek.
+See [direct connection design](docs/DIRECT.md), [security requirements](SECURITY.md),
+[verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
+The repository is private and has no selected distribution license. This project
+is independent of OpenAI, DeepSeek, and Nous Research.

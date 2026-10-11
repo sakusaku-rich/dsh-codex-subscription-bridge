@@ -6,12 +6,12 @@ import { BridgeError, failure } from '../src/errors.js';
 // Preparation only: never run this without the owner's explicit authorization.
 const args = process.argv.slice(2);
 const value = (flag) => args[args.indexOf(flag) + 1];
-if (!args.includes('--allow-real-account') || !args.includes('--executable') || !args.includes('--credential-store')) {
-  throw new Error('Explicit authorization, --executable, and --credential-store are required.');
+if (!args.includes('--allow-real-account') || args.some((argument, index) => !['--allow-real-account', '--model'].includes(argument) && args[index - 1] !== '--model')) {
+  throw new Error('Explicit authorization with --allow-real-account is required. Optional: --model <id>.');
 }
 const ctx = new Context();
 const service = ctx.plugin(LlmRuntime);
-const fiber = ctx.plugin(plugin, { executable: value('--executable'), credentialStore: value('--credential-store') });
+const fiber = ctx.plugin(plugin);
 const controller = new AbortController();
 let timedOut = false;
 const timer = setTimeout(() => { timedOut = true; controller.abort(); void fiber.dispose(); }, 30_000);

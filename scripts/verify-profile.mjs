@@ -53,7 +53,8 @@ try {
   await writeFile(join(root, '.env'), `CODEX_HOME=${join(root, 'adversarial-codex-home')}\nOPENAI_API_KEY=synthetic-project-key\n`);
   const cache = join(root, 'npm-cache');
   const packed = JSON.parse(execFileSync(process.execPath, [npmCli, 'pack', '--ignore-scripts', '--json', '--pack-destination', root, '--cache', cache], { encoding: 'utf8', env }))[0];
-  assert.ok(packed.files.some((file) => file.path === 'assets/codex-0.144.6.lock.toml'));
+  assert.ok(packed.files.some((file) => file.path === 'src/auth-cli.js'));
+  assert.equal(packed.files.some((file) => file.path === 'src/process.js'), false);
   await writeFile(join(profile, 'package.json'), JSON.stringify({ private: true, type: 'module',
     dependencies: { 'dsh-codex-subscription-bridge': `file:${join(root, packed.filename)}` },
     dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dsh-codex-subscription-bridge'] } } }));
@@ -69,9 +70,9 @@ import {createLaunchEnvironmentSnapshot} from ${JSON.stringify(pathToFileURL(joi
 const {ctx,shutdown}=await runProfile({profile:${JSON.stringify(profileName)},patchFiles:[],args:[],environment:createLaunchEnvironmentSnapshot([{source:'process',values:process.env}])});
 await ctx.get('loader').await();
 assert.ok(ctx.llm.listProviders().some(provider=>provider.id==='codex-subscription'));
-await assert.rejects(ctx.llm.listModels('codex-subscription'),{code:'CONFIG_REQUIRED'});
+await assert.rejects(ctx.llm.listModels('codex-subscription'),{code:'AUTH_REQUIRED'});
 const chunks=[];for await(const chunk of ctx.llm.stream({provider:'codex-subscription',model:'synthetic',messages:[{role:'user',content:[{type:'text',text:'Synthetic request'}]}]}))chunks.push(chunk);
-assert.equal(chunks.at(-1).reason.failure.code,'CONFIG_REQUIRED');
+assert.equal(chunks.at(-1).reason.failure.code,'AUTH_REQUIRED');
 await shutdown.shutdown(0);
 process.stdout.write('PACKAGED_PROFILE_OK\\n');
 `);
@@ -95,13 +96,19 @@ process.stdout.write('PACKAGED_PROFILE_OK\\n');
     });
   }
   const initialized = await request(1, 'initialize', { provider: 'codex-subscription', model: 'synthetic', cwd: root });
-  assert.ok(initialized.error?.message.includes('Configure a trusted absolute Codex executable path'), sdkOutput.stderr());
+  assert.ok(initialized.error?.message.includes('A dedicated subscription login is required'), sdkOutput.stderr());
   const stopped = await request(2, 'shutdown'); assert.equal(stopped.error, undefined);
   sdk.stdin.end(); await finish(sdk);
-  const fixture = await readFile(new URL('../test/fixtures/codex-cli.mjs', import.meta.url), 'utf8');
-  const fakeCodex = join(root, 'codex-synthetic-origin');
-  await writeFile(fakeCodex, `#!${process.execPath}\n${fixture}`, { mode: 0o700 });
-  await writeFile(join(profile, 'cordis.patch.yml'), `- id: hmr\n  disabled: true\n- id: llm-codex-subscription\n  config:\n    executable: ${JSON.stringify(fakeCodex)}\n    credentialStore: file\n`);
+  // The preload only exists inside this disposable verification process.
+  // It replaces HTTPS with deterministic in-memory responses, never real auth.
+  const preload = join(root, 'synthetic-http.mjs');
+  await writeFile(preload, `import {AuthStore,authDirectory} from ${JSON.stringify(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/src/auth.js')).href)};
+const store=new AuthStore(authDirectory(process.env));
+const token='x.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic'}})).toString('base64url')+'.x';
+await store.transaction(()=>store.write({access_token:token,refresh_token:'synthetic'}));
+globalThis.fetch=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list'}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'text/event-stream'}});
+`);
+  env.NODE_OPTIONS = `--import=${preload}`;
   const configured = launch(process.execPath, [cli, '--profile', profileName]); const configuredOutput = output(configured);
   const configuredReplies = new Map(); const notifications = [];
   createInterface({ input: configured.stdout }).on('line', (line) => {
@@ -128,7 +135,7 @@ process.stdout.write('PACKAGED_PROFILE_OK\\n');
   assert.ok(notifications.some((message) => message.method === 'session.event' && message.params.event.type === 'assistant/message' && JSON.stringify(message.params.event.data).includes('Synthetic response')), 'No successful assistant message was emitted by the configured SDK conversation.');
   assert.equal((await configuredRequest(3, 'shutdown')).error, undefined);
   configured.stdin.end(); await finish(configured);
-  console.log(JSON.stringify({ harness: manifest.version, packagedProfile: 'passed', publicCli: 'passed', providerRegistration: 'passed', refusalPropagation: 'passed', configuredConversation: 'passed (synthetic Codex)', authenticationOrigin: 'passed', shutdown: 'passed', realAccount: 'not tested' }));
+  console.log(JSON.stringify({ harness: manifest.version, packagedProfile: 'passed', publicCli: 'passed', providerRegistration: 'passed', refusalPropagation: 'passed', configuredConversation: 'passed (synthetic direct HTTPS)', authenticationOrigin: 'dedicated disposable HOME', shutdown: 'passed', realAccount: 'not tested' }));
 
 } finally {
   clearTimeout(deadline);
