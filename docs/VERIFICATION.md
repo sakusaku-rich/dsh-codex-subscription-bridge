@@ -241,3 +241,30 @@ Node 22.23.3 verification passed 86 tests; three historical Codex tests were
 skipped. Packaged Harness CLI/SDK synthetic conversation and shutdown passed.
 Real account recovery, real service event variations and complete Web operation
 remain unverified. No account requests were sent for these fixes.
+
+## Admission and incremental SSE work bounds — 2026-10-11
+
+Admission now rejects pre-aborted requests before authentication/filesystem work.
+Each controller retains its capacity until owned auth/HTTP work and cancellation
+cleanup settle; the pending set remains separate shutdown bookkeeping. A burst
+of 32 requests while four cancelled auth operations were still settling was
+refused with LIMIT_EXCEEDED and peak auth concurrency stayed at four. The actual
+AuthStore pre-aborted reproducer entered filesystem preparation zero times.
+
+SSE framing scans bytes incrementally into a fixed 1 MiB frame buffer plus
+four delimiter bytes. It decodes/materializes each frame once, accounts bytes
+incrementally, and yields after 4096 processed bytes or 256 reads so ready tiny
+or empty fragments cannot indefinitely defer cancellation timers. Existing
+UTF-8, multiline data, mixed LF/CRLF, malformed/incomplete payload rejection,
+aggregate/frame/count/text bounds, and terminal-state checks are retained.
+
+Illustrative same-host measurements for malformed one-byte fragments improved
+from 282/4007 ms (32/128 KiB) to 33/76 ms. A scheduled 10 ms abort was observed at
+11 ms with ABORTED, rather than being deferred beyond parsing. Timings are not
+portable guarantees and are not asserted as fixed regression-test thresholds.
+
+Node 22.23.3 verification passed 92 tests; three historical Codex tests were
+skipped. Packaged Harness CLI/SDK synthetic conversation and shutdown passed.
+No real account request was sent. These two corrections do not complete the
+remaining public-release live verification, CI, license or reporting-channel
+preparation described in the workspace audit.

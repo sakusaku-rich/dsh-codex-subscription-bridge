@@ -74,10 +74,14 @@ removing that directory. No automatic lock-removal or token-export command exist
 
 ## Bounds and remaining differences
 
-Four concurrent HTTP operations, 30-second discovery deadline, 120-second turn
+Four concurrent owned operations (including cancellation cleanup), 30-second discovery deadline, 120-second turn
 deadline, 15-second JSON request timeout, 1 MiB JSON/event frames, 4 MiB aggregate
 SSE, 4096 SSE frames, 128 text blocks, and 256 KiB input/output text are enforced.
-Cancellation aborts transport readers even if a consumer pauses. Shutdown
+Pre-aborted requests are rejected before store preparation. Cancelled operations
+retain their admission slot until owned work and cleanup settle. SSE framing is
+incremental, using a fixed frame buffer and bounded byte/read work batches with
+event-loop yields for cancellation. Cancellation aborts transport readers even
+if a consumer pauses. Shutdown
 separately waits for owned authentication/HTTP cleanup and reader cancellation
 with a five-second bound; unresponsive cleanup reports TIMEOUT. OAuth body reads
 preserve caller cancellation and deadline classification across all auth paths. Successful
