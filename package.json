@@ -25,7 +25,8 @@
     "cordis.patch.yml",
     "README.md",
     "SECURITY.md",
-    "docs"
+    "docs",
+    "LICENSE"
   ],
   "scripts": {
     "check": "node scripts/check.mjs",
@@ -54,5 +55,6 @@
   },
   "os": [
     "darwin"
-  ]
+  ],
+  "license": "MIT"
 }

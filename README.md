@@ -105,5 +105,12 @@ this plugin's stored tokens. It has not been run for the direct implementation.
 
 See [direct connection design](docs/DIRECT.md), [security requirements](SECURITY.md),
 [verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
-The repository is private and has no selected distribution license. This project
-is independent of OpenAI, DeepSeek, and Nous Research.
+
+## License
+
+Licensed under the [MIT License](LICENSE). Copyright (c) 2026 sakusaku-rich.
+Dependencies retain their own licenses. This license applies to this project
+and does not grant rights to OpenAI services or override their terms.
+
+The repository remains private. This project is independent of OpenAI, DeepSeek,
+and Nous Research.
