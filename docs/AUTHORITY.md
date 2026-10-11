@@ -64,3 +64,48 @@ Neither instructions telling the model to avoid tools nor terminating after a
 native-tool event meets the pre-dispatch isolation requirement. Do not replace
 the gate with an undocumented opt-in flag. If upstream cannot provide the
 required isolation, reconsider the integration architecture with the owner.
+
+## Isolation investigation, second stage
+
+A source-backed replacement path exists in the pinned binary:
+`debug.config_lockfile.load_path` loads an authoritative configuration layer,
+retaining the selected `CODEX_HOME` and managed requirements. It is not an empty
+TOML overlay. The tagged object above peels to source commit
+`5d1fbf26c43abc65a203928b2e31561cb039e06d`.
+
+An exported lock was generated under a synthetic HOME with all registered
+features disabled, no project documents, no history persistence, no hooks,
+plugins, MCP, application tools, remote models, memories, or skill instructions.
+The generated lock is stored under `assets/`, with temporary log/database paths
+rendered at runtime. A private temporary HOME and cwd prevent ordinary home and
+project skill/document discovery, while the explicit existing `CODEX_HOME` can
+remain Codex's authentication location. The bridge never opens authentication
+files.
+
+Real-binary experiments, without any login, established:
+
+- An adversarial existing config can report its original provider in
+  `config/read` while the created thread uses the lock's `openai` provider.
+  Therefore `config/read` is not a valid effective-lock attestation.
+- The locked configuration creates a credential-free ephemeral thread and
+  rejects a lock with a different Codex version.
+- With a test-only authentication-free localhost provider, only `update_plan`
+  was model-visible. A forced `exec_command` returned an unsupported-tool
+  result and did not create its execution marker.
+
+`update_plan` remains an internal, non-filesystem tool. These observations do not
+establish a general-purpose OS sandbox or authorize real-account execution.
+
+The integration test exposed a prototype schema error: the installed 0.144.6
+`SandboxPolicy` uses `readOnly` with required `networkAccess`; it does not expose
+the newer documented `access.readableRoots` field. The existing mock accepted an
+invalid request. A proposed correction and test were rejected by automatic
+approval review because `readOnly` may allow broad filesystem reads. The change
+has not been applied; owner approval was requested. An additional restrictive
+macOS Seatbelt launch attempt exited before Codex startup, so it has not been
+accepted as a verified alternative.
+
+The production gate remains closed. The candidate isolated launcher exists as
+an internal module, but is not connected to the public plugin entry point.
+The full protocol/adapter test and permission semantics must pass before that
+connection is made.

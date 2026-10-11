@@ -32,3 +32,25 @@ until the pre-dispatch safety prerequisite is resolved.
 All protocol response values, account identities, conversation text, stderr,
 and token-like examples used by tests are synthetic. Tests do not copy code
 from a community plugin or require a real login.
+
+## Second-stage results
+
+The normal suite now has 38 passing tests and two opt-in real-binary tests
+skipped when `CODEX_ISOLATION_EXECUTABLE` is absent. Additional passing coverage
+checks the private lock runtime, exact version rejection, and descendant cleanup.
+
+Running the opt-in suite with the local 0.144.6 executable produced one passing
+and one failing test. Configuration replacement/version-drift rejection passed.
+The combined history/tool-rejection/streaming test fails at an upstream request
+because the prototype sends an unsupported sandbox shape. This failure is
+retained as a visible regression; it is not counted as successful validation.
+
+An earlier standalone credential-free experiment against a localhost mock
+provider demonstrated forced `exec_command` rejection and text streaming, with
+only `update_plan` advertised. That experiment did not use the complete bridge
+adapter and is not a substitute for the failing integration test.
+
+Automatic approval review rejected correcting the sandbox shape and rerunning
+the test, citing potential broad file reads in `readOnly`. Owner approval is
+pending. A stricter OS sandbox alternative did not start Codex successfully.
+No real account or external model endpoint was used. Live access stays disabled.

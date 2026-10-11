@@ -19,6 +19,11 @@ Implemented and exercised with synthetic servers:
 - Fixed error messages, discarded upstream diagnostics, and bounded protocol input.
 - Harness provider registration and packaged service-fixture composition.
 
+An isolated-launcher candidate now exists, with a private HOME/cwd and an
+authoritative configuration lock. It is not wired to the public adapter.
+The real-binary adapter test is blocked by a protocol correction awaiting owner
+approval after automatic approval review rejected it.
+
 Native-tool and inherited-configuration isolation is still unresolved. Empty
 workspace environments remove environment-dependent tools in the examined
 Codex source, but do not establish that inherited MCP, plugins, hooks, provider
