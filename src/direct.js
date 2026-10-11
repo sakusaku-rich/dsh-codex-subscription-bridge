@@ -1,14 +1,17 @@
 import {events} from './sse.js';
 export {events} from './sse.js';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { BridgeError, classified, object, string } from './errors.js';
 import { validateInput, PROVIDER } from './text.js';
 import { Http, BASE, statusError } from './http.js';
 import { accountHeaders } from './auth.js';
 
+const { name, version } = createRequire(import.meta.url)('../package.json');
+
 function headers(token) {
   return { Authorization: `Bearer ${token}`, ...accountHeaders(token),
-    'User-Agent': 'dsh-codex-subscription-bridge/0.0.0', originator: 'dsh-codex-subscription-bridge' };
+    'User-Agent': `${name}/${version}`, originator: 'dsh-codex-subscription-bridge' };
 }
 export class DirectBridge {
   constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000 } = {}) {
