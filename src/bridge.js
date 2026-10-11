@@ -106,6 +106,16 @@ export class SubscriptionBridge {
     throw new BridgeError('LIMIT_EXCEEDED');
   }
   async listModels(signal) {
+    // UI consumers often discover the same provider concurrently. Share only
+    // in-flight, uncancelled discovery; never cache authentication or entitlements.
+    if (signal) return this.discoverModels(signal);
+    if (!this.discovery) {
+      this.discovery = this.discoverModels().finally(() => { this.discovery = undefined; });
+    }
+    const models = await this.discovery;
+    return models.map((model) => ({ ...model, inputModalities: [...model.inputModalities] }));
+  }
+  async discoverModels(signal) {
     const rpc = await this.session(signal);
     try { return await this.catalog(rpc, signal); }
     finally { await this.release(rpc); }

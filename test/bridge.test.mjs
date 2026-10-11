@@ -185,3 +185,29 @@ test('multiple assistant items retain independent text blocks', async () => {
   assert.deepEqual(chunks.filter((chunk) => chunk.type === 'block-end').map((chunk) => [chunk.index, chunk.block.text]), [[0, 'Hello!'], [1, 'Second answer']]);
   assert.equal(chunks.at(-1).reason.kind, 'stop');
 });
+
+test('concurrent discovery shares one child and retries after settlement', async () => {
+  const children = [];
+  const bridge = new SubscriptionBridge(async () => {
+    const fake = new Fake(); children.push(fake); return fake;
+  });
+  const models = await Promise.all(Array.from({ length: 12 }, () => bridge.listModels()));
+  assert.equal(children.length, 1);
+  assert.equal(children[0].closed, 1);
+  assert.equal(models.every((value) => value[0].id === 'test-model'), true);
+  models[0][0].inputModalities.push('image');
+  assert.deepEqual(models[1][0].inputModalities, ['text']);
+  await bridge.listModels();
+  assert.equal(children.length, 2);
+  await bridge.close();
+});
+test('failed shared discovery does not poison subsequent discovery', async () => {
+  let calls = 0;
+  const bridge = new SubscriptionBridge(async () => new Fake({ auth: ++calls === 1 ? 'apikey' : 'chatgpt' }));
+  const results = await Promise.allSettled(Array.from({ length: 12 }, () => bridge.listModels()));
+  assert.equal(calls, 1);
+  assert.equal(results.every((result) => result.status === 'rejected' && result.reason.code === 'AUTH_REQUIRED'), true);
+  assert.equal((await bridge.listModels())[0].id, 'test-model');
+  assert.equal(calls, 2);
+  await bridge.close();
+});
