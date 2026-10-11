@@ -36,7 +36,7 @@ export class RpcProcess {
     this.waiter = undefined;
     this.serial = 0;
     this.buffer = Buffer.alloc(0);
-    this.child = spawn(command, args, { cwd, env, shell: false, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.child = spawn(command, args, { cwd, env, shell: false, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.child.stdout.on('data', (bytes) => this.read(bytes));
     // Drain without decoding or logging diagnostic bodies.
     let diagnosticBytes = 0;
@@ -166,6 +166,15 @@ export class RpcProcess {
       });
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
   }
+  stop(signal) {
+    if (!this.child.pid) return;
+    try {
+      if (process.platform === 'win32') this.child.kill(signal);
+      else process.kill(-this.child.pid, signal);
+    } catch (error) {
+      if (error.code !== 'ESRCH') this.child.kill(signal);
+    }
+  }
   close() {
     if (this.closing) return this.closing;
     this.closing = (async () => {
@@ -173,11 +182,11 @@ export class RpcProcess {
       await Promise.resolve();
       this.fail(new BridgeError('CLOSED'));
       this.child.stdin.destroy();
-      this.child.kill('SIGTERM');
+      this.stop('SIGTERM');
       let timer;
       await Promise.race([this.exited, new Promise((resolve) => { timer = setTimeout(resolve, this.shutdownMs); })]);
       clearTimeout(timer);
-      if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill('SIGKILL');
+      this.stop('SIGKILL');
       await Promise.race([this.exited, new Promise((resolve) => { timer = setTimeout(resolve, this.shutdownMs); })]);
       clearTimeout(timer);
     })();

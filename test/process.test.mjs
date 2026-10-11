@@ -62,3 +62,19 @@ test('message nesting and aggregate notification bytes are bounded', async () =>
   }, { code: 'LIMIT_EXCEEDED' });
   await client.close();
 });
+test('shutdown also terminates a descendant after its parent exits', { skip: process.platform === 'win32' }, async () => {
+  const client = rpc('descendant', { shutdownMs: 30 });
+  const event = await client.next();
+  const pid = event.params.pid;
+  try {
+    await client.request('ready');
+    await client.close();
+    let gone = false;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try { process.kill(pid, 0); }
+      catch (error) { if (error.code === 'ESRCH') { gone = true; break; } }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(gone, true);
+  } finally { await client.close(); }
+});
