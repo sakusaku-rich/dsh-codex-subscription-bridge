@@ -3,7 +3,7 @@
 ## Trust and credential ownership
 
 The direct adapter holds a dedicated ChatGPT OAuth login. It never reads, imports,
-updates, or deletes Codex/Hermes credentials.
+updates, or deletes Codex credentials.
 
 The plugin, Harness, Node runtime, OS, and processes running as the same OS user
 remain trusted. Desktop admission does not patch or audit all Electron/Chromium

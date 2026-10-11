@@ -1,23 +1,16 @@
 # Direct subscription connection
 
-## Decision and source
+## Decision
 
-The provider uses a Hermes-style direct subscription connection. The dedicated
-device-code OAuth login owns its own token lifecycle;
-Codex credentials are not imported. Initial features remain model selection,
-text conversations, streaming, and cancellation.
+The provider uses a direct subscription connection. The dedicated device-code
+OAuth login owns its own token lifecycle; Codex credentials are not imported.
+Initial features remain model selection, text conversations, streaming, and
+cancellation.
 
-Reference: [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/d4d2ab7b5d104166e7e22a02cafd12f1fe456a31),
-commit `d4d2ab7b5d104166e7e22a02cafd12f1fe456a31`.
-Reviewed modules: `hermes_cli/auth_codex.py`, `auth_constants.py`,
-`codex_models.py`, `agent/codex_headers.py`, `model_metadata.py`, and
-`agent/transports/codex.py`. The reference is MIT-licensed. This JavaScript
-implementation is independently written; it does not vendor Hermes code.
-
-Hermes implements OAuth, refresh and store locking rather than requiring a Codex
-process for ordinary turns. Importing existing refresh tokens creates a shared
-rotation family,
-even when copies live in different files; dedicated login avoids that coupling.
+The dedicated login implements OAuth, refresh, and store locking rather than
+requiring a Codex process for ordinary turns. Importing existing refresh tokens
+creates a shared rotation family, even when copies live in different files;
+dedicated login avoids that coupling.
 
 ## Transport
 
@@ -25,14 +18,14 @@ Only `https://auth.openai.com` OAuth/device endpoints and
 `https://chatgpt.com/backend-api/codex` model/Responses endpoints are used.
 Redirects are rejected. No custom host, raw token, proxy endpoint, arbitrary
 request override, shell, or Codex process is accepted in public configuration.
-The client identifies itself as `dsh-codex-subscription-bridge`, not Hermes or
-the official CLI. Account/residency headers are derived from the OAuth token;
+The client identifies itself as `dsh-codex-subscription-bridge`, not the
+official CLI. Account/residency headers are derived from the OAuth token;
 JWT claims are routing and expiry hints, not signature-verification evidence.
 
 Model catalog compatibility queries use `99.0.0` then `0.0.0` on an empty
-catalog, following Hermes's pinned selectors. These are not claims about an
-installed CLI version. Unlike Hermes, this provider does not supplement live
-catalogs with synthetic newer slugs, offline defaults, or large-context aliases.
+catalog. These are not claims about an installed CLI version. This provider
+does not supplement live catalogs with synthetic newer slugs, offline defaults,
+or large-context aliases.
 Do not claim all ChatGPT models are available.
 
 Text is converted to Responses input. System/developer instructions are
@@ -97,8 +90,8 @@ fingerprint; credentials are checked again on each lookup and each turn.
 
 The initial login path is device code only. Browser PKCE fallback, keyring,
 credential pools, token import, tools, reasoning controls, quota display, and
-Hermes's provider overrides are not included. These exclusions keep the implementation
-reviewable and avoid copying Hermes's entire runtime.
+provider overrides are not included. These exclusions keep the implementation
+reviewable and the scope small.
 
 The owner confirmed dedicated login and model selection; authorized diagnostics
 confirmed an authenticated catalog and SSE-framed response. Successful generation

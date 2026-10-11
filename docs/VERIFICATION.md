@@ -17,7 +17,7 @@ npm audit --audit-level=low --prefix verification/runtime
 The root suite uses the small pinned Cordis/LLM peer dependency tree. The separate
 installation and profile checks require the full locked Harness 0.2.0-rc.2 runtime.
 All automated authentication and service fixtures are synthetic and disposable.
-Tests never import existing Codex/Hermes credentials or send real model requests.
+Tests never import existing Codex credentials or send real model requests.
 
 ## Covered controls
 

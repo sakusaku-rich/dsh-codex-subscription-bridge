@@ -6,7 +6,7 @@ subscription backend. No Codex process or token import is required.
 Expose live visible models, stream bounded text history, support cancellation,
 and produce credential-safe errors. Repository and product text remain English.
 
-Initial exclusions: browser PKCE fallback, Codex/Hermes token import, keyring,
+Initial exclusions: browser PKCE fallback, existing token import, keyring,
 credential pools, API keys, custom endpoints, tools, images, search and quota UI.
 
 Acceptance requires synthetic dedicated login/refresh/logout, private storage,

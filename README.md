@@ -57,7 +57,7 @@ node src/auth-cli.js logout
 The packaged command is `dsh-codex-subscription-auth`. `login` prints the fixed
 OpenAI device-login URL and a one-time code, then waits for browser approval.
 Device-code access must be enabled for the account/workspace. This initial
-version does not implement browser PKCE fallback or import Codex/Hermes tokens.
+version does not implement browser PKCE fallback or import existing tokens.
 Login is an explicit account operation; automated verification never runs a
 real login or submits real model requests.
 
@@ -90,7 +90,7 @@ Any configuration key fails with `CONFIG_INVALID`. The route is
 The provider fetches visible subscription models directly. A 60-second
 in-memory catalog cache reduces repeated requests; authentication is reread on
 cache hits. Each conversation request freshly verifies the catalog and its
-credentials. Compatibility selectors follow the pinned Hermes reference;
+credentials. Compatibility selectors are pinned by design;
 synthetic model aliases and unadvertised models are not added. Visibility does
 not prove entitlement to a successful request.
 

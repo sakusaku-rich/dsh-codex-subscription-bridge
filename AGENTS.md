@@ -17,7 +17,7 @@ set limited to model selection, streamed text conversations, and cancellation.
 ## Credential and transport handling
 
 - Only the dedicated authentication module owns OAuth storage and refresh.
-- Never import, read, change, or log Codex/Hermes credential files.
+- Never import, read, change, or log Codex credential files.
 - Never accept raw credentials or custom endpoints in plugin configuration.
 - Reject API-key authentication and never switch to paid API routes.
 - Use fixed HTTPS destinations, reject redirects, and return safe fixed errors.
@@ -38,6 +38,6 @@ install into a normal Harness profile without the owner's explicit instruction.
 
 Use synthetic credentials and in-memory HTTPS fixtures in normal tests. Never
 make paid model calls or use the owner's existing authentication in automated
-tests. Pin supported Harness, reference sources, and dependency versions before implementing
+tests. Pin supported Harness and dependency versions before implementing
 their integration. Keep source, packaged artifacts, and documented behavior
 consistent. Report unverified behavior and remaining security risks explicitly.
