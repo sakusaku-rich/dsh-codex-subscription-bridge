@@ -23,7 +23,8 @@
     "check": "node scripts/check.mjs",
     "test": "node --test test/*.test.mjs",
     "verify": "npm run check && npm test",
-    "test:isolation": "node --test test/real-isolation.test.mjs"
+    "test:isolation": "node --test test/real-isolation.test.mjs",
+    "test:profile": "node scripts/verify-profile.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",

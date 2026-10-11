@@ -11,6 +11,7 @@ class Fake {
     this.calls.push({ method, params });
     switch (method) {
       case 'initialize': return { userAgent: 'synthetic-server/0.144.6' };
+      case 'getAuthStatus': return { authMethod: this.auth, authToken: null, requiresOpenaiAuth: true };
       case 'account/read': return { account: this.auth === null ? null : { type: this.auth, email: 'synthetic@example.invalid' }, requiresOpenaiAuth: true };
       case 'model/list': return this.mode === 'bad-models' ? { data: [{}], nextCursor: null } : { data: [{ model: 'test-model', displayName: 'Test model', hidden: false }], nextCursor: null };
       case 'thread/start': return { thread: { id: 'synthetic-thread' } };
@@ -36,8 +37,11 @@ class Fake {
   async close() { this.closed++; }
 }
 const collect = async (stream) => { const chunks = []; for await (const chunk of stream) chunks.push(chunk); return chunks; };
-test('production always fails before touching authentication or launching a process', () => {
-  assert.throws(() => createProductionSession({ disableSafety: true }), { code: 'AUTHORITY_UNVERIFIED' });
+test('unconfigured production fails before touching authentication or launching a process', () => {
+  assert.throws(() => createProductionSession(), { code: 'CONFIG_REQUIRED' });
+  assert.throws(() => createProductionSession('/synthetic/codex'), { code: 'CONFIG_REQUIRED' });
+  assert.throws(() => createProductionSession('/synthetic/codex', {}, 'auto'), { code: 'CONFIG_INVALID' });
+  assert.throws(() => createProductionSession({ disableSafety: true }), { code: 'CONFIG_INVALID' });
 });
 for (const auth of ['apikey', 'chatgptAuthTokens', 'bedrock', null]) {
   test(`rejects authentication mode ${auth} and cleans up`, async () => {
@@ -52,6 +56,7 @@ test('bounded model discovery returns only text route metadata', async () => {
   const fake = new Fake();
   assert.deepEqual(await new SubscriptionBridge(async () => fake).listModels(), [{ id: 'test-model', name: 'Test model', provider: PROVIDER, inputModalities: ['text'] }]);
   assert.deepEqual(fake.calls.find((call) => call.method === 'account/read').params, { refreshToken: false });
+  assert.deepEqual(fake.calls.find((call) => call.method === 'getAuthStatus').params, { includeToken: false, refreshToken: false });
   assert.equal(fake.closed, 1);
 });
 test('malformed model discovery fails and closes', async () => {
@@ -83,7 +88,7 @@ test('parallel and forked histories always use new sessions and ignore replay ID
     assert.equal(fake.closed, 1);
   }
 });
-for (const override of [{ tools: [{ name: 'shell' }] }, { temperature: 0 }, { maxTokens: 10 }, { messages: [{ role: 'user', content: [{ type: 'image' }] }] }]) {
+for (const override of [{ tools: {} }, { temperature: 0 }, { maxTokens: 10 }, { messages: [{ role: 'user', content: [{ type: 'image' }] }] }]) {
   test('unsupported input is refused before starting a child', async () => {
     let called = false;
     await assert.rejects(collect(new SubscriptionBridge(async () => { called = true; }).stream(input(override))), { code: 'INPUT_UNSUPPORTED' });
@@ -130,4 +135,53 @@ test('deadline releases a child even while the consumer pauses at a yield', asyn
   assert.equal(fake.closed, 1);
   await iterator.return();
   assert.equal(fake.closed, 1);
+});
+test('Harness declarations are discarded without granting or forwarding tool authority', async () => {
+  const fake = new Fake();
+  await collect(new SubscriptionBridge(async () => fake).stream(input({
+    tools: [{ name: 'private-harness-tool', parameters: { secret: 'synthetic-header-only' } }],
+    toolHistory: { tools: [{ name: 'private-harness-tool' }], updates: [] },
+  })));
+  assert.equal(JSON.stringify(fake.calls).includes('private-harness-tool'), false);
+  assert.equal(JSON.stringify(fake.calls).includes('synthetic-header-only'), false);
+  assert.deepEqual(fake.calls.find((call) => call.method === 'thread/start').params.dynamicTools, []);
+});
+test('actual tool execution history is rejected before dispatch', async () => {
+  let called = false;
+  const bridge = new SubscriptionBridge(async () => { called = true; });
+  await assert.rejects(collect(bridge.stream(input({ messages: [
+    { role: 'assistant', content: [{ type: 'tool-call', name: 'shell', arguments: '{}' }] }, ...input().messages,
+  ] }))), { code: 'INPUT_UNSUPPORTED' });
+  assert.equal(called, false);
+});
+test('even a ChatGPT account summary cannot admit externally managed credentials', async () => {
+  const fake = new Fake();
+  const original = fake.request.bind(fake);
+  fake.request = async (method, params) => method === 'getAuthStatus' ? { authMethod: 'chatgptAuthTokens', authToken: null, requiresOpenaiAuth: true } : original(method, params);
+  await assert.rejects(new SubscriptionBridge(async () => fake).listModels(), { code: 'AUTH_REQUIRED' });
+  assert.equal(fake.closed, 1);
+});
+test('a token-bearing auth-mode response is refused without echoing it', async () => {
+  const fake = new Fake();
+  const original = fake.request.bind(fake);
+  fake.request = async (method, params) => method === 'getAuthStatus' ? { authMethod: 'chatgpt', authToken: 'synthetic-secret-value', requiresOpenaiAuth: true } : original(method, params);
+  await assert.rejects(new SubscriptionBridge(async () => fake).listModels(), (error) => error.code === 'PROTOCOL_INVALID' && !error.message.includes('synthetic-secret-value'));
+});
+test('multiple assistant items retain independent text blocks', async () => {
+  const fake = new Fake();
+  const original = fake.request.bind(fake);
+  fake.request = async (method, params) => {
+    const result = await original(method, params);
+    if (method === 'turn/start') {
+      const paramsFor = (itemId) => ({ threadId: 'synthetic-thread', turnId: 'synthetic-turn', itemId });
+      fake.events.splice(1, 0,
+        { method: 'item/completed', params: { ...paramsFor('message'), item: { type: 'agentMessage', id: 'message', text: 'Hello!' } } },
+        { method: 'item/agentMessage/delta', params: { ...paramsFor('second'), delta: 'Second answer' } },
+        { method: 'item/completed', params: { ...paramsFor('second'), item: { type: 'agentMessage', id: 'second', text: 'Second answer' } } });
+    }
+    return result;
+  };
+  const chunks = await collect(new SubscriptionBridge(async () => fake).stream(input()));
+  assert.deepEqual(chunks.filter((chunk) => chunk.type === 'block-end').map((chunk) => [chunk.index, chunk.block.text]), [[0, 'Hello!'], [1, 'Second answer']]);
+  assert.equal(chunks.at(-1).reason.kind, 'stop');
 });

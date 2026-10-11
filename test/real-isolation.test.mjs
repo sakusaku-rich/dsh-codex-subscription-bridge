@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir, access, rm } from 'node:f
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
-import { prepareRuntime, isolatedArguments, verifyVersion } from '../src/isolation.js';
+import { prepareRuntime, isolatedArguments, verifyVersion, launchIsolated } from '../src/isolation.js';
 import { RpcProcess } from '../src/process.js';
 import { SubscriptionBridge, PROVIDER } from '../src/bridge.js';
 
@@ -79,6 +79,7 @@ test('real Codex denies model-forced native execution and streams text from a lo
     const bridge = new SubscriptionBridge(async () => ({
       request(method, params, signal) {
         // Only this synthetic seam bypasses account admission; no login exists.
+        if (method === 'getAuthStatus') return { authMethod: 'chatgpt', authToken: null, requiresOpenaiAuth: true };
         if (method === 'account/read') return { account: { type: 'chatgpt' }, requiresOpenaiAuth: true };
         if (method === 'thread/start') params = { ...params, modelProvider: 'fixture' };
         return client.request(method, params, signal);
@@ -100,4 +101,16 @@ test('real Codex denies model-forced native execution and streams text from a lo
     await assert.rejects(access(f.marker));
     assert.equal((await readdir(f.authHome)).includes('auth.json'), false);
   } finally { await client?.close(); await new Promise((resolve) => server.close(resolve)); await f.remove(); }
+});
+test('real API-key storage is refused without changing the synthetic authentication file', options, async () => {
+  const f = await fixture();
+  try {
+    const path = join(f.authHome, 'auth.json');
+    const synthetic = JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'synthetic-not-a-real-api-key' });
+    await writeFile(path, synthetic, { mode: 0o600 });
+    const bridge = new SubscriptionBridge(() => launchIsolated(executable, { HOME: f.runtime.home, CODEX_HOME: f.authHome }));
+    try { await assert.rejects(bridge.listModels(), { code: 'AUTH_REQUIRED' }); }
+    finally { await bridge.close(); }
+    assert.equal(await readFile(path, 'utf8'), synthetic);
+  } finally { await f.remove(); }
 });

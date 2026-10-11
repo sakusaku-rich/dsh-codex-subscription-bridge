@@ -194,8 +194,11 @@ export class RpcProcess {
   }
 }
 
-export function createProductionSession() {
-  // No opt-in setting can bypass this gate. Resolve inherited MCP, hooks,
-  // extensions, provider endpoints, and effective authority before removing it.
-  throw new BridgeError('AUTHORITY_UNVERIFIED');
+export function createProductionSession(executable, environment, credentialStore) {
+  if (executable === undefined) throw new BridgeError('CONFIG_REQUIRED');
+  if (typeof executable !== 'string' || !isAbsolute(executable) || /[\x00\r\n]/u.test(executable)) throw new BridgeError('CONFIG_INVALID');
+  if (credentialStore === undefined) throw new BridgeError('CONFIG_REQUIRED');
+  if (!['file', 'keyring'].includes(credentialStore)) throw new BridgeError('CONFIG_INVALID');
+  // The only connection path uses the fixed, versioned isolation policy.
+  return import('./isolation.js').then(({ launchIsolated }) => launchIsolated(executable, environment, credentialStore));
 }

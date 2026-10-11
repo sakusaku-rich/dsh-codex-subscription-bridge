@@ -1,9 +1,10 @@
 const messages = Object.freeze({
-  AUTHORITY_UNVERIFIED: 'Live Codex access is disabled: native tool and inherited configuration isolation is not verified.',
+  CONFIG_REQUIRED: 'Configure a trusted absolute Codex executable path and credential store before connecting.',
   AUTH_REQUIRED: 'An existing managed ChatGPT login is required.',
+  PLATFORM_UNSUPPORTED: 'This bridge currently supports macOS only.',
   VERSION_UNSUPPORTED: 'This Codex version is not supported.',
   CONFIG_INVALID: 'The bridge configuration is invalid.',
-  INPUT_UNSUPPORTED: 'Only bounded text conversations without tools or generation overrides are supported.',
+  INPUT_UNSUPPORTED: 'Only bounded text conversations without tool execution history or generation overrides are supported.',
   MODEL_UNAVAILABLE: 'The selected subscription model is unavailable.',
   PROTOCOL_INVALID: 'The app-server returned an unsupported protocol message.',
   UPSTREAM_FAILED: 'The app-server request failed.',

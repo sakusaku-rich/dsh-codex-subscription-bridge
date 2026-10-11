@@ -1,13 +1,15 @@
+import { isAbsolute } from 'node:path';
 import { HarnessError, LlmAdapter } from '@deepseek-ai/dsh-llm';
 import { SubscriptionBridge, PROVIDER } from './bridge.js';
 import { createProductionSession } from './process.js';
+import { authenticationEnvironment } from './environment.js';
 import { BridgeError, failure } from './errors.js';
 
 export const name = 'dsh-codex-subscription-bridge';
 export const inject = ['llm'];
 class SubscriptionAdapter extends LlmAdapter {
-  constructor() { super(); this.bridge = new SubscriptionBridge(createProductionSession); }
-  providerInfo() { return { id: PROVIDER, name: 'Codex (ChatGPT subscription)' }; }
+  constructor(executable, environment, credentialStore) { super(); this.bridge = new SubscriptionBridge(() => createProductionSession(executable, environment, credentialStore)); }
+  providerInfo() { return { id: PROVIDER, name: 'Codex (ChatGPT subscription, text only)' }; }
   providerRetryPolicy() { return { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 }; }
   async listModels(provider) {
     if (provider !== PROVIDER) throw new BridgeError('INPUT_UNSUPPORTED');
@@ -32,8 +34,11 @@ class SubscriptionAdapter extends LlmAdapter {
   }
 }
 export function apply(ctx, config = {}) {
-  if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).length) throw new BridgeError('CONFIG_INVALID');
-  const adapter = new SubscriptionAdapter();
+  if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some((key) => !['executable', 'credentialStore'].includes(key))) throw new BridgeError('CONFIG_INVALID');
+  const executable = config.executable;
+  if (executable !== undefined && (typeof executable !== 'string' || !isAbsolute(executable) || /[\x00\r\n]/u.test(executable))) throw new BridgeError('CONFIG_INVALID');
+  if (config.credentialStore !== undefined && !['file', 'keyring'].includes(config.credentialStore)) throw new BridgeError('CONFIG_INVALID');
+  const adapter = new SubscriptionAdapter(executable, authenticationEnvironment(ctx), config.credentialStore);
   ctx.effect(() => {
     const unregister = ctx.llm.registerAdapter([PROVIDER], adapter);
     return async () => { unregister(); await adapter.bridge.close(); };

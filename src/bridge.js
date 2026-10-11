@@ -4,8 +4,14 @@ export const PROVIDER = 'codex-subscription';
 const TEXT_LIMIT = 256 * 1024;
 function validateInput(options) {
   if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > 128 || !options.messages.length ||
-      options.tools?.length || options.toolHistory || options.temperature !== undefined || options.maxTokens !== undefined ||
+      options.temperature !== undefined || options.maxTokens !== undefined ||
       options.stop !== undefined || options.reasoningEffort !== undefined) throw new BridgeError('INPUT_UNSUPPORTED');
+  // Harness includes declarations in ordinary text requests. They grant no
+  // Codex authority and are never serialized into app-server input.
+  if (options.tools !== undefined && (!Array.isArray(options.tools) || options.tools.length > 256)) throw new BridgeError('INPUT_UNSUPPORTED');
+  if (options.toolHistory !== undefined && (!options.toolHistory || typeof options.toolHistory !== 'object' ||
+      !Array.isArray(options.toolHistory.tools) || options.toolHistory.tools.length > 256 ||
+      !Array.isArray(options.toolHistory.updates) || options.toolHistory.updates.length > 128)) throw new BridgeError('INPUT_UNSUPPORTED');
   let bytes = 0;
   const history = [];
   if (options.system !== undefined) {
@@ -28,7 +34,7 @@ function validateInput(options) {
   return history;
 }
 
-/** Synthetic protocol implementation. The production entry point has no factory override. */
+/** Protocol bridge. The public entry fixes its launcher; factory injection is a test seam. */
 export class SubscriptionBridge {
   constructor(sessionFactory, { turnTimeoutMs = 120_000 } = {}) {
     this.factory = sessionFactory;
@@ -56,6 +62,9 @@ export class SubscriptionBridge {
       }, signal));
       string(result.userAgent, 1024);
       rpc.notify('initialized');
+      const mode = object(await rpc.request('getAuthStatus', { includeToken: false, refreshToken: false }, signal));
+      if (mode.authToken !== null) throw new BridgeError('PROTOCOL_INVALID');
+      if (mode.authMethod !== 'chatgpt' || mode.requiresOpenaiAuth !== true) throw new BridgeError('AUTH_REQUIRED');
       const auth = object(await rpc.request('account/read', { refreshToken: false }, signal));
       if (!auth.account || object(auth.account).type !== 'chatgpt' || auth.requiresOpenaiAuth !== true) throw new BridgeError('AUTH_REQUIRED');
       return rpc;
@@ -133,7 +142,21 @@ export class SubscriptionBridge {
         input: history.at(-1).content.map((block) => ({ type: 'text', text: block.text })),
       }, controller.signal));
       turnId = string(object(turn.turn).id);
-      let text = '', itemId;
+      const blocks = new Map();
+      let outputBytes = 0;
+      function blockFor(id) {
+        if (!blocks.has(id)) {
+          if (blocks.size >= 128) throw new BridgeError('LIMIT_EXCEEDED');
+          blocks.set(id, { index: blocks.size, text: '', ended: false });
+        }
+        return blocks.get(id);
+      }
+      function append(block, delta) {
+        if (block.ended) throw new BridgeError('PROTOCOL_INVALID');
+        outputBytes += Buffer.byteLength(delta);
+        if (outputBytes > TEXT_LIMIT) throw new BridgeError('LIMIT_EXCEEDED');
+        block.text += delta;
+      }
       while (true) {
         if (controller.signal.aborted) throw new BridgeError(timedOut ? 'TIMEOUT' : 'ABORTED');
         const event = await rpc.next(controller.signal);
@@ -151,24 +174,38 @@ export class SubscriptionBridge {
         if (event.method === 'item/agentMessage/delta') {
           if (params.turnId !== turnId) throw new BridgeError('PROTOCOL_INVALID');
           const id = string(params.itemId);
-          if (itemId && itemId !== id) throw new BridgeError('PROTOCOL_INVALID');
-          if (!itemId) { itemId = id; yield { type: 'block-start', index: 0, blockType: 'text' }; }
+          const existing = blocks.has(id);
+          const block = blockFor(id);
+          if (!existing) yield { type: 'block-start', index: block.index, blockType: 'text' };
           const delta = string(params.delta, TEXT_LIMIT);
-          text += delta;
-          if (Buffer.byteLength(text) > TEXT_LIMIT) throw new BridgeError('LIMIT_EXCEEDED');
-          yield { type: 'text-delta', index: 0, text: delta };
+          append(block, delta);
+          yield { type: 'text-delta', index: block.index, text: delta };
         } else if (event.method === 'turn/completed') {
           const completed = object(params.turn);
           if (completed.id !== turnId) throw new BridgeError('PROTOCOL_INVALID');
           if (completed.status !== 'completed') throw new BridgeError(completed.status === 'interrupted' ? 'ABORTED' : 'UPSTREAM_FAILED');
-          if (itemId) yield { type: 'block-end', index: 0, block: { type: 'text', text } };
+          for (const block of blocks.values()) {
+            if (!block.ended) { block.ended = true; yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
+          }
           completedSuccessfully = true;
           yield { type: 'finish', reason: { kind: 'stop' } };
           return;
         } else if (event.method === 'item/started' || event.method === 'item/completed') {
           const item = object(params.item);
           if (params.turnId !== turnId || !['userMessage', 'agentMessage', 'reasoning', 'plan'].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID');
-        } else if (event.method === 'turn/started' || event.method === 'thread/status/changed' || event.method === 'thread/tokenUsage/updated') {
+          if (event.method === 'item/completed' && item.type === 'agentMessage') {
+            const id = string(item.id);
+            const text = typeof item.text === 'string' && item.text.length === 0 ? '' : string(item.text, TEXT_LIMIT);
+            const existing = blocks.has(id);
+            const block = blockFor(id);
+            if (!existing) yield { type: 'block-start', index: block.index, blockType: 'text' };
+            if (block.ended || !text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID');
+            const tail = text.slice(block.text.length);
+            if (tail) { append(block, tail); yield { type: 'text-delta', index: block.index, text: tail }; }
+            block.ended = true;
+            yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } };
+          }
+        } else if (event.method === 'turn/started' || event.method === 'thread/status/changed' || event.method === 'thread/tokenUsage/updated' || event.method === 'turn/plan/updated') {
           // Metadata is deliberately not copied to Harness.
         } else if (event.method.startsWith('item/reasoning/')) {
           if (params.turnId !== turnId) throw new BridgeError('PROTOCOL_INVALID');

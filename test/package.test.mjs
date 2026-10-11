@@ -12,11 +12,11 @@ test('real Harness service registers the guarded provider and disposes it', asyn
   const ctx = new Context(); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
   await new Promise((resolve) => setImmediate(resolve));
   try {
-    assert.deepEqual(ctx.llm.listProviders(), [{ id: 'codex-subscription', name: 'Codex (ChatGPT subscription)' }]);
-    await assert.rejects(ctx.llm.listModels('codex-subscription'), { code: 'AUTHORITY_UNVERIFIED' });
+    assert.deepEqual(ctx.llm.listProviders(), [{ id: 'codex-subscription', name: 'Codex (ChatGPT subscription, text only)' }]);
+    await assert.rejects(ctx.llm.listModels('codex-subscription'), { code: 'CONFIG_REQUIRED' });
     const chunks = [];
     for await (const chunk of ctx.llm.stream({ provider: 'codex-subscription', model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic message' }] }] })) chunks.push(chunk);
-    assert.equal(chunks.at(-1).reason.failure.code, 'AUTHORITY_UNVERIFIED');
+    assert.equal(chunks.at(-1).reason.failure.code, 'CONFIG_REQUIRED');
   } finally { await fiber.dispose(); }
   assert.deepEqual(ctx.llm.listProviders(), []);
   await service.dispose();
@@ -46,7 +46,7 @@ import * as plugin from 'dsh-codex-subscription-bridge';
 const ctx = new Context(); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
 await new Promise(resolve => setImmediate(resolve));
 try { await ctx.llm.listModels('codex-subscription'); process.exitCode=1; }
-catch(error) { if(error.code !== 'AUTHORITY_UNVERIFIED') process.exitCode=1; }
+catch(error) { if(error.code !== 'CONFIG_REQUIRED') process.exitCode=1; }
 await fiber.dispose(); await service.dispose();`;
     execFileSync(process.execPath, ['--input-type=module', '-e', code], { cwd: profile, stdio: 'pipe', timeout: 5000 });
     const manifest = JSON.parse(await readFile(join(profile, 'node_modules/dsh-codex-subscription-bridge/package.json'), 'utf8'));

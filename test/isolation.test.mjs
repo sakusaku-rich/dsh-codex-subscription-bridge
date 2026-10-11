@@ -24,3 +24,9 @@ test('non-Codex executable cannot pass exact version admission', async () => {
   try { await assert.rejects(verifyVersion(process.execPath, runtime), { code: 'VERSION_UNSUPPORTED' }); }
   finally { await runtime.remove(); }
 });
+test('credential storage must be explicit and cannot use migration fallback', async () => {
+  await assert.rejects(prepareRuntime('auto'), { code: 'CONFIG_INVALID' });
+  const runtime = await prepareRuntime('keyring');
+  try { assert.ok((await readFile(runtime.lock, 'utf8')).includes('cli_auth_credentials_store = "keyring"')); }
+  finally { await runtime.remove(); }
+});
