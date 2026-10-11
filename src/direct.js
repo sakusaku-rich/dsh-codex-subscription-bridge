@@ -1,3 +1,5 @@
+import {events} from './sse.js';
+export {events} from './sse.js';
 import { createHash } from 'node:crypto';
 import { BridgeError, classified, object, string } from './errors.js';
 import { validateInput, PROVIDER } from './text.js';
@@ -7,42 +9,6 @@ import { accountHeaders } from './auth.js';
 function headers(token) {
   return { Authorization: `Bearer ${token}`, ...accountHeaders(token),
     'User-Agent': 'dsh-codex-subscription-bridge/0.0.0', originator: 'dsh-codex-subscription-bridge' };
-}
-/** Bounded SSE parser; EOF never substitutes for a successful terminal event. */
-export async function* events(body, signal, track = promise => promise) {
-  if (!body) throw new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME');
-  const reader = body.getReader();
-  const cancel = () => { void track(reader.cancel().catch(() => {}).then(() => { reader.releaseLock(); }).catch(() => {})); };
-  signal.addEventListener('abort', cancel, { once: true });
-  const decoder = new TextDecoder('utf-8', { fatal: true });
-  let buffer = '', total = 0, count = 0;
-  try {
-    for (;;) {
-      if (signal.aborted) throw new BridgeError('ABORTED');
-      const part = await reader.read();
-      if (part.done) break;
-      total += part.value.byteLength;
-      if (total > 4 * 1024 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
-      buffer += decoder.decode(part.value, { stream: true });
-      for (;;) {
-        const delimiter = /\r?\n\r?\n/u.exec(buffer); if (!delimiter) break;
-        const frame = buffer.slice(0, delimiter.index); buffer = buffer.slice(delimiter.index + delimiter[0].length);
-        if (Buffer.byteLength(frame) > 1024 * 1024 || ++count > 4096) throw new BridgeError('LIMIT_EXCEEDED');
-        const data = frame.split(/\r?\n/u).filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /u, '')).join('\n');
-        if (!data || data === '[DONE]') continue;
-        let value;
-        try { value = object(JSON.parse(data)); } catch { throw new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME'); }
-        yield value;
-      }
-      if (Buffer.byteLength(buffer) > 1024 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
-    }
-    if (signal.aborted) throw new BridgeError('ABORTED');
-    decoder.decode();
-    if (buffer.trim()) throw new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME');
-  } catch (error) {
-    if (error instanceof BridgeError) throw classified(error, 'SSE_FRAME');
-    throw new BridgeError(signal.aborted ? 'ABORTED' : 'PROTOCOL_INVALID', 'SSE_FRAME');
-  } finally { signal.removeEventListener('abort', cancel); await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 export class DirectBridge {
   constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000 } = {}) {
