@@ -215,3 +215,29 @@ skipped. The packaged pinned Harness CLI/SDK profile also passed synthetic
 conversation and shutdown checks. No real login, refresh or model request was
 performed for this remediation. Real-account update/revocation and complete
 Web conversation coverage remain unverified.
+
+## Follow-up lifecycle corrections — 2026-10-11
+
+OAuth body reading now receives cancellation/deadline signals across polling,
+exchange and refresh. The reader is cancelled on abort and distinguishes caller
+ABORTED from deadline TIMEOUT. Durable refresh intent is not cleared on uncertain
+cancellation. Synthetic polling/body deadline tests cover the previously missed
+path; no real OAuth operation was run.
+
+Completed output items and terminal output use the same bounded text
+reconciliation. Item text is recovered even when terminal output is null.
+Repeated text/item/terminal completion does not duplicate blocks or text;
+contradictions, incomplete item status, unsupported roles/content, and oversized
+text fail closed.
+
+The bridge separately tracks owned authentication/HTTP/discovery operations and
+reader cancellation. close is idempotent, refuses new work, aborts transports,
+and waits for pending ownership cleanup with a five-second deadline. It fails
+with TIMEOUT instead of claiming completion if cleanup remains unresponsive.
+Synthetic tests demonstrate lock release before close completion and paused
+reader cancellation without requiring consumer progress.
+
+Node 22.23.3 verification passed 85 tests; three historical Codex tests were
+skipped. Packaged Harness CLI/SDK synthetic conversation and shutdown passed.
+Real account recovery, real service event variations and complete Web operation
+remain unverified. No account requests were sent for these fixes.

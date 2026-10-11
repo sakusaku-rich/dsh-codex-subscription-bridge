@@ -38,7 +38,9 @@ Do not claim all ChatGPT models are available.
 Text is converted to Responses input. System/developer instructions are
 separated, tools are omitted, and `store` is false. SSE accepts bounded text and
 reasoning/lifecycle metadata; execution items, refusals, malformed messages,
-failed/incomplete responses, and EOF without completion fail closed.
+failed/incomplete responses, and EOF without completion fail closed. Completed
+message items also reconcile text when terminal output is null, without
+duplicating earlier completion events.
 
 ## Authentication lifecycle
 
@@ -75,7 +77,10 @@ removing that directory. No automatic lock-removal or token-export command exist
 Four concurrent HTTP operations, 30-second discovery deadline, 120-second turn
 deadline, 15-second JSON request timeout, 1 MiB JSON/event frames, 4 MiB aggregate
 SSE, 4096 SSE frames, 128 text blocks, and 256 KiB input/output text are enforced.
-Cancellation aborts transport readers even if a consumer pauses. Successful
+Cancellation aborts transport readers even if a consumer pauses. Shutdown
+separately waits for owned authentication/HTTP cleanup and reader cancellation
+with a five-second bound; unresponsive cleanup reports TIMEOUT. OAuth body reads
+preserve caller cancellation and deadline classification across all auth paths. Successful
 catalog metadata is cached in memory for 60 seconds, scoped by credential
 fingerprint; credentials are checked again on each lookup and each turn.
 
