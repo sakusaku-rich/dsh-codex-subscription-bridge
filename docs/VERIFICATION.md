@@ -155,3 +155,34 @@ CI adds a locked Electron 44.0.0 test package and an explicit checksum-verifying
 binary download before synthetic host checks. It does not install Harness Desktop,
 run real login or make model requests. The installed-ASAR composition lane is
 verified locally rather than claimed as a CI check.
+
+## In-app device login UI (2026-10-12)
+
+The packaged client adds Settings → ChatGPT subscription. Explicit login reveals
+only the temporary user-facing sign-in code and the fixed OpenAI link to its
+initiating tab. Access/refresh tokens stay in the backend. Local diagnosis,
+cancellation and confirmed local logout use existing dedicated-store controls.
+A random tab identifier, not a code or token, may persist in sessionStorage for
+reload ownership. Login/logout notify model observers through atomic adapter
+route replacement; no new model routes or API-key fallback are added.
+
+Four exact authenticated POST routes use the existing Connection Fetch seam,
+including Desktop IPC, without replacing the sole Gateway interceptor. Payloads,
+framing, body size and deadlines are bounded; responses disable caching. UI and
+Host shutdown cancel requests and join owned login cleanup. Errors and link
+values are allowlisted; client text is escaped and no arbitrary backend URL is
+rendered. Unknown fields and oversized payloads are rejected.
+
+Browser verification used a disposable standalone Web profile and synthetic OAuth
+responses. It demonstrated panel display, one-time code/link, cancellation,
+restarting login, automatic completion after simulated approval and local logout.
+Normal settings API behavior remained intact. No real OpenAI login, refresh or
+model request was performed. The installed Desktop runtime's Fetch/IPC seam is
+also exercised by the packaged-profile synthetic check; full real GUI/service
+behavior remains owner-operated verification.
+
+Final local checks: 66 root tests passed on Node 22.23.3 and the installed
+Electron host, with zero failures or skips. The authenticated Web route test,
+separate installer test, packaged CLI/SDK conversation and installed Desktop
+Fetch/IPC seam all passed. Account operations in these checks used synthetic
+stores/responses only. The real-account verification boundary is unchanged.

@@ -32,7 +32,13 @@ CLI installation is required by the adapter. `.node-version` and `.nvmrc`
 pin 22.23.3 for development. The public adapter and authentication CLI refuse
 older or unverified runtimes before accessing credentials.
 
-From the repository:
+In Desktop or standalone Web, open **Settings → ChatGPT subscription → Log in**.
+The page shows a **one-time sign-in code** and a fixed OpenAI sign-in link. Enter
+that code in your browser; the page updates after approval. Cancel login, refresh
+local status, and log out from the same page. Access/refresh tokens remain in the
+backend and are never sent to the settings page. See [authentication UI](docs/AUTH_UI.md).
+
+The CLI remains an optional developer/recovery path. From the repository:
 
 ```sh
 node src/auth-cli.js login
@@ -98,6 +104,7 @@ npm ci --ignore-scripts
 npm run verify
 npm ci --ignore-scripts --prefix verification/runtime
 npm run test:install
+npm run test:auth-ui
 DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
 ```
 

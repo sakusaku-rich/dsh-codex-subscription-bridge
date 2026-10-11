@@ -49,18 +49,16 @@ while this profile is in use. `manifest.json` records the artifact integrity,
 commit and runtime; working-tree changes may be included, so build from a clean
 reviewed checkout for distribution.
 
-## Diagnose, explicitly sign in, then start
+## Start and sign in inside Harness
 
 ```sh
-sh artifacts/subscription-web/auth.sh doctor
-sh artifacts/subscription-web/auth.sh login
 sh artifacts/subscription-web/start.sh
 ```
 
-`doctor` does not contact OpenAI or create a missing credential store. A nonzero
-exit indicates local action is needed. `login` is an explicit account operation:
-follow the fixed OpenAI URL and one-time code locally. Never paste the code or
-credentials into an issue. All helper commands use the same private HOME.
+Open Settings → ChatGPT subscription → Log in, then enter the displayed one-time
+sign-in code on the linked OpenAI page. The generated auth helper remains optional
+for developer/recovery diagnosis; doctor does not contact OpenAI or create a
+missing store. Never paste codes or credentials into an issue.
 
 The Web server binds only to 127.0.0.1 and picks an available port. Open the local
 bootstrap URL printed in your terminal. Treat its login token as private and do
@@ -75,6 +73,13 @@ new path must still be manually verified; they are not claimed as completed.
 
 Stop the server with Ctrl-C and let shutdown complete before recovery/removal.
 For authentication problems, see [recovery](RECOVERY.md).
+
+## Sign in inside Harness
+
+Open Settings → ChatGPT subscription → Log in. Enter the one-time sign-in code
+on the linked OpenAI page and wait for the panel to update. Access/refresh tokens
+stay in the backend. Use Cancel login and Log out in this section; the generated
+auth helper is optional for developer/recovery use. See [authentication UI](AUTH_UI.md).
 
 ## Update without mutating a running installation
 

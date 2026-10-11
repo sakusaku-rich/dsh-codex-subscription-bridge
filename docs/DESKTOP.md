@@ -42,18 +42,21 @@ GUI. No login or GUI is automatically started by preparation.
 
 1. Quit every existing DeepSeek Harness Desktop instance normally. The app uses
    a single-instance lock; otherwise the new invocation may focus the old window.
-2. Run `sh artifacts/desktop-verification/auth.sh doctor`. A fresh profile should
-   report missing authentication with exit code 1. No token is refreshed.
-3. Run `sh artifacts/desktop-verification/auth.sh login`, approve the device code
-   in your browser, then run doctor again. This is an explicit account operation.
-4. Start `sh artifacts/desktop-verification/desktop.sh` from Terminal, keeping it
-   open. Select `Codex (ChatGPT subscription, text only)` and an advertised model.
-5. Send a short text prompt, check completion, then ask a follow-up. In another
-   turn, cancel generation and verify a subsequent short request still works.
-   These requests consume subscription allowance and can refresh this login.
-6. Record the reviewed commit, model name and pass/fail result. Share only fixed
-   error labels if a turn fails; never share codes, auth files, bootstrap URLs,
-   raw authenticated bodies or logs. Quit Desktop before recovery/removal.
+2. Start `sh artifacts/desktop-verification/desktop.sh` from Terminal, keeping it
+   open. This launcher is only for selecting the dedicated verification profile.
+3. Open **Settings → ChatGPT subscription**. Click **Log in** and enter the
+   displayed one-time sign-in code on the linked OpenAI page. The panel updates
+   after approval; no authentication script is needed for this flow.
+4. Select `Codex (ChatGPT subscription, text only)` and an advertised model. Send
+   a short prompt, then ask a follow-up. Cancel another turn and verify a later
+   request still works. These requests consume allowance and can refresh this login.
+5. Record the reviewed commit, model and pass/fail result. Share only fixed error
+   labels; never share codes, auth files, bootstrap URLs or raw logs/bodies.
+6. Use **Log out** in the same settings section to remove the local login when
+   finished. Quit Desktop before filesystem recovery/removal.
+
+The generated `auth.sh` remains an optional developer/recovery tool, not the
+normal sign-in flow. See [the authentication UI](AUTH_UI.md).
 
 With the helper's explicit DSH_HOME, credentials are located at
 `<directory>/harness/.dsh-codex-subscription-bridge/auth.json`. Desktop's login-shell

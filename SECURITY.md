@@ -16,7 +16,10 @@ against that same user. The initial store is plaintext; keyring is not included.
 - Use pinned bundled Undici with an owned dispatcher, independent of host fetch.
 - Accept only a dedicated OAuth grant; reject raw keys and configuration tokens.
 - Keep tokens out of diagnostics, profile YAML, package output, and logs.
-- Print a one-time device code only in the explicitly invoked login command.
+- Reveal a one-time sign-in code only after explicit login, to its initiating UI
+  or the explicitly invoked CLI; never return access/refresh tokens to the client.
+- Use authenticated Connection routes for UI actions, preserve the Gateway,
+  disable response caching, bound payloads, and join login work during disposal.
 - Validate private file ownership, modes, symlinks, shape, and size.
 - Serialize credential update, login and logout with a process-shared lock.
 - Persist rotated credentials atomically; quarantine terminal invalid grants.
