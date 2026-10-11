@@ -1,3 +1,4 @@
+import { setImmediate as yieldLoop } from 'node:timers/promises';
 import { BridgeError, classified } from './errors.js';
 export const BASE = 'https://chatgpt.com/backend-api/codex';
 export const ISSUER = 'https://auth.openai.com';
@@ -14,18 +15,25 @@ export async function readBytes(response, limit = 1024 * 1024, signal) {
   const reader = response.body.getReader();
   const cancel = () => { void reader.cancel().catch(() => {}); };
   signal?.addEventListener('abort', cancel, { once: true });
-  let bytes = 0; const chunks = [];
+  // Retain bounded payload storage, independent of network fragmentation.
+  const buffer = Buffer.alloc(limit);
+  let bytes = 0, readWork = 0, byteWork = 0;
   try {
     for (;;) {
       if (signal?.aborted) throw abortFailure(signal);
+      if (++readWork >= 256 || byteWork >= 4096) {
+        readWork = 0; byteWork = 0;
+        await yieldLoop();
+        if (signal?.aborted) throw abortFailure(signal);
+      }
       const part = await reader.read();
       if (signal?.aborted) throw abortFailure(signal);
       if (part.done) break;
-      bytes += part.value.byteLength;
-      if (bytes > limit) throw new BridgeError('LIMIT_EXCEEDED');
-      chunks.push(Buffer.from(part.value));
+      const length = part.value.byteLength;
+      if (length > limit - bytes) throw new BridgeError('LIMIT_EXCEEDED');
+      if (length) { buffer.set(part.value, bytes); bytes += length; byteWork += length; }
     }
-    return Buffer.concat(chunks);
+    return buffer.subarray(0, bytes);
   } finally { signal?.removeEventListener('abort', cancel); await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 export async function readJson(response, limit, signal) {
