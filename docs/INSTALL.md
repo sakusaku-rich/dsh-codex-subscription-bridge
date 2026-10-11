@@ -11,13 +11,14 @@ branch or an unreviewed moving branch is an installable release.
 | --- | --- |
 | macOS CLI/SDK text provider | Synthetic packaged integration verified |
 | macOS Web profile | Setup/startup verified; full real conversation pending |
-| macOS Desktop | Not supported for this initial release target |
+| macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified; UI/service pending |
 | Linux / Windows / other OS | Not supported; rejected before authentication |
 
 The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified.
 Use Node 22.23.3 (the checkout includes `.node-version` and `.nvmrc`). The supported
-Node major is 22. An older Desktop-bundled Node is not upgraded by installing this
-package; use the standalone CLI/Web path. Do not modify the Desktop binary.
+standalone Node major is 22. Desktop uses its tested Electron host; the exact
+Node/Electron pair is required. Do not modify the Desktop binary. Follow
+[the Desktop guide](DESKTOP.md) for its separate verification profile.
 
 The plugin uses a dedicated plaintext OAuth store; no Codex installation or token
 import is required. Device-code login must be enabled by the account/workspace.

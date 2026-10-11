@@ -1,6 +1,7 @@
 # Local diagnosis and recovery
 
-Use the same launcher HOME for auth commands and Harness. For a generated isolated
+Use the same launcher HOME for auth commands and Harness, and the same launcher
+DSH_HOME for Desktop. For a generated isolated
 profile, always use its `auth.sh`; a bare command in another shell may inspect a
 different store. Diagnose with:
 
@@ -56,10 +57,10 @@ File permissions are not encryption or protection against other same-user code.
 
 ## Runtime, protocol, or quota failures
 
-NODE_VERSION_UNSUPPORTED requires the supported Node 22 runtime >=22.23.3.
-PLATFORM_UNSUPPORTED means the initial target is macOS CLI/Web. Desktop and other
-OSes are not supported here. Use the isolated standalone profile instead of
-editing a Desktop-bundled runtime.
+NODE_VERSION_UNSUPPORTED requires Node 22 >=22.23.3 or the tested Desktop
+Electron 44.0.0 / Node 24.18.1 pair. PLATFORM_UNSUPPORTED means macOS is required.
+Other Desktop versions require fresh compatibility verification; do not bypass
+the guard or edit a Desktop-bundled runtime. See [Desktop verification](DESKTOP.md).
 
 Protocol diagnostics contain fixed stage labels such as SSE_FRAME or SSE_TERMINAL.
 Share only the label, reviewed commit, runtime and sanitized reproduction steps;

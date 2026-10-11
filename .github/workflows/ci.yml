@@ -46,6 +46,12 @@ jobs:
         run: |
           export DSH_VERIFY_CLI="$GITHUB_WORKSPACE/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
           npm run test:profile
+      - name: Install pinned Electron verification package
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix verification/desktop
+      - name: Download the checksum-verified Electron test binary
+        run: node verification/desktop/node_modules/electron/install.js
+      - name: Verify Electron Desktop host using synthetic credentials
+        run: npm run test:desktop
       - name: Check patch formatting
         run: git diff --check
       - name: Require verification to leave tracked files unchanged

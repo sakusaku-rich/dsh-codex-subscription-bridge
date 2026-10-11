@@ -18,16 +18,19 @@ publication, and PR creation have not been performed.
 
 For an isolated source-checkout installation, update, and removal, follow
 [the installation guide](docs/INSTALL.md). See the [support matrix](docs/INSTALL.md#support-and-prerequisites)
-and [local recovery guide](docs/RECOVERY.md). No public npm release exists yet.
+and [local recovery guide](docs/RECOVERY.md). For Desktop, use the
+[dedicated Desktop verification guide](docs/DESKTOP.md). No public npm release exists yet.
 
 ## Authentication
 
 Node.js 22.23.3 and a POSIX filesystem with private ownership/permissions are the
-current baseline. The initial target is macOS CLI/Web; other OSes are rejected
-before authentication. Desktop is not supported by this target. No Codex
+standalone baseline. macOS Desktop 0.2.0-rc.2 with Electron 44.0.0 / Node
+24.18.1 is also admitted after synthetic verification; other OSes are rejected
+before authentication. Full Desktop UI/service behavior remains for manual
+verification. No Codex
 CLI installation is required by the adapter. `.node-version` and `.nvmrc`
 pin 22.23.3 for development. The public adapter and authentication CLI refuse
-older or unverified Node major versions before accessing credentials.
+older or unverified runtimes before accessing credentials.
 
 From the repository:
 
@@ -46,14 +49,16 @@ Login is an explicit account operation; automated verification never runs a
 real login or submits real model requests.
 
 Credentials are stored in `~/.dsh-codex-subscription-bridge/auth.json`, with a
-0700 directory and 0600 file. This is plaintext storage protected by filesystem
+0700 directory and 0600 file. A dedicated Desktop launch with `DSH_HOME` stores
+the grant under `$DSH_HOME/.dsh-codex-subscription-bridge/auth.json` instead; use
+its generated `auth.sh` to select that same store. This is plaintext storage protected by filesystem
 permissions, not a keyring. Processes with the same user authority remain
 trusted. Never upload, paste, commit, or copy the file into an issue.
 
 `status` checks local credential structure without refreshing or contacting the
 service. `logout` removes this plugin's local login; it does not revoke tokens
 server-side or change Codex's login. Launch the authentication command and
-Harness with the same inherited HOME. Project `.env` authentication locations
+Harness with the same inherited HOME (and DSH_HOME for Desktop). Project `.env` authentication locations
 are not accepted. No tokens or custom endpoints are plugin configuration.
 
 ## Harness configuration
@@ -84,8 +89,9 @@ outside the initial scope.
 
 ## Development
 
-Harness 0.2.0-rc.2 and Cordis 4.0.4 remain pinned. No new dependency or installation
-script was added. Native Node HTTPS/fetch handles the fixed service destinations.
+Harness 0.2.0-rc.2 and Cordis 4.0.4 remain pinned. HTTP uses bundled MIT-licensed
+Undici 7.29.1 with its own dispatcher, independent of the host fetch/dispatcher.
+No dependency lifecycle scripts are required for the shipped plugin.
 
 ```sh
 npm ci --ignore-scripts
@@ -109,7 +115,9 @@ See [direct connection design](docs/DIRECT.md), [security requirements](SECURITY
 dispatches using a GitHub-hosted macOS runner and the exact `.node-version`.
 It installs both lockfiles with lifecycle scripts disabled, audits both dependency
 trees, and runs the source, package, isolated installation, and synthetic Harness
-CLI/SDK checks above. No subscription credentials or real-account smoke calls
+CLI/SDK checks above, plus pinned Electron 44.0.0 host verification. The test
+binary is downloaded by Electron's explicit checksum-verifying installer; dependency
+lifecycle scripts otherwise remain disabled. No subscription credentials or real-account smoke calls
 are used.
 
 Actions are pinned to commit SHAs; checkout credentials are not persisted, and

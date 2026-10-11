@@ -45,7 +45,9 @@ duplicating earlier completion events.
 ## Authentication lifecycle
 
 The private dedicated directory is selected from launcher-inherited HOME,
-not project dotenv. Credentials use a versioned ChatGPT-only schema. API keys
+not project dotenv. Electron Desktop prefers launcher-owned DSH_HOME when set,
+which Desktop preserves across its login-shell environment merge. Auth helpers
+use the same Electron and DSH_HOME; no existing credential file is migrated. Credentials use a versioned ChatGPT-only schema. API keys
 are not accepted. Files are bounded to 64 KiB, opened without following symlinks,
 checked for ownership and permissions, and replaced atomically through private
 exclusive temporary files after fsync. The directory itself cannot be a symlink. Credential entries are checked before
@@ -121,6 +123,12 @@ deltas remain invalid.
 Node 22.23.3 is the verified baseline (Undici 6.28.1, OpenSSL 3.5.8). Both manifests,
 lockfiles, and development version files specify the updated Node requirement.
 The public adapter and authentication CLI reject older/unverified runtimes.
+The exact Electron 44.0.0 / Node 24.18.1 Desktop pair is separately verified.
+HTTP uses bundled Undici 7.29.1 and an explicit owned Agent, preventing use of
+the host's older fetch implementation or shared dispatcher. Host dispatcher/proxy
+overrides are not inherited; these fixed HTTPS destinations must be reachable
+directly. This does not patch
+Electron/Chromium or other host features. See [Desktop scope](DESKTOP.md).
 The owner's temporary profile uses a dedicated official macOS arm64 binary;
 its SHA-256 was checked against the official release value
 `23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53`.

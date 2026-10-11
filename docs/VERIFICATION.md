@@ -55,8 +55,8 @@ Local verification used macOS 26.6.2 / Apple Silicon and official Node 22.23.3
 (Undici 6.28.1, OpenSSL 3.5.8). The macOS arm64 Node archive SHA-256 was checked:
 `23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53`.
 The public adapter and auth CLI refuse older/unverified Node versions and
-unsupported OSes before credential access. Intel macOS and Desktop remain
-unverified; other OSes are unsupported by the initial platform contract.
+unsupported OSes before credential access. Intel macOS remains unverified; Desktop host/profile verification is recorded
+below. Other OSes are unsupported by the initial platform contract.
 
 A generated standalone Web profile reached an authenticated localhost HTML page
 with HTTP 303/200 and was stopped without OAuth login or a model request. This
@@ -123,3 +123,35 @@ Root verification passed 56 tests without failures or skips. The isolated
 installer test and packaged Harness CLI/SDK synthetic conversation passed.
 No real account operation was performed. Authorized real-account E2E
 verification remains a separate release requirement.
+
+## macOS Desktop host support (2026-10-11)
+
+Installed DeepSeek Harness Desktop 0.2.0-rc.2, build
+5e9e301dd9dc8923b2762f76dacfc5751f6ca851, uses Electron 44.0.0 / Node 24.18.1
+and host Cordis 4.0.4 / LLM 0.2.0-rc.2. The public adapter and authentication CLI
+now admit that exact pair, while ordinary Node 24 and unverified Electron pairs
+remain refused. Plugin HTTP uses bundled MIT-licensed Undici 7.29.1 with its own
+Agent instead of the host's older fetch/global dispatcher. Installation hooks
+remain disabled for the shipped plugin. This does not patch other host features.
+
+All 58 root tests passed on standalone Node 22.23.3 and on the installed
+Electron executable in Node mode, without failures or skips. Packaged synthetic
+CLI/SDK conversation and shutdown passed on Electron. A separate disposable
+profile used installed Desktop's ASAR runtime resolver and actual host peers,
+registered the packaged provider, and completed a synthetic text conversation.
+The source installer test passed. All three npm audits (plugin, Harness runtime,
+and separate Electron test package) reported zero known vulnerabilities.
+
+Desktop's resolver supplies ASAR peers; external symlinks into the virtual ASAR
+tree were found unsuitable and are not created by the Desktop installer. The
+installer refuses existing directories, checks the installed app/runtime/peers,
+and produces an explicit auth helper and Desktop launcher. With launcher-owned
+DSH_HOME, Desktop's shell-environment merge cannot redirect the credential store.
+The helpers have not performed real login or launched the GUI. Electron OS
+preferences/updater state are outside the dedicated Harness-home isolation.
+Real GUI/model/refresh/revocation checks remain owner-operated work.
+
+CI adds a locked Electron 44.0.0 test package and an explicit checksum-verifying
+binary download before synthetic host checks. It does not install Harness Desktop,
+run real login or make model requests. The installed-ASAR composition lane is
+verified locally rather than claimed as a CI check.

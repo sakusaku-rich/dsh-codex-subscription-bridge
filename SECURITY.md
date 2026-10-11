@@ -6,12 +6,14 @@ The direct adapter holds a dedicated ChatGPT OAuth login. It never reads, import
 updates, or deletes Codex/Hermes credentials.
 
 The plugin, Harness, Node runtime, OS, and processes running as the same OS user
-remain trusted. Dedicated file permissions are not encryption or protection
+remain trusted. Desktop admission does not patch or audit all Electron/Chromium
+or other Harness features. Dedicated file permissions are not encryption or protection
 against that same user. The initial store is plaintext; keyring is not included.
 
 ## Required controls
 
 - Use fixed HTTPS destinations and reject redirects and endpoint overrides.
+- Use pinned bundled Undici with an owned dispatcher, independent of host fetch.
 - Accept only a dedicated OAuth grant; reject raw keys and configuration tokens.
 - Keep tokens out of diagnostics, profile YAML, package output, and logs.
 - Print a one-time device code only in the explicitly invoked login command.
