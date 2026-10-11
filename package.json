@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A direct DeepSeek Harness provider for dedicated ChatGPT subscription OAuth",
   "engines": {
-    "node": ">=22.23.3 <23"
+    "node": ">=22.23.3 <23 || 24.18.1"
   },
   "exports": {
     ".": "./src/index.js",
@@ -26,7 +26,8 @@
     "README.md",
     "SECURITY.md",
     "docs",
-    "LICENSE"
+    "LICENSE",
+    "AGENTS.md"
   ],
   "scripts": {
     "check": "node scripts/check.mjs",
@@ -34,7 +35,9 @@
     "verify": "npm run check && npm test",
     "test:profile": "node scripts/verify-profile.mjs",
     "prepare:profile": "node scripts/prepare-profile.mjs",
-    "test:install": "node --test test/integration/prepare-profile.test.mjs"
+    "test:install": "node --test test/integration/prepare-profile.test.mjs",
+    "test:desktop": "node scripts/verify-desktop.mjs",
+    "prepare:desktop": "node scripts/prepare-desktop.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -55,5 +58,11 @@
   "os": [
     "darwin"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "undici": "7.29.1"
+  },
+  "bundledDependencies": [
+    "undici"
+  ]
 }

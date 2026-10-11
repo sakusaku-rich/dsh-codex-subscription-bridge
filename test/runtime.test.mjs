@@ -9,3 +9,8 @@ test('initial platform contract admits macOS and refuses unverified OSes',async(
  const {assertPlatform}=await import('../src/runtime.js');assert.doesNotThrow(()=>assertPlatform('darwin'));
  for(const platform of ['linux','win32','freebsd',''])assert.throws(()=>assertPlatform(platform),{code:'PLATFORM_UNSUPPORTED'});
 });
+
+test('Desktop admission requires the exact tested Electron and Node pair', () => {
+ assert.doesNotThrow(() => assertNodeVersion('24.18.1', '44.0.0'));
+ for (const [node, electron] of [['24.18.1', null], ['24.18.1','43.0.0'],['24.21.0','44.0.0'],['24.18.0','44.0.0']]) assert.throws(() => assertNodeVersion(node, electron), {code:'NODE_VERSION_UNSUPPORTED'});
+});

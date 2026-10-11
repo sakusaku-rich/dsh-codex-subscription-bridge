@@ -22,7 +22,7 @@ for (const [name, version] of [['@modelcontextprotocol/client', '2.2.0'], ['@mod
 const root = await mkdtemp(join(tmpdir(), 'dsh-packaged-profile-'));
 const env = { HOME: join(root, 'home'), DSH_HOME: join(root, 'harness'),
   XDG_CONFIG_HOME: join(root, 'xdg'), XDG_CACHE_HOME: join(root, 'cache'), LANG: 'C.UTF-8',
-  PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, DSH_TELEMETRY_DISABLED: 'true', DSH_PRIMARY_RUNTIME: '' };
+  PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}), DSH_TELEMETRY_DISABLED: 'true', DSH_PRIMARY_RUNTIME: '' };
 const profileName = 'subscription-bridge-verification';
 const profile = join(env.DSH_HOME, 'profiles', profileName);
 const children = new Set();
@@ -103,13 +103,13 @@ process.stdout.write('PACKAGED_PROFILE_OK\\n');
   // It replaces HTTPS with deterministic in-memory responses, never real auth.
   const preload = join(root, 'synthetic-http.mjs');
   await writeFile(preload, `import {AuthStore,authDirectory} from ${JSON.stringify(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/src/auth.js')).href)};
+import {Http} from ${JSON.stringify(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/src/http.js')).href)};
 const store=new AuthStore(authDirectory(process.env));
 const token='x.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic'}})).toString('base64url')+'.x';
 await store.transaction(()=>store.write({access_token:token,refresh_token:'synthetic'}));
-globalThis.fetch=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list'}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'application/octet-stream'}});
+Http.prototype.open=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list'}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'application/octet-stream'}});
 `);
-  env.NODE_OPTIONS = `--import=${preload}`;
-  const configured = launch(process.execPath, [cli, '--profile', profileName]); const configuredOutput = output(configured);
+  const configured = launch(process.execPath, ['--import', preload, cli, '--profile', profileName]); const configuredOutput = output(configured);
   const configuredReplies = new Map(); const notifications = [];
   createInterface({ input: configured.stdout }).on('line', (line) => {
     try {

@@ -7,8 +7,9 @@ import { BridgeError, classified, object, string } from './errors.js';
 import { Http, ISSUER, CLIENT_ID, readJson, statusError, abortFailure } from './http.js';
 
 const MAX_AUTH = 64 * 1024;
-export function authDirectory(environment) {
-  const home = environment.HOME;
+export function authDirectory(environment, electron = process.versions.electron) {
+  // Desktop preserves launcher-owned DSH_HOME across its login-shell merge.
+  const home = electron && environment.DSH_HOME !== undefined ? environment.DSH_HOME : environment.HOME;
   if (typeof home !== 'string' || !isAbsolute(home) || /[\x00\r\n]/u.test(home)) throw new BridgeError('CONFIG_INVALID');
   return join(home, '.dsh-codex-subscription-bridge');
 }

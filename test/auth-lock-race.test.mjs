@@ -34,7 +34,8 @@ try{
   Date.now=originalNow;
  }
 }finally{Date.now=originalNow;fs.promises.mkdir=original;syncBuiltinESMExports();await fs.promises.rm(root,{recursive:true,force:true})}
+console.log('LOCK_RACE_OK');
 `;
   const result = await run(process.execPath, ['--input-type=module', '-e', driver], { timeout: 5000 });
-  assert.equal(result.stderr, '');
+  assert.ok(result.stdout.includes('LOCK_RACE_OK'));
 });

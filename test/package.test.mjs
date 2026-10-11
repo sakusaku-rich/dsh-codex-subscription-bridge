@@ -34,7 +34,7 @@ test('tarball installs and composes in an isolated Harness service fixture', asy
     assert.ok(metadata.files.some((file) => file.path === 'src/index.js'));
     assert.ok(metadata.files.some((file) => file.path === 'cordis.patch.yml'));
     assert.ok(metadata.files.some((file) => file.path === 'LICENSE'));
-    assert.equal(metadata.files.some((file) => /^(test|node_modules|work)\//u.test(file.path)), false);
+    assert.equal(metadata.files.some((file) => /^(test|work)\//u.test(file.path) || (file.path.startsWith('node_modules/') && !file.path.startsWith('node_modules/undici/'))), false);
     const profile = join(temp, 'profile'); await mkdir(profile);
     await writeFile(join(profile, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies: { 'dsh-codex-subscription-bridge': `file:${join(temp, metadata.filename)}` } }));
     execFileSync('npm', ['install', '--ignore-scripts', '--offline', '--legacy-peer-deps', '--no-audit', '--no-fund', '--cache', join(temp, 'cache')], { cwd: profile, stdio: 'pipe', timeout: 30_000 });

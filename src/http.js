@@ -1,4 +1,7 @@
 import { setImmediate as yieldLoop } from 'node:timers/promises';
+import { Agent, fetch as subscriptionFetch } from 'undici';
+// Do not inherit a dispatcher created by the host's older bundled Undici.
+const subscriptionDispatcher = new Agent({ connections: 4, pipelining: 1 });
 import { BridgeError, classified } from './errors.js';
 export const BASE = 'https://chatgpt.com/backend-api/codex';
 export const ISSUER = 'https://auth.openai.com';
@@ -42,11 +45,11 @@ export async function readJson(response, limit, signal) {
 }
 /** Fixed destinations only; private fetch injection is a synthetic-test seam. */
 export class Http {
-  constructor(fetcher = globalThis.fetch) { this.fetcher = fetcher; }
+  constructor(fetcher = subscriptionFetch) { this.fetcher = fetcher; }
   async open(url, options, signal) {
     const parsed = new URL(url);
     if (![BASE, ISSUER].some(base => url === base || url.startsWith(base + '/') || url.startsWith(base + '?')) || parsed.username || parsed.password) throw new BridgeError('CONFIG_INVALID');
-    try { return await this.fetcher(url, { ...options, signal, redirect: 'error' }); }
+    try { return await this.fetcher(url, { ...options, signal, redirect: 'error', dispatcher: subscriptionDispatcher }); }
     catch { if (signal?.aborted) throw abortFailure(signal); throw new BridgeError('UPSTREAM_FAILED', 'HTTP_REQUEST'); }
   }
   async json(url, options = {}, signal, limit = 1024 * 1024) {
