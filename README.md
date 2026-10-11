@@ -21,8 +21,10 @@ Implemented and exercised with synthetic servers:
 
 An isolated-launcher candidate now exists, with a private HOME/cwd and an
 authoritative configuration lock. It is not wired to the public adapter.
-The real-binary adapter test is blocked by a protocol correction awaiting owner
-approval after automatic approval review rejected it.
+The sandbox protocol correction was approved and the credential-free
+real-binary adapter test now passes. All 40 tests pass with the pinned executable
+selected. Real-account access and full Harness bundle-loader composition remain
+unverified.
 
 Native-tool and inherited-configuration isolation is still unresolved. Empty
 workspace environments remove environment-dependent tools in the examined

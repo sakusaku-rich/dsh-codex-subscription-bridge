@@ -39,18 +39,33 @@ The normal suite now has 38 passing tests and two opt-in real-binary tests
 skipped when `CODEX_ISOLATION_EXECUTABLE` is absent. Additional passing coverage
 checks the private lock runtime, exact version rejection, and descendant cleanup.
 
-Running the opt-in suite with the local 0.144.6 executable produced one passing
-and one failing test. Configuration replacement/version-drift rejection passed.
-The combined history/tool-rejection/streaming test fails at an upstream request
-because the prototype sends an unsupported sandbox shape. This failure is
-retained as a visible regression; it is not counted as successful validation.
+The first opt-in run with the local 0.144.6 executable produced one passing
+and one failing test. The combined adapter test exposed an unsupported sandbox
+shape accepted by the earlier mocks. Automatic approval review initially rejected
+its correction because `readOnly` can permit broad file reads. The owner then
+explicitly authorized correction and revalidation without existing credentials.
 
-An earlier standalone credential-free experiment against a localhost mock
-provider demonstrated forced `exec_command` rejection and text streaming, with
-only `update_plan` advertised. That experiment did not use the complete bridge
-adapter and is not a substitute for the failing integration test.
+The corrected request sends `sandboxPolicy: { type: "readOnly", networkAccess:
+false }`, matching the pinned executable's generated schema. It does not claim
+that read-only mode confines reads; tool restrictions and configuration
+replacement remain distinct controls.
 
-Automatic approval review rejected correcting the sandbox shape and rerunning
-the test, citing potential broad file reads in `readOnly`. Owner approval is
-pending. A stricter OS sandbox alternative did not start Codex successfully.
-No real account or external model endpoint was used. Live access stays disabled.
+The authorized command was:
+
+```sh
+CODEX_ISOLATION_EXECUTABLE=/absolute/path/to/codex npm run verify
+```
+
+Result: **40 tests passed, zero failed, zero skipped.** The complete bridge path
+against the real executable and a localhost mock provider now verifies text
+history injection, text deltas and successful finish, rejection of forced
+`exec_command`, an absent command execution marker, and no private sentinel in
+model requests. Only `update_plan` was advertised. The real-binary account check
+used an empty synthetic authentication directory; the conversation test replaces
+account admission with a synthetic managed-account response. No real ChatGPT
+login, account refresh, or subscription model access was tested.
+
+A separate restrictive macOS Seatbelt attempt did not start Codex successfully
+and is not counted as a verified isolation control. The public production gate
+remains closed. Full Harness bundle-loader composition and separately authorized
+real-account testing remain outstanding.

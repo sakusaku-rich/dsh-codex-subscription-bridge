@@ -100,12 +100,17 @@ The integration test exposed a prototype schema error: the installed 0.144.6
 `SandboxPolicy` uses `readOnly` with required `networkAccess`; it does not expose
 the newer documented `access.readableRoots` field. The existing mock accepted an
 invalid request. A proposed correction and test were rejected by automatic
-approval review because `readOnly` may allow broad filesystem reads. The change
-has not been applied; owner approval was requested. An additional restrictive
+approval review because `readOnly` may allow broad filesystem reads. The owner subsequently authorized correction and credential-free revalidation.
+The change now uses the pinned schema: `readOnly` with `networkAccess: false`. An additional restrictive
 macOS Seatbelt launch attempt exited before Codex startup, so it has not been
 accepted as a verified alternative.
 
 The production gate remains closed. The candidate isolated launcher exists as
 an internal module, but is not connected to the public plugin entry point.
-The full protocol/adapter test and permission semantics must pass before that
-connection is made.
+The full credential-free protocol/adapter test now passes, including history
+injection, visible text streaming, native execution rejection, and absence of
+the synthetic private sentinel in model requests. This does not prove OS-level
+read confinement: `readOnly` still permits broad reads by trusted Codex itself.
+The isolated launcher must additionally be exercised through the full pinned
+Harness loader before it is connected to the public entry point. Real-account
+verification remains a separately authorized activity.
