@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DirectBridge, events } from '../src/direct.js';
 import { AuthStore, claims } from '../src/auth.js';
+import { BridgeError } from '../src/errors.js';
 import { Http, BASE, ISSUER } from '../src/http.js';
 const jwt = (exp = Math.floor(Date.now() / 1000) + 3600, account = 'synthetic-account') => `x.${Buffer.from(JSON.stringify({ exp, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
 const tokens = (exp) => ({ access_token: jwt(exp), refresh_token: 'synthetic-refresh-secret' });
@@ -70,7 +71,7 @@ test('catalog caches metadata, rechecks auth, shares concurrent calls and exclud
   const models = await Promise.all(Array.from({ length: 12 }, () => bridge.listModels())); assert.equal(calls, 1); assert.equal(models[0].length, 1);
   await bridge.listModels(); assert.equal(calls, 1); assert.equal(authCalls, 2);
   models[0][0].name = 'changed'; assert.equal(models[1][0].name, 'Test');
-  auth.token = async () => { throw Object.assign(new Error(), { code: 'AUTH_REQUIRED' }); };
+  auth.token = async () => { throw new BridgeError('AUTH_REQUIRED'); };
   await assert.rejects(bridge.listModels(), { code: 'AUTH_REQUIRED' }); await bridge.close();
 });
 test('stream sends only bounded text, no tools, no persistence, and normalizes deltas', async () => {
@@ -231,5 +232,24 @@ test('accepting empty deltas still refuses invalid types and oversized deltas', 
   for (const value of [null, 1, {}, 'x'.repeat(256 * 1024 + 1)]) {
     const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse({ ...delta, delta: value }, completed)));
     await assert.rejects(collect(bridge.stream(input())), { code: 'PROTOCOL_INVALID' }); await bridge.close();
+  }
+});
+test('diagnostics use fixed allowlisted labels and discard mutable upstream messages', async () => {
+  const { BridgeError, failure } = await import('../src/errors.js');
+  const unsafe = new BridgeError('PROTOCOL_INVALID', 'synthetic-secret'); unsafe.message = 'synthetic-secret';
+  assert.equal(failure(unsafe).message.includes('synthetic-secret'), false);
+  assert.equal(failure(new Error('synthetic-secret')).message.includes('synthetic-secret'), false);
+  assert.equal(new BridgeError('__proto__', 'synthetic-secret').code, 'UPSTREAM_FAILED');
+  assert.equal(failure(new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME')).message.endsWith('[SSE_FRAME]'), true);
+  for (const [response, label] of [
+    [new Response('data: {\n\n'), 'SSE_FRAME'],
+    [sse({ type: 'synthetic_secret' }), 'SSE_EVENT_UNSUPPORTED'],
+    [sse({ ...delta, delta: null }), 'SSE_TEXT_DELTA'],
+    [sse({ type: 'response.completed', response: { status: 'incomplete' } }), 'SSE_TERMINAL'],
+    [sse(delta), 'SSE_INCOMPLETE'],
+  ]) {
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : response));
+    await assert.rejects(collect(bridge.stream(input())), error => error.diagnostic === label && !error.message.includes('synthetic_secret'));
+    await bridge.close();
   }
 });

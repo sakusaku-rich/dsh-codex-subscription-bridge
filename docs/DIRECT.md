@@ -87,3 +87,14 @@ semantics, newer model entitlement, and performance are unverified. Direct
 connection is not evidence of official third-party service support or absence
 of vulnerabilities. Historical app-server authority evidence is not applicable
 to this transport.
+
+
+## Safe diagnostics
+
+Errors retain their existing fixed codes and append only allowlisted stage labels
+such as `[SSE_FRAME]`, `[SSE_EVENT_UNSUPPORTED]`, `[SSE_TERMINAL]`, or
+`[AUTH_REFRESH_UNCERTAIN]`. Unknown labels, upstream messages, event names,
+credentials and identifiers are never copied into diagnostics. Failure payloads
+are reconstructed from the allowlists even if an Error message was mutated.
+Empty string text deltas are valid no-op text updates; non-string and oversized
+deltas remain invalid.

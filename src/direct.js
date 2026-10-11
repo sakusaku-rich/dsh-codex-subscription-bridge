@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { BridgeError, object, string } from './errors.js';
+import { BridgeError, classified, object, string } from './errors.js';
 import { validateInput, PROVIDER } from './text.js';
 import { Http, BASE, statusError } from './http.js';
 import { accountHeaders } from './auth.js';
@@ -10,7 +10,7 @@ function headers(token) {
 }
 /** Bounded SSE parser; EOF never substitutes for a successful terminal event. */
 export async function* events(body, signal) {
-  if (!body) throw new BridgeError('PROTOCOL_INVALID');
+  if (!body) throw new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME');
   const reader = body.getReader();
   const cancel = () => { void reader.cancel().catch(() => {}); };
   signal.addEventListener('abort', cancel, { once: true });
@@ -31,17 +31,17 @@ export async function* events(body, signal) {
         const data = frame.split(/\r?\n/u).filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /u, '')).join('\n');
         if (!data || data === '[DONE]') continue;
         let value;
-        try { value = object(JSON.parse(data)); } catch { throw new BridgeError('PROTOCOL_INVALID'); }
+        try { value = object(JSON.parse(data)); } catch { throw new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME'); }
         yield value;
       }
       if (Buffer.byteLength(buffer) > 1024 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
     }
     if (signal.aborted) throw new BridgeError('ABORTED');
     decoder.decode();
-    if (buffer.trim()) throw new BridgeError('PROTOCOL_INVALID');
+    if (buffer.trim()) throw new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME');
   } catch (error) {
-    if (error instanceof BridgeError) throw error;
-    throw new BridgeError(signal.aborted ? 'ABORTED' : 'PROTOCOL_INVALID');
+    if (error instanceof BridgeError) throw classified(error, 'SSE_FRAME');
+    throw new BridgeError(signal.aborted ? 'ABORTED' : 'PROTOCOL_INVALID', 'SSE_FRAME');
   } finally { signal.removeEventListener('abort', cancel); await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 export class DirectBridge {
@@ -61,24 +61,26 @@ export class DirectBridge {
     return controller;
   }
   async catalog(signal, fresh = false) {
-    // Always reread/refresh authentication first, including metadata cache hits.
-    const token = await this.auth.token(signal);
-    const identity = createHash('sha256').update(token).digest('hex');
-    if (!fresh && this.cache?.identity === identity && this.cache.expires > Date.now()) return this.cache.models;
-    // Match the reference's catalog compatibility selectors, not a CLI identity.
-    let result;
-    for (const version of ['99.0.0', '0.0.0']) {
-      result = object(await this.http.json(`${BASE}/models?client_version=${version}`, { headers: headers(token) }, signal));
-      if (!Array.isArray(result.models) || result.models.length > 512) throw new BridgeError('PROTOCOL_INVALID');
-      if (result.models.length) break;
-    }
-    const ids = new Set(); const models = [];
-    for (const entry of result.models) {
-      object(entry); const id = string(entry.slug); if (ids.has(id)) throw new BridgeError('PROTOCOL_INVALID'); ids.add(id);
-      if (!['list', 'hide'].includes(entry.visibility)) throw new BridgeError('PROTOCOL_INVALID');
-      if (entry.visibility === 'list') models.push({ id, name: string(entry.display_name), provider: PROVIDER, inputModalities: ['text'] });
-    }
-    this.cache = { identity, models, expires: Date.now() + this.cacheMs }; return models;
+    try {
+      // Always reread/refresh authentication first, including metadata cache hits.
+      const token = await this.auth.token(signal);
+      const identity = createHash('sha256').update(token).digest('hex');
+      if (!fresh && this.cache?.identity === identity && this.cache.expires > Date.now()) return this.cache.models;
+      // Match the reference's catalog compatibility selectors, not a CLI identity.
+      let result;
+      for (const version of ['99.0.0', '0.0.0']) {
+        result = object(await this.http.json(`${BASE}/models?client_version=${version}`, { headers: headers(token) }, signal));
+        if (!Array.isArray(result.models) || result.models.length > 512) throw new BridgeError('PROTOCOL_INVALID');
+        if (result.models.length) break;
+      }
+      const ids = new Set(); const models = [];
+      for (const entry of result.models) {
+        object(entry); const id = string(entry.slug); if (ids.has(id)) throw new BridgeError('PROTOCOL_INVALID'); ids.add(id);
+        if (!['list', 'hide'].includes(entry.visibility)) throw new BridgeError('PROTOCOL_INVALID');
+        if (entry.visibility === 'list') models.push({ id, name: string(entry.display_name), provider: PROVIDER, inputModalities: ['text'] });
+      }
+      this.cache = { identity, models, expires: Date.now() + this.cacheMs }; return models;
+    } catch (error) { throw classified(error, 'MODEL_CATALOG'); }
   }
   async discover(signal) {
     const controller = this.controller(signal, 30_000);
@@ -96,6 +98,7 @@ export class DirectBridge {
   async *stream(options) {
     const history = validateInput(options); string(options.model);
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
+    let phase = 'MODEL_CATALOG';
     const blocks = new Map(); let outputBytes = 0, complete = false;
     const getBlock = (id, contentIndex) => {
       string(id); if (!Number.isSafeInteger(contentIndex) || contentIndex < 0 || contentIndex > 63) throw new BridgeError('PROTOCOL_INVALID');
@@ -111,23 +114,26 @@ export class DirectBridge {
       if (!models.some(model => model.id === options.model)) throw new BridgeError('MODEL_UNAVAILABLE');
       const token = await this.auth.token(controller.signal);
       const instructions = history.filter(item => item.role === 'developer').map(item => item.content.map(block => block.text).join('\n')).join('\n');
+      phase = 'HTTP_REQUEST';
       response = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({ model: options.model, instructions, input: history.filter(item => item.role !== 'developer'), store: false, stream: true }) }, controller.signal);
       if (!response.ok) { await response.body?.cancel(); throw statusError(response.status); }
       // The subscription backend can send valid SSE without an SSE MIME header.
       // Trust the bounded frame/event parser and terminal state, not Content-Type.
+      phase = 'SSE_FRAME';
       for await (const event of events(response.body, controller.signal)) {
-        string(event.type);
+        try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
         if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
+          phase = event.type.endsWith('.delta') ? 'SSE_TEXT_DELTA' : 'SSE_TEXT_COMPLETION';
           const block = getBlock(event.item_id, event.content_index);
-          if (block.ended) throw new BridgeError('PROTOCOL_INVALID');
+          if (block.ended) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
           let text;
           if (event.type.endsWith('.delta')) {
-            if (typeof event.delta !== 'string' || Buffer.byteLength(event.delta) > 256 * 1024) throw new BridgeError('PROTOCOL_INVALID');
+            if (typeof event.delta !== 'string' || Buffer.byteLength(event.delta) > 256 * 1024) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_DELTA');
             text = event.delta;
           }
           else {
-            if (typeof event.text !== 'string' || !event.text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID');
+            if (typeof event.text !== 'string' || !event.text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
             text = event.text.slice(block.text.length);
           }
           outputBytes += Buffer.byteLength(text); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
@@ -135,19 +141,21 @@ export class DirectBridge {
           if (text) { block.text += text; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'text-delta', index: block.index, text }; }
           if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
         } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-          if (!['message', 'reasoning'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID');
+          phase = 'SSE_OUTPUT_ITEM';
+          if (!['message', 'reasoning'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
         } else if (event.type === 'response.completed') {
-          if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED');
+          phase = 'SSE_TERMINAL';
+          if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
           if (event.response.output !== undefined && event.response.output !== null) {
-            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID');
+            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
           }
           for (const item of event.response.output ?? []) {
             if (item.type === 'reasoning') continue;
-            if (item.role !== 'assistant' || !Array.isArray(item.content) || item.content.length > 64) throw new BridgeError('PROTOCOL_INVALID');
+            if (item.role !== 'assistant' || !Array.isArray(item.content) || item.content.length > 64) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
             for (const [index, content] of item.content.entries()) {
-              if (content?.type !== 'output_text' || typeof content.text !== 'string') throw new BridgeError('PROTOCOL_INVALID');
+              if (content?.type !== 'output_text' || typeof content.text !== 'string') throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
               const block = getBlock(item.id, index);
-              if (!content.text.startsWith(block.text) || (block.ended && content.text !== block.text)) throw new BridgeError('PROTOCOL_INVALID');
+              if (!content.text.startsWith(block.text) || (block.ended && content.text !== block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
               const tail = content.text.slice(block.text.length);
               outputBytes += Buffer.byteLength(tail); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
               if (!block.started) { block.started = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-start', index: block.index, blockType: 'text' }; }
@@ -156,13 +164,13 @@ export class DirectBridge {
           }
           for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
           complete = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'finish', reason: { kind: 'stop' } }; return;
-        } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED');
+        } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
         else if (!['response.created', 'response.in_progress', 'response.content_part.added', 'response.content_part.done',
           'response.reasoning_summary_part.added', 'response.reasoning_summary_part.done', 'response.reasoning_summary_text.delta',
-          'response.reasoning_summary_text.done', 'response.reasoning_text.delta', 'response.reasoning_text.done'].includes(event.type)) throw new BridgeError('PROTOCOL_INVALID');
+          'response.reasoning_summary_text.done', 'response.reasoning_text.delta', 'response.reasoning_text.done'].includes(event.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED');
       }
-      if (!complete) throw new BridgeError('PROTOCOL_INVALID');
-    } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw error; }
+      if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
+    } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }
     finally { controller.abort(); await response?.body?.cancel().catch(() => {}); controller.release(); }
   }
   async close() { this.closed = true; this.cache = undefined; for (const controller of this.active) controller.abort(); }

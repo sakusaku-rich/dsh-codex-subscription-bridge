@@ -17,15 +17,29 @@ const messages = Object.freeze({
   ABORTED: 'The conversation was cancelled.',
   CLOSED: 'The bridge is closed.',
 });
+const diagnostics = new Set([
+  'HTTP_REQUEST', 'HTTP_JSON_BODY', 'MODEL_CATALOG', 'AUTH_REFRESH',
+  'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_EVENT_TYPE',
+  'SSE_EVENT_UNSUPPORTED', 'SSE_TEXT_DELTA', 'SSE_TEXT_COMPLETION',
+  'SSE_OUTPUT_ITEM', 'SSE_TERMINAL', 'SSE_INCOMPLETE',
+]);
 export class BridgeError extends Error {
-  constructor(code) {
-    super(messages[code] ?? messages.UPSTREAM_FAILED);
+  constructor(code, diagnostic) {
+    const safeCode = Object.hasOwn(messages, code) ? code : 'UPSTREAM_FAILED';
+    const label = diagnostics.has(diagnostic) ? diagnostic : undefined;
+    super(messages[safeCode] + (label ? ` [${label}]` : ''));
+    this.diagnostic = label;
     this.name = 'BridgeError';
-    this.code = Object.hasOwn(messages, code) ? code : 'UPSTREAM_FAILED';
+    this.code = safeCode;
   }
 }
+/** Reconstruct from fixed code/label allowlists; never trust a mutable message. */
+export function classified(error, diagnostic) {
+  return new BridgeError(error instanceof BridgeError ? error.code : 'UPSTREAM_FAILED',
+    error instanceof BridgeError && diagnostics.has(error.diagnostic) ? error.diagnostic : diagnostic);
+}
 export const failure = (error) => {
-  const safe = error instanceof BridgeError ? error : new BridgeError('UPSTREAM_FAILED');
+  const safe = classified(error);
   return { code: safe.code, message: safe.message };
 };
 export function object(value) {

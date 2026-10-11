@@ -171,3 +171,24 @@ packaged Harness profile/CLI/SDK verification passed. The correction was applied
 to the existing temporary Web profile without changing its dedicated login.
 No further real request was sent after those two authorizations. Successful
 real generation through the corrected parser remains for the owner's UI check.
+
+## Refresh uncertainty, empty deltas, and safe diagnostics — 2026-10-11
+
+Three independent corrections were implemented:
+
+- Refresh dispatch first persists `refresh_pending` atomically. Lost replies,
+  malformed success bodies, failed persistence, server errors, and process
+  restarts cannot automatically resend a potentially consumed grant. A definite
+  HTTP 429 restores the prior grant; successful persistence or a fresh login
+  clears intent. The new recovery cases use only disposable synthetic stores.
+- Empty string text deltas are accepted as no-op updates. Non-string and
+  oversized deltas remain rejected, without duplicate block starts or endings.
+- Fixed diagnostic stage labels distinguish frame/event/text/terminal/catalog
+  and authentication failures. Unknown labels and mutated error messages are
+  discarded rather than surfaced. No body, token, identifier, or dynamic event
+  name is added to user-visible diagnostics.
+
+Verification passed 74 tests; three historical Codex tests were skipped. The
+actual packaged Harness profile and public CLI/SDK synthetic conversation passed.
+No real account request, token refresh, or login was run by the agent for these
+corrections. Real update interruption and account recovery remain unverified.

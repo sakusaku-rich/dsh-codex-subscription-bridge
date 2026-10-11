@@ -1,4 +1,4 @@
-import { BridgeError } from './errors.js';
+import { BridgeError, classified } from './errors.js';
 export const BASE = 'https://chatgpt.com/backend-api/codex';
 export const ISSUER = 'https://auth.openai.com';
 export const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
@@ -20,7 +20,7 @@ export async function readBytes(response, limit = 1024 * 1024) {
 }
 export async function readJson(response, limit) {
   try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readBytes(response, limit))); }
-  catch (error) { if (error instanceof BridgeError) throw error; throw new BridgeError('PROTOCOL_INVALID'); }
+  catch (error) { if (error instanceof BridgeError) throw classified(error, 'HTTP_JSON_BODY'); throw new BridgeError('PROTOCOL_INVALID', 'HTTP_JSON_BODY'); }
 }
 /** Fixed destinations only; private fetch injection is a synthetic-test seam. */
 export class Http {
@@ -29,7 +29,7 @@ export class Http {
     const parsed = new URL(url);
     if (![BASE, ISSUER].some(base => url === base || url.startsWith(base + '/') || url.startsWith(base + '?')) || parsed.username || parsed.password) throw new BridgeError('CONFIG_INVALID');
     try { return await this.fetcher(url, { ...options, signal, redirect: 'error' }); }
-    catch { throw new BridgeError(signal?.aborted ? 'ABORTED' : 'UPSTREAM_FAILED'); }
+    catch { throw new BridgeError(signal?.aborted ? 'ABORTED' : 'UPSTREAM_FAILED', 'HTTP_REQUEST'); }
   }
   async json(url, options = {}, signal, limit = 1024 * 1024) {
     const timeout = AbortSignal.timeout(15_000);

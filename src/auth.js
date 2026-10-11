@@ -3,7 +3,7 @@ import { lstat, mkdir, open, rename, rm } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BridgeError, object, string } from './errors.js';
+import { BridgeError, classified, object, string } from './errors.js';
 import { Http, ISSUER, CLIENT_ID, readJson, statusError } from './http.js';
 
 const MAX_AUTH = 64 * 1024;
@@ -75,7 +75,8 @@ export class AuthStore {
       if (bytesRead > MAX_AUTH) throw new BridgeError('AUTH_STORE_INVALID');
       const state = object(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8')));
       if (state.version !== 1 || state.mode !== 'chatgpt') throw new BridgeError('AUTH_REQUIRED');
-      if (state.quarantined || state.refresh_pending) throw new BridgeError('AUTH_REQUIRED');
+      if (state.refresh_pending) throw new BridgeError('AUTH_REQUIRED', 'AUTH_REFRESH_UNCERTAIN');
+      if (state.quarantined) throw new BridgeError('AUTH_REQUIRED');
       return credentials(state);
     } catch (error) {
       if (error instanceof BridgeError) throw error;
@@ -131,7 +132,7 @@ export class AuthStore {
         if (claims(updated.access_token).exp * 1000 <= Date.now()) throw new BridgeError('AUTH_REQUIRED');
         if (accountHeaders(updated.access_token)['ChatGPT-Account-ID'] !== accountHeaders(stored.access_token)['ChatGPT-Account-ID']) throw new BridgeError('AUTH_REQUIRED');
         await this.write(updated); return updated.access_token;
-      } catch (error) { if (timeout.aborted) throw new BridgeError('TIMEOUT'); throw error; }
+      } catch (error) { if (timeout.aborted) throw new BridgeError('TIMEOUT', 'AUTH_REFRESH'); throw classified(error, 'AUTH_REFRESH'); }
       finally { await response?.body?.cancel().catch(() => {}); }
     }, signal);
   }
