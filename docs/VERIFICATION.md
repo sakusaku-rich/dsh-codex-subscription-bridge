@@ -89,8 +89,10 @@ runs all reproducible checks above, and requires tracked files to remain unchang
 It does not publish packages or perform account operations.
 
 The initial [hosted CI run](https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/actions/runs/38133918042)
-succeeded before the current source cleanup. Current cleanup results are recorded
-below after revalidation. The project is MIT-licensed and remains private.
+succeeded before the current source cleanup; it is a historical record.
+Current cleanup results are recorded below after revalidation. The project is
+MIT-licensed. The packaged tarball excludes `.github`, so the CI link above
+resolves only inside a full checkout.
 Authorized real-account E2E verification remains a release preparation task.
 Audit results only cover known advisories;
 no finite audit or test suite establishes absence of unknown vulnerabilities.

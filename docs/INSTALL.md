@@ -3,9 +3,9 @@
 ## Support and prerequisites
 
 This is an experimental source-checkout installation, not a published npm release.
-The repository is currently private; obtain an authorized checkout and select a
-reviewed full commit SHA on the implementation branch. Do not assume the default
-branch or an unreviewed moving branch is an installable release.
+Clone the repository from GitHub and select a reviewed full commit SHA on the
+implementation branch. Do not assume the default branch or an unreviewed moving
+branch is an installable release.
 
 | Surface / OS | Status |
 | --- | --- |
@@ -91,7 +91,8 @@ explicitly there and verify the new profile before removing the old one.
 Do not copy old auth.json or share a refresh-token copy across installations.
 The old and new profile use separate credential stores. This procedure does not
 promise that provider-side session policy leaves every other login unchanged.
-There is no automatic update channel or published version policy yet.
+There is no automatic update channel; see [the changelog](../CHANGELOG.md) for
+release history and follow the same reviewed-commit procedure for updates.
 
 ## Remove this dedicated installation
 

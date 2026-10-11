@@ -40,8 +40,38 @@ received a real SSE-framed response. Successful generation through the current
 adapter, real refresh/revocation and complete Web behavior remain unverified.
 No finite audit proves absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
 
-## Sharing diagnostics
+## Reporting a problem
 
-Never include credentials, device codes, or raw authenticated responses in an
-issue or pull request. Share only sanitized reproduction steps, fixed diagnostic
-labels, and runtime/version information.
+Report every problem, including vulnerabilities, as a GitHub Issue in this
+repository. Issues are the single reporting channel for this project; no
+private vulnerability reporting address or email exists.
+
+Never include credentials, device codes, authentication files, or raw
+authenticated responses in issues or pull requests. Share only sanitized
+reproduction steps, fixed diagnostic labels, and runtime/version information.
+
+For an exploitable vulnerability without a released fix, keep the issue to the
+minimum detail needed to reproduce it, and say that the report describes an
+unpatched issue so it can be prioritized. Once a fixed release is published,
+full detail is welcome.
+
+Pull requests that fix a reported problem directly are welcome. Reports are
+confirmed, fixed, released, and only then discussed in public detail; please do
+not publish unpatched issues elsewhere before that fix is available.
+
+## Supported versions
+
+| Version | Supported |
+| --- | --- |
+| `0.0.x` prototype on `main` | yes |
+| Older or published releases | none exist |
+
+## Scope
+
+In scope: this repository's plugin source, authentication CLI, bundled client,
+and the dedicated credential store under `~/.dsh-codex-subscription-bridge`.
+
+Out of scope: DeepSeek Harness itself, the OpenAI/ChatGPT/Codex services and
+their infrastructure, the bundled dependency versions as shipped by their own
+projects, and any host outside the documented installation surfaces. Report
+problems in those systems to the corresponding projects.

@@ -3,6 +3,12 @@
 A minimal DeepSeek Harness text provider that connects directly to the Codex
 subscription backend using a dedicated ChatGPT OAuth login.
 
+"OpenAI", "ChatGPT", and "Codex" are trademarks of OpenAI. This project is an
+independent tool and is not affiliated with, endorsed by, or sponsored by
+OpenAI, DeepSeek, or Nous Research. Connecting a ChatGPT subscription through
+this adapter is an account operation governed by the applicable terms of
+service; using it may violate those terms and put the account at risk.
+
 ## Status
 
 The direct implementation passes synthetic authentication, refresh, streaming,
@@ -13,8 +19,9 @@ response with a non-SSE MIME header. Successful generation through the corrected
 adapter, real refresh/revocation, latency, and full Web UI operation remain
 unverified. Do not treat this prototype as a completed security audit.
 
-The adapter uses dedicated OAuth and HTTPS. Normal-profile installation, public
-publication, and PR creation have not been performed.
+The adapter uses dedicated OAuth and HTTPS. Normal-profile installation has not
+been performed; install only into the isolated profile described in
+[the installation guide](docs/INSTALL.md).
 
 For an isolated source-checkout installation, update, and removal, follow
 [the installation guide](docs/INSTALL.md). See the [support matrix](docs/INSTALL.md#support-and-prerequisites)
@@ -135,9 +142,11 @@ check known advisories and do not establish that the software is vulnerability-f
 ## Contributing
 
 Pull requests are always welcome, including bug fixes, tests, documentation,
-and security improvements. Keep changes focused, use English for repository
-content, and include relevant verification results. Please read [AGENTS.md](AGENTS.md)
-and [the security requirements](SECURITY.md) before contributing.
+and security improvements. Report problems, including vulnerabilities, as
+GitHub Issues; see [the security requirements](SECURITY.md). Keep changes
+focused, use English for repository content, and include relevant verification
+results. Please read [AGENTS.md](AGENTS.md) and
+[the security requirements](SECURITY.md) before contributing.
 
 Never include credentials, device codes, authentication files, or raw authenticated
 responses in issues or pull requests.
@@ -147,6 +156,3 @@ responses in issues or pull requests.
 Licensed under the [MIT License](LICENSE). Copyright (c) 2026 sakusaku-rich.
 Dependencies retain their own licenses. This license applies to this project
 and does not grant rights to OpenAI services or override their terms.
-
-The repository remains private. This project is independent of OpenAI, DeepSeek,
-and Nous Research.

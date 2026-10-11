@@ -57,4 +57,5 @@ existing OAuth state and providers. A version update alone is not a universal
 migration remedy. No MCP OAuth state was created or migrated in this verification.
 Review the advisory before applying any fix to an existing deployment.
 
-No PR, issue, package publication, or normal-profile installation was performed.
+These verification runs performed no pull request, issue, package publication,
+or normal-profile installation.
