@@ -39,7 +39,11 @@ export class Http {
       response = await this.open(url, options, combined);
       if (!response.ok) { await response.body?.cancel(); throw statusError(response.status); }
       return await readJson(response, limit);
-    } catch (error) { if (timeout.aborted) throw new BridgeError('TIMEOUT'); throw error; }
+    } catch (error) {
+      if (signal?.aborted) throw new BridgeError('ABORTED', 'HTTP_REQUEST');
+      if (timeout.aborted) throw new BridgeError('TIMEOUT', 'HTTP_REQUEST');
+      throw error;
+    }
     finally { await response?.body?.cancel().catch(() => {}); }
   }
 }
