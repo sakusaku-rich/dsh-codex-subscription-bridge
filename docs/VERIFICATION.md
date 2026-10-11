@@ -298,3 +298,24 @@ and is invoked by npm run test:install; basic root verification retains its smal
 peer dependency baseline. No normal profile or existing credential store was
 modified. Real first response on the guide path, live recovery, CI, license,
 security reporting channel and publication remain outstanding.
+
+## Continuous integration setup (2026-10-11)
+
+The CI workflow runs on push, pull request, and manual dispatch on `macos-15`
+with Node 22.23.3 from `.node-version`. Official checkout v7.0.1 and setup-node
+v7.1.0 are fixed to their release commit SHAs. Repository token permissions are
+read-only, checkout does not persist credentials, no cache or secrets are
+configured, and the job has a 20-minute deadline. Both locked dependency trees
+are installed with lifecycle scripts disabled and audited at the low threshold.
+The workflow verifies source syntax, unit/package behavior, the fresh isolated
+installer, and packaged CLI/SDK synthetic conversation, then requires tracked
+files to remain unchanged. Package checks now require the MIT license artifact
+and metadata. There is no publication or real-account step.
+
+Local clean-install verification on macOS with the pinned Node succeeded:
+94 normal tests passed, three historical app-server tests were skipped, the
+separate installation test passed, and the packaged Harness CLI/SDK synthetic
+conversation passed. Both npm audits reported zero known vulnerabilities.
+YAML parsing and `git diff --check` passed. Hosted runner evidence must be checked
+separately; local results do not demonstrate live subscription generation or
+refresh, nor the absence of undisclosed vulnerabilities.

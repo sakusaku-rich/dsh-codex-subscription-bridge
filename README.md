@@ -106,6 +106,20 @@ this plugin's stored tokens. It has not been run for the direct implementation.
 See [direct connection design](docs/DIRECT.md), [security requirements](SECURITY.md),
 [verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
 
+## Continuous integration
+
+[CI](.github/workflows/ci.yml) runs on pushes, pull requests, and manual
+dispatches using a GitHub-hosted macOS runner and the exact `.node-version`.
+It installs both lockfiles with lifecycle scripts disabled, audits both dependency
+trees, and runs the source, package, isolated installation, and synthetic Harness
+CLI/SDK checks above. No subscription credentials or real-account smoke calls
+are used. Known historical app-server tests remain skipped.
+
+Actions are pinned to commit SHAs; checkout credentials are not persisted, and
+the workflow token has read-only repository access. CI does not publish packages
+or replace the separate authorized real-account verification. Dependency audits
+check known advisories and do not establish that the software is vulnerability-free.
+
 ## License
 
 Licensed under the [MIT License](LICENSE). Copyright (c) 2026 sakusaku-rich.

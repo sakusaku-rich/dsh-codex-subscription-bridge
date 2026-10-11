@@ -33,6 +33,7 @@ test('tarball installs and composes in an isolated Harness service fixture', asy
     const metadata = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temp, '--cache', join(temp, 'cache')], { encoding: 'utf8' }))[0];
     assert.ok(metadata.files.some((file) => file.path === 'src/index.js'));
     assert.ok(metadata.files.some((file) => file.path === 'cordis.patch.yml'));
+    assert.ok(metadata.files.some((file) => file.path === 'LICENSE'));
     assert.equal(metadata.files.some((file) => /^(test|node_modules|work)\//u.test(file.path)), false);
     const profile = join(temp, 'profile'); await mkdir(profile);
     await writeFile(join(profile, 'package.json'), JSON.stringify({ private: true, type: 'module', dependencies: { 'dsh-codex-subscription-bridge': `file:${join(temp, metadata.filename)}` } }));
@@ -52,6 +53,7 @@ await fiber.dispose(); await service.dispose();`;
     execFileSync(process.execPath, ['--input-type=module', '-e', code], { cwd: profile, env: { ...process.env, HOME: temp }, stdio: 'pipe', timeout: 5000 });
     const manifest = JSON.parse(await readFile(join(profile, 'node_modules/dsh-codex-subscription-bridge/package.json'), 'utf8'));
     assert.equal(manifest.private, true);
+    assert.equal(manifest.license, 'MIT');
     assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml');
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
