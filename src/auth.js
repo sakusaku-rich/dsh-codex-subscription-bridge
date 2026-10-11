@@ -83,7 +83,13 @@ export class AuthStore {
       file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       const info = await file.stat(); privateInfo(info);
       if (info.size > MAX_AUTH) throw new BridgeError('AUTH_STORE_INVALID');
-      const buffer = Buffer.alloc(MAX_AUTH + 1); const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      // Complete sequential reads; some file systems return short reads.
+      const buffer = Buffer.alloc(MAX_AUTH + 1); let bytesRead = 0;
+      for (;;) {
+        const { bytesRead: count } = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+        if (!count) break;
+        bytesRead += count;
+      }
       if (bytesRead > MAX_AUTH) throw new BridgeError('AUTH_STORE_INVALID');
       const state = object(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8')));
       if (state.version !== 1 || state.mode !== 'chatgpt') throw new BridgeError('AUTH_REQUIRED');
