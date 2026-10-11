@@ -35,7 +35,8 @@ received a real SSE-framed response. Successful generation through the current
 adapter, real refresh/revocation and complete Web behavior remain unverified.
 No finite audit proves absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
 
-## Reporting
+## Sharing diagnostics
 
 Never include credentials, device codes, or raw authenticated responses in a
-public issue. Agree on a private reporting channel before distribution.
+issue or pull request. Share only sanitized reproduction steps, fixed diagnostic
+labels, and runtime/version information.

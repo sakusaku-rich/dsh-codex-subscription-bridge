@@ -91,8 +91,7 @@ It does not publish packages or perform account operations.
 The initial [hosted CI run](https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/actions/runs/38133918042)
 succeeded before the current source cleanup. Current cleanup results are recorded
 below after revalidation. The project is MIT-licensed and remains private.
-A private security-reporting channel and authorized real-account E2E verification
-remain release preparation tasks. Audit results only cover known advisories;
+Authorized real-account E2E verification remains a release preparation task. Audit results only cover known advisories;
 no finite audit or test suite establishes absence of unknown vulnerabilities.
 
 ## Current source verification (2026-10-11)
@@ -121,5 +120,5 @@ interleaving and checks release, insecure replacement, symlink, abort and deadli
 
 Root verification passed 56 tests without failures or skips. The isolated
 installer test and packaged Harness CLI/SDK synthetic conversation passed.
-No real account operation was performed. Private security reporting and
-authorized real-account E2E verification remain separate release requirements.
+No real account operation was performed. Authorized real-account E2E
+verification remains a separate release requirement.

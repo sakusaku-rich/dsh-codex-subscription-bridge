@@ -39,8 +39,8 @@ sh artifacts/subscription-web/auth.sh doctor
 
 `rmdir` removes an empty lock directory only; it refuses unexpected contents.
 Do not use recursive/force removal, remove a lock while a process is alive, or
-perform this on a store whose users you cannot identify. Seek private assistance
-if ownership is unclear. Then run the explicit login command if requested.
+perform this on a store whose users you cannot identify. Resolve ownership
+before continuing. Then run the explicit login command if requested.
 
 ## Uncertain refresh or insecure storage
 
@@ -62,7 +62,7 @@ OSes are not supported here. Use the isolated standalone profile instead of
 editing a Desktop-bundled runtime.
 
 Protocol diagnostics contain fixed stage labels such as SSE_FRAME or SSE_TERMINAL.
-Report the label, reviewed commit, runtime and reproduction steps privately;
+Share only the label, reviewed commit, runtime and sanitized reproduction steps;
 never include tokens, one-time codes, bootstrap URLs, auth.json or raw logs/bodies.
 RATE_LIMITED can mean rate/usage limits. Repeated re-login does not establish or
 increase allowance; no quota interpretation/automatic retry policy is implemented.

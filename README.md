@@ -117,6 +117,16 @@ the workflow token has read-only repository access. CI does not publish packages
 or replace the separate authorized real-account verification. Dependency audits
 check known advisories and do not establish that the software is vulnerability-free.
 
+## Contributing
+
+Pull requests are always welcome, including bug fixes, tests, documentation,
+and security improvements. Keep changes focused, use English for repository
+content, and include relevant verification results. Please read [AGENTS.md](AGENTS.md)
+and [the security requirements](SECURITY.md) before contributing.
+
+Never include credentials, device codes, authentication files, or raw authenticated
+responses in issues or pull requests.
+
 ## License
 
 Licensed under the [MIT License](LICENSE). Copyright (c) 2026 sakusaku-rich.
