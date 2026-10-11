@@ -192,3 +192,26 @@ Verification passed 74 tests; three historical Codex tests were skipped. The
 actual packaged Harness profile and public CLI/SDK synthetic conversation passed.
 No real account request, token refresh, or login was run by the agent for these
 corrections. Real update interruption and account recovery remain unverified.
+
+## Security audit remediation — 2026-10-11
+
+The project's Node baseline is now 22.23.3 (Undici 6.28.1, OpenSSL 3.5.8), with
+matching manifests, lockfiles, version-manager files, and pre-authentication
+runtime admission in the public adapter/CLI. The dedicated official macOS arm64
+archive was SHA-256 verified. The temporary Web launcher and login helper use
+that binary; the global Node installation was not modified.
+
+Credential reads now reject non-regular entries before open, use no-follow and
+nonblocking open flags, and recheck descriptor ownership/type/permissions.
+A process-isolated FIFO test finishes with AUTH_STORE_INVALID and releases the
+store lock rather than blocking. Directory and established symlink cases are
+also refused. This is defensive local hardening, not proof of a remote exploit.
+
+HTTP JSON operations preserve caller cancellation after headers as ABORTED;
+internal deadlines remain TIMEOUT rather than a JSON parse failure.
+
+On Node 22.23.3, verification passed 77 tests with three historical Codex tests
+skipped. The packaged pinned Harness CLI/SDK profile also passed synthetic
+conversation and shutdown checks. No real login, refresh or model request was
+performed for this remediation. Real-account update/revocation and complete
+Web conversation coverage remain unverified.
