@@ -6,6 +6,10 @@ import { BridgeError, classified } from './errors.js';
 export const BASE = 'https://chatgpt.com/backend-api/codex';
 export const ISSUER = 'https://auth.openai.com';
 export const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+// Fixed destinations with their normalized forms. The fence is re-asserted on
+// the parsed URL after WHATWG normalization so dot-segment escapes cannot
+// leave the fixed path prefix.
+const FENCES = [BASE, ISSUER].map(base => ({ base, normalized: new URL(base) }));
 export function statusError(status) {
   return new BridgeError(status === 401 || status === 403 ? 'AUTH_REQUIRED' : status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_FAILED');
 }
@@ -48,7 +52,10 @@ export class Http {
   constructor(fetcher = subscriptionFetch) { this.fetcher = fetcher; }
   async open(url, options, signal) {
     const parsed = new URL(url);
-    if (![BASE, ISSUER].some(base => url === base || url.startsWith(base + '/') || url.startsWith(base + '?')) || parsed.username || parsed.password) throw new BridgeError('CONFIG_INVALID');
+    const fenced = FENCES.some(({ base, normalized }) => parsed.origin === normalized.origin
+      && parsed.pathname.startsWith(normalized.pathname)
+      && (url === base || url.startsWith(base + '/') || url.startsWith(base + '?')));
+    if (!fenced || parsed.username || parsed.password) throw new BridgeError('CONFIG_INVALID');
     try { return await this.fetcher(url, { ...options, signal, redirect: 'error', dispatcher: subscriptionDispatcher }); }
     catch { if (signal?.aborted) throw abortFailure(signal); throw new BridgeError('UPSTREAM_FAILED', 'HTTP_REQUEST'); }
   }

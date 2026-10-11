@@ -59,7 +59,12 @@ test('logout removes only the dedicated login and subsequent lookup refuses', ()
 test('HTTP never accepts custom destinations or forwards redirect credentials', async () => {
   let calls = 0; const http = new Http(async (_, options) => { calls++; assert.equal(options.redirect, 'error'); throw new Error('secret-token'); });
   await assert.rejects(http.json('https://chatgpt.com.evil.test/backend-api/codex/models'), { code: 'CONFIG_INVALID' });
+  // Dot segments must not escape the fixed path prefix after normalization.
+  await assert.rejects(http.json(`${BASE}/../models`), { code: 'CONFIG_INVALID' });
+  await assert.rejects(http.json(`${BASE}/../models?cursor=1`), { code: 'CONFIG_INVALID' });
+  await assert.rejects(http.json('https://user:pass@chatgpt.com/backend-api/codex/models'), { code: 'CONFIG_INVALID' });
   assert.equal(calls, 0); await assert.rejects(http.json(`${BASE}/models`), error => error.code === 'UPSTREAM_FAILED' && !error.message.includes('secret-token'));
+  assert.equal(calls, 1); await assert.rejects(http.json(`${ISSUER}/oauth/token`), error => error.code === 'UPSTREAM_FAILED' && !error.message.includes('secret-token'));
 });
 test('bounded HTTP JSON refuses oversized and malformed bodies', async () => {
   await assert.rejects(new Http(async () => json({ data: 'x'.repeat(100) })).json(`${BASE}/models`, {}, undefined, 20), { code: 'LIMIT_EXCEEDED' });
