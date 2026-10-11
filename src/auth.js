@@ -4,7 +4,7 @@ import { join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BridgeError, classified, object, string } from './errors.js';
-import { Http, ISSUER, CLIENT_ID, readJson, statusError } from './http.js';
+import { Http, ISSUER, CLIENT_ID, readJson, statusError, abortFailure } from './http.js';
 
 const MAX_AUTH = 64 * 1024;
 export function authDirectory(environment) {
@@ -122,7 +122,7 @@ export class AuthStore {
           if (response.status === 429) { await this.write(stored); throw statusError(429); }
           // Quarantine only terminal OAuth grant failures, never quota or transient failures.
           if ([400, 401, 403].includes(response.status)) {
-            const payload = await readJson(response, MAX_AUTH).catch(() => ({}));
+            const payload = await readJson(response, MAX_AUTH, combined).catch(error => { if (combined.aborted) throw error; return {}; });
             const code = typeof payload.error === 'string' ? payload.error : payload.error?.code;
             if (['invalid_grant', 'invalid_token', 'refresh_token_reused', 'refresh_token_expired', 'refresh_token_invalid'].includes(code)) {
               await this.writeState({ version: 1, mode: 'chatgpt', quarantined: true });
@@ -131,12 +131,12 @@ export class AuthStore {
           }
           throw statusError(response.status);
         }
-        const data = object(await readJson(response, MAX_AUTH));
+        const data = object(await readJson(response, MAX_AUTH, combined));
         const updated = credentials({ access_token: data.access_token, refresh_token: data.refresh_token ?? stored.refresh_token });
         if (claims(updated.access_token).exp * 1000 <= Date.now()) throw new BridgeError('AUTH_REQUIRED');
         if (accountHeaders(updated.access_token)['ChatGPT-Account-ID'] !== accountHeaders(stored.access_token)['ChatGPT-Account-ID']) throw new BridgeError('AUTH_REQUIRED');
         await this.write(updated); return updated.access_token;
-      } catch (error) { if (timeout.aborted) throw new BridgeError('TIMEOUT', 'AUTH_REFRESH'); throw classified(error, 'AUTH_REFRESH'); }
+      } catch (error) { if (combined.aborted) throw abortFailure(combined); throw classified(error, 'AUTH_REFRESH'); }
       finally { await response?.body?.cancel().catch(() => {}); }
     }, signal);
   }
@@ -155,11 +155,12 @@ export class AuthStore {
       for (;;) {
         await delay(Math.max(3, interval) * 1000, undefined, { signal: combined }).catch(() => { throw new BridgeError(timeout.aborted ? 'TIMEOUT' : 'ABORTED'); });
         const pollTimeout = AbortSignal.timeout(15_000);
+        const pollSignal = AbortSignal.any([combined, pollTimeout]);
         const response = await this.http.open(`${ISSUER}/api/accounts/deviceauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_auth_id: device.device_auth_id, user_code: device.user_code }) }, AbortSignal.any([combined, pollTimeout]));
+          body: JSON.stringify({ device_auth_id: device.device_auth_id, user_code: device.user_code }) }, pollSignal);
         if ([403, 404].includes(response.status)) { await response.body?.cancel(); continue; }
         if (!response.ok) { await response.body?.cancel(); throw statusError(response.status); }
-        const code = object(await readJson(response, MAX_AUTH));
+        const code = object(await readJson(response, MAX_AUTH, pollSignal));
         const tokens = await this.http.json(`${ISSUER}/oauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ grant_type: 'authorization_code', code: string(code.authorization_code, 8192), code_verifier: string(code.code_verifier, 8192),
             redirect_uri: `${ISSUER}/deviceauth/callback`, client_id: CLIENT_ID }) }, combined, MAX_AUTH);
