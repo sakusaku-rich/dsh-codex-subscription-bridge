@@ -3,8 +3,7 @@
 ## Trust and credential ownership
 
 The direct adapter holds a dedicated ChatGPT OAuth login. It never reads, imports,
-updates, or deletes Codex/Hermes credentials. The owner explicitly authorized
-this change from the former app-server-only design.
+updates, or deletes Codex/Hermes credentials.
 
 The plugin, Harness, Node runtime, OS, and processes running as the same OS user
 remain trusted. Dedicated file permissions are not encryption or protection
@@ -34,8 +33,7 @@ included. Each real account activity requires explicit authorization.
 The owner confirmed dedicated login and model selection; authorized diagnostics
 received a real SSE-framed response. Successful generation through the current
 adapter, real refresh/revocation and complete Web behavior remain unverified.
-Inherited app-server smoke results do not validate it. No finite audit proves
-absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
+No finite audit proves absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
 
 ## Reporting
 

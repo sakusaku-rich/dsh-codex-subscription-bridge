@@ -1,8 +1,7 @@
 # MVP requirements
 
 Use a dedicated ChatGPT OAuth login to connect Harness directly to the Codex
-subscription backend. The owner authorized this migration from managed
-app-server authentication. No Codex process or token import is required.
+subscription backend. No Codex process or token import is required.
 
 Expose live visible models, stream bounded text history, support cancellation,
 and produce credential-safe errors. Repository and product text remain English.
@@ -14,7 +13,6 @@ Acceptance requires synthetic dedicated login/refresh/logout, private storage,
 concurrent updates, terminal failure quarantine, fixed-origin HTTPS, bounded SSE,
 authentication-aware catalog caching, text history isolation, cancellation,
 shutdown, and actual packaged Harness CLI/SDK composition. Real OAuth/service/UI
-verification is a separately authorized step. Historical app-server tests remain
-regression references and are excluded from the package.
+verification is a separately authorized step.
 
 See [direct connection design](DIRECT.md) and [security requirements](../SECURITY.md).

@@ -2,8 +2,8 @@
 
 ## Decision and source
 
-The owner authorized replacing app-server integration with a Hermes-style direct
-provider. The dedicated device-code OAuth login owns its own token lifecycle;
+The provider uses a Hermes-style direct subscription connection. The dedicated
+device-code OAuth login owns its own token lifecycle;
 Codex credentials are not imported. Initial features remain model selection,
 text conversations, streaming, and cancellation.
 
@@ -15,8 +15,8 @@ Reviewed modules: `hermes_cli/auth_codex.py`, `auth_constants.py`,
 implementation is independently written; it does not vendor Hermes code.
 
 Hermes implements OAuth, refresh and store locking rather than requiring a Codex
-process for ordinary turns. Its optional app-server runtime is a different
-integration. Importing existing refresh tokens creates a shared rotation family,
+process for ordinary turns. Importing existing refresh tokens creates a shared
+rotation family,
 even when copies live in different files; dedicated login avoids that coupling.
 
 ## Transport
@@ -90,14 +90,14 @@ fingerprint; credentials are checked again on each lookup and each turn.
 
 The initial login path is device code only. Browser PKCE fallback, keyring,
 credential pools, token import, tools, reasoning controls, quota display, and
-Hermes's provider overrides are not included. These exclusions keep the migration
+Hermes's provider overrides are not included. These exclusions keep the implementation
 reviewable and avoid copying Hermes's entire runtime.
 
-Real endpoint acceptance, dedicated OAuth, token refresh/revocation, rate-limit
-semantics, newer model entitlement, and performance are unverified. Direct
-connection is not evidence of official third-party service support or absence
-of vulnerabilities. Historical app-server authority evidence is not applicable
-to this transport.
+The owner confirmed dedicated login and model selection; authorized diagnostics
+confirmed an authenticated catalog and SSE-framed response. Successful generation
+through the current adapter, real token refresh/revocation, rate-limit semantics,
+model entitlement, and performance remain unverified. Direct connection is not
+evidence of official third-party service support or absence of vulnerabilities.
 
 
 ## Safe diagnostics

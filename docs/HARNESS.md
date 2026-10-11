@@ -1,7 +1,3 @@
-> Direct migration: the public adapter now uses dedicated OAuth and HTTPS.
-> App-server results below are historical and do not validate the new transport.
-> See [direct design](DIRECT.md) and the current README.
-
 # Packaged Harness verification
 
 ## Reproducible baseline
@@ -22,15 +18,14 @@ profile, token file, or credential keyring is copied or read by the bridge.
 
 The test executes the official `runProfile` composition API and the public CLI
 with the shipped base and SDK bundles. It checks provider registration,
-unconfigured refusal propagation, configured SDK text conversation through a
-synthetic Codex executable, and complete shutdown. The test also plants a
+missing-auth refusal propagation, configured SDK text conversation through
+in-memory synthetic HTTPS responses, and complete shutdown. The test also plants a
 project `.env` with an alternative `CODEX_HOME` and a synthetic API key; the
 child must retain the inherited authentication location and receive no API key.
 
-The synthetic Codex fixture exercises the public configured launcher. The
-separate real-Codex/localhost-provider tests exercise the exact binary, version
-admission, native-tool restrictions, and protocol history/streaming. Neither
-lane establishes real subscription access or GUI behavior.
+The synthetic fixture creates a dedicated disposable OAuth store and replaces
+HTTPS only within its verification child process. It does not establish real
+subscription access or GUI behavior.
 
 ## Dependency findings
 
@@ -40,7 +35,7 @@ from two underlying advisories (including dependent-package repetitions):
 - [MCP OAuth issuer binding advisory](https://github.com/advisories/GHSA-6qxp-vccf-f47h):
   `@modelcontextprotocol/client` versions before 2.2.0 can misdirect OAuth
   credentials in affected HTTP-client configurations. The bridge does not use
-  this client, and native Codex MCP capabilities are disabled.
+  this client and does not expose MCP tools.
 - [fflate ZIP64 denial-of-service advisory](https://github.com/advisories/GHSA-px8p-9vwx-vf98):
   malformed archives can cause an infinite loop before fflate 0.8.3.
 

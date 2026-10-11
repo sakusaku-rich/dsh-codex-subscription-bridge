@@ -11,12 +11,9 @@ dedicated login and model selection. Authorized diagnostics confirmed an
 authenticated catalog advertising `gpt-6.1-sol` and an HTTP 200 SSE-framed
 response with a non-SSE MIME header. Successful generation through the corrected
 adapter, real refresh/revocation, latency, and full Web UI operation remain
-unverified. Previous app-server smoke results do not validate this
-transport. Do not treat this prototype as a completed security audit.
+unverified. Do not treat this prototype as a completed security audit.
 
-The public adapter no longer launches Codex or reads its credential store. The
-old app-server implementation and tests remain development references and are
-excluded from the shipped package. Normal-profile installation, public
+The adapter uses dedicated OAuth and HTTPS. Normal-profile installation, public
 publication, and PR creation have not been performed.
 
 For an isolated source-checkout installation, update, and removal, follow
@@ -28,7 +25,7 @@ and [local recovery guide](docs/RECOVERY.md). No public npm release exists yet.
 Node.js 22.23.3 and a POSIX filesystem with private ownership/permissions are the
 current baseline. The initial target is macOS CLI/Web; other OSes are rejected
 before authentication. Desktop is not supported by this target. No Codex
-CLI installation is required by the new adapter. `.node-version` and `.nvmrc`
+CLI installation is required by the adapter. `.node-version` and `.nvmrc`
 pin 22.23.3 for development. The public adapter and authentication CLI refuse
 older or unverified Node major versions before accessing credentials.
 
@@ -68,8 +65,8 @@ Use the bundle in an authorized profile. The adapter has no configuration keys:
   config: {}
 ```
 
-Remove the old `executable` and `credentialStore` fields: they now fail with
-`CONFIG_INVALID`. The route remains `codex-subscription`, displayed as
+Any configuration key fails with `CONFIG_INVALID`. The route is
+`codex-subscription`, displayed as
 `Codex (ChatGPT subscription, text only)`.
 
 The provider fetches visible subscription models directly. A 60-second
@@ -83,7 +80,7 @@ Only bounded text history is sent, with `store: false` and no tool definitions.
 Harness tool declarations are ignored; executed tool history, images, files,
 and generation overrides are rejected. No conversation IDs are resumed or
 chained. Search, images, quota display, tool forwarding, and remote access are
-outside the initial migration.
+outside the initial scope.
 
 ## Development
 
@@ -113,7 +110,7 @@ dispatches using a GitHub-hosted macOS runner and the exact `.node-version`.
 It installs both lockfiles with lifecycle scripts disabled, audits both dependency
 trees, and runs the source, package, isolated installation, and synthetic Harness
 CLI/SDK checks above. No subscription credentials or real-account smoke calls
-are used. Known historical app-server tests remain skipped.
+are used.
 
 Actions are pinned to commit SHAs; checkout credentials are not persisted, and
 the workflow token has read-only repository access. CI does not publish packages

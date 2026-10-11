@@ -24,7 +24,6 @@ set limited to model selection, streamed text conversations, and cancellation.
 - Serialize refresh/login/logout and enforce private file ownership/modes.
 - Bound network operations and text/protocol sizes; cancel paused readers.
 - Do not forward tools, resume server IDs, or persist server conversations.
-- Historical app-server code is a development reference, not the public adapter.
 
 ## Git workflow
 

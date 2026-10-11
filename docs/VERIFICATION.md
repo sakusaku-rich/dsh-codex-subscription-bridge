@@ -1,321 +1,106 @@
-> Direct migration: the public adapter now uses dedicated OAuth and HTTPS.
-> App-server results below are historical and do not validate the new transport.
-> See [direct design](DIRECT.md) and the current README.
+# Direct connection verification
 
-# Prototype verification
+## Reproducible checks
 
-Verified on 2026-10-11 with Node.js 22.23.2 on macOS:
-
-- `npm run verify`: JavaScript syntax checks and 35 passing tests.
-- Real pinned Cordis 4.0.4 / Harness LLM 0.2.0-rc.2 provider registration,
-  normalized refusal messages, and disposal.
-- Local npm tarball installation without scripts or network in a temporary
-  service fixture; host peers are supplied from the pinned development tree.
-- Synthetic managed-account admission and rejection of other authentication modes.
-- Model discovery validation, streaming, forks/concurrency, unsupported input,
-  cancellation, consumer-paused deadlines, and early stream disposal.
-- Real self-authored mock child processes for RPC errors, malformed JSON, invalid
-  UTF-8, oversized stdout/stderr, request timeout, and termination resistance.
-- Protocol queue/message/nesting bounds, environment filtering, executable path
-  validation, and repeatable shutdown.
-- `npm audit`: zero reported known vulnerabilities across 11 development/host
-  peer packages at the time of the query. This is not a vulnerability-free claim.
-- Locked dependency manifests: no preinstall, install, postinstall, or prepare
-  hooks found. Installation was performed with `--ignore-scripts`.
-
-No Codex account credentials were read by the bridge or tests. No authentication
-was changed, app-server account session started, model requested, normal Harness
-profile installed, PR opened, or package published.
-
-At that first-stage snapshot, the prototype did not satisfy all MVP acceptance criteria. Effective native
-authority, inherited startup configuration, exact production executable/version
-admission, real history semantics, full Harness profile composition, account
-refresh, and revocation remain unverified. At that first-stage snapshot, the production gate prevented use pending
-pre-dispatch isolation verification.
-
-All protocol response values, account identities, conversation text, stderr,
-and token-like examples used by tests are synthetic. Tests do not copy code
-from a community plugin or require a real login.
-
-## Second-stage results
-
-The normal suite now has 38 passing tests and two opt-in real-binary tests
-skipped when `CODEX_ISOLATION_EXECUTABLE` is absent. Additional passing coverage
-checks the private lock runtime, exact version rejection, and descendant cleanup.
-
-The first opt-in run with the local 0.144.6 executable produced one passing
-and one failing test. The combined adapter test exposed an unsupported sandbox
-shape accepted by the earlier mocks. Automatic approval review initially rejected
-its correction because `readOnly` can permit broad file reads. The owner then
-explicitly authorized correction and revalidation without existing credentials.
-
-The corrected request sends `sandboxPolicy: { type: "readOnly", networkAccess:
-false }`, matching the pinned executable's generated schema. It does not claim
-that read-only mode confines reads; tool restrictions and configuration
-replacement remain distinct controls.
-
-The authorized command was:
+Use Node 22.23.3 on macOS and the committed lockfiles:
 
 ```sh
-CODEX_ISOLATION_EXECUTABLE=/absolute/path/to/codex npm run verify
+npm ci --ignore-scripts
+npm ci --ignore-scripts --prefix verification/runtime
+npm run verify
+npm run test:install
+DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
+npm audit --audit-level=low
+npm audit --audit-level=low --prefix verification/runtime
 ```
 
-Result: **40 tests passed, zero failed, zero skipped.** The complete bridge path
-against the real executable and a localhost mock provider now verifies text
-history injection, text deltas and successful finish, rejection of forced
-`exec_command`, an absent command execution marker, and no private sentinel in
-model requests. Only `update_plan` was advertised. The real-binary account check
-used an empty synthetic authentication directory; the conversation test replaces
-account admission with a synthetic managed-account response. No real ChatGPT
-login, account refresh, or subscription model access was tested.
+The root suite uses the small pinned Cordis/LLM peer dependency tree. The separate
+installation and profile checks require the full locked Harness 0.2.0-rc.2 runtime.
+All automated authentication and service fixtures are synthetic and disposable.
+Tests never import existing Codex/Hermes credentials or send real model requests.
 
-A separate restrictive macOS Seatbelt attempt did not start Codex successfully
-and is not counted as a verified isolation control. At that second-stage snapshot, the public production gate remained closed.
-The next stage below completed loader composition and wired the configured
-launcher. Real-account testing remains separately authorized.
+## Covered controls
 
-## Packaged profile and configured launcher stage
+- Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema
+  bounds, symlink and non-regular-file rejection, atomic durable replacement.
+  FIFO tests demonstrate nonblocking refusal and lock release.
+- Device login, logout, process-shared serialization, account continuity, grant
+  quarantine and quota handling using synthetic HTTP responses and stores.
+- Durable refresh intent prevents automatic replay after ambiguous remote
+  outcomes, cancellation, persistence failure, and process restart. A definite
+  HTTP 429 rejection allows retry; uncertain outcomes require a fresh login.
+- Fixed HTTPS origins, redirect refusal, bounded JSON, safe fixed error codes
+  and diagnostic labels, and cancellation after response headers.
+- Live-catalog validation, hidden-model exclusion, compatibility fallback,
+  auth-aware caching and fresh admission for each turn.
+- Bounded text history, ignored tool declarations and replay metadata, and
+  rejection of execution history, images and generation overrides.
+- Incremental bounded SSE framing, split UTF-8, CRLF/multiline data, empty text
+  deltas, non-SSE MIME compatibility, completed-item reconciliation, and refusal
+  of malformed, contradictory, execution-bearing or incomplete responses.
+- Four-operation admission including cancellation cleanup, pre-aborted refusal,
+  paused-reader cancellation, event-loop yields, timeouts and bounded shutdown.
+- Public adapter registration/disposal, actual npm tarball composition, MIT
+  license inclusion, missing-auth errors, and synthetic CLI/SDK conversation.
+- Fresh isolated Web-profile preparation, quoted paths, overwrite refusal and
+  read-only doctor behavior for missing, insecure, locked and uncertain stores.
 
-The current configured adapter is connected to the isolated launcher. Both an
-absolute executable and a credential store are required; missing configuration
-returns `CONFIG_REQUIRED` without account access. The declared route is text-only.
+The source installer creates a new directory with an empty private HOME. It
+records the package integrity, commit, Node and Harness versions and disables
+installation scripts. Verification does not modify a normal Harness profile.
 
-The completed tests now include:
+## Runtime and platform evidence
 
-- Exact public Harness profile composition and the CLI/SDK initialization path.
-- Packaged provider registration, model discovery, and a configured SDK text turn
-  through a synthetic Codex executable, followed by clean shutdown.
-- An adversarial project dotenv authentication path ignored through the original
-  launcher snapshot; API keys excluded from the child environment.
-- Precise managed-auth mode admission using a token-free status request.
-- Real Codex refusal of a synthetic API-key file without changing that file.
-- Multiple assistant text items, discarded Harness declarations, and rejection
-  of actual tool execution history.
-- Explicit file/keyring storage selection; automatic fallback is refused.
+Local verification used macOS 26.6.2 / Apple Silicon and official Node 22.23.3
+(Undici 6.28.1, OpenSSL 3.5.8). The macOS arm64 Node archive SHA-256 was checked:
+`23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53`.
+The public adapter and auth CLI refuse older/unverified Node versions and
+unsupported OSes before credential access. Intel macOS and Desktop remain
+unverified; other OSes are unsupported by the initial platform contract.
 
-The credential-free real-binary suite and packaged profile check pass. The
-patched verification runtime's npm audit reports zero known vulnerabilities;
-see HARNESS.md for the initial advisory findings and applicability limits.
+A generated standalone Web profile reached an authenticated localhost HTML page
+with HTTP 303/200 and was stopped without OAuth login or a model request. This
+checks startup and HTTP readiness, not a complete real Web conversation.
 
-No real-account model request, keyring access, refresh/revocation check,
-Desktop/Web GUI check, normal profile installation, or PR was performed.
-The bounded real-account smoke script is prepared but has not been executed.
+## Real-account evidence and limits
 
-Final stage result: 51 tests passed with the real executable enabled; the default
-run passes 48 tests and skips three opt-in real-binary tests. The packaged-profile
-check also passes against the security-fixed locked runtime.
+The owner confirmed dedicated device login and model selection. Two separately
+authorized short diagnostic requests confirmed an authenticated catalog including
+`gpt-6.1-sol` and an HTTP 200 response with a 6992-byte SSE-framed body under a
+non-SSE MIME header. No credentials, account IDs, prompt text or response text
+were printed or saved. The exact media type was not retained.
 
-## Owner-authorized real-account smoke check
+The parser now validates bounded SSE events and explicit successful completion
+rather than requiring a particular MIME header. Synthetic tests cover the
+corrected path. Successful real generation through the corrected adapter,
+real refresh/revocation, interruption recovery, entitlement to other models,
+latency and complete Web conversation remain unverified. Each further account
+operation requires separate explicit authorization. The prepared real-account
+smoke command is not part of CI and has not been run for this transport.
 
-On 2026-10-11 the owner explicitly authorized file-backed account discovery and
-one short model request. `scripts/smoke-account.mjs` ran against the trusted local
-Codex CLI 0.144.6 through the public adapter, with `credentialStore: file`.
+## Continuous integration
 
-Result: passed, model `gpt-5.6-sol`, expected fixed reply matched, exit code 0.
-The selected model was the first advertised catalog entry. This demonstrates
-managed ChatGPT-mode admission, real model access, streamed text completion,
-and bridge cleanup for this single request. No additional model request followed.
+[CI](../.github/workflows/ci.yml) runs on pushes, pull requests and manual dispatch
+using `macos-15` and `.node-version`. Official checkout v7.0.1 and setup-node
+v7.1.0 are pinned to commit SHAs. Token access is read-only, checkout credentials
+are not persisted, and no cache or repository secrets are configured. The job
+has a 20-minute deadline, disables install scripts, audits both locked trees,
+runs all reproducible checks above, and requires tracked files to remain unchanged.
+It does not publish packages or perform account operations.
 
-The bridge did not read, copy, import, or display authentication files or token
-values. Authentication was handled by Codex. Subscription quota may have been
-consumed and Codex may have updated its own cached authentication; whether an
-auth refresh or persistent credential update occurred was not measured. This
-result does not establish refresh/revocation behavior, entitlement to other
-models, long-session behavior, or general vulnerability absence.
+The initial [hosted CI run](https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/actions/runs/38133918042)
+succeeded before the current source cleanup. Current cleanup results are recorded
+below after revalidation. The project is MIT-licensed and remains private.
+A private security-reporting channel and authorized real-account E2E verification
+remain release preparation tasks. Audit results only cover known advisories;
+no finite audit or test suite establishes absence of unknown vulnerabilities.
 
-No normal Harness profile was installed or modified. Desktop/Web GUI behavior
-and real keyring access remain unverified. No PR or public package was created.
+## Current source verification (2026-10-11)
 
-## Direct migration verification — 2026-10-11
-
-The public adapter now uses dedicated device-code OAuth and direct HTTPS. Normal
-verification passed 67 tests; three opt-in real-Codex tests were skipped because
-they concern the historical transport. Seventeen new direct tests cover private
-storage, API-key/symlink rejection, refresh serialization including separate
-Node processes, grant quarantine versus quota preservation, logout, destination
-and redirect constraints, bounded JSON/SSE, auth-aware catalog caching, catalog
-compatibility fallback, text streaming, unsupported execution items, EOF/failure,
-cancellation, paused-reader timeout cleanup, dedicated synthetic device login,
-and cancellation without overwriting an existing grant.
-
-The actual npm tarball passed pinned Harness profile composition, public CLI/SDK
-registration, missing-auth refusal, synthetic direct conversation, and shutdown.
-Its file list excludes legacy app-server/process/isolation code and assets. No
-new dependency or install hook was added. Root npm audit reported zero known
-vulnerabilities; this is not a security guarantee.
-
-No real direct OAuth login, token refresh, catalog request, model request, latency
-measurement, or direct Web conversation has been performed. The earlier managed
-app-server account smoke check must not be counted as direct-transport evidence.
-
-
-## Non-SSE MIME compatibility correction — 2026-10-11
-
-The owner reported successful dedicated device login and model selection, then
-`PROTOCOL_INVALID` on conversation dispatch. Two separately authorized fixed
-short requests investigated the failure without printing or storing credentials,
-account IDs, prompts, or response text. The first isolated rejection at the
-Content-Type guard after HTTP 200. The second confirmed a 6992-byte SSE-framed
-body while the normalized media type was outside the diagnostic's known MIME
-set. The exact MIME value was not retained; do not claim a particular header.
-The authenticated catalog advertised `gpt-6.1-sol`.
-
-The adapter now relies on bounded SSE frames, validated events, and explicit
-successful completion rather than rejecting by MIME. Two regression tests
-exercise missing/non-SSE headers and rejection of HTML, JSON errors, truncated
-frames and unknown events. The packaged Harness SDK fixture uses an
-`application/octet-stream` header to exercise the public adapter.
-
-Verification passed 69 tests, with three historical Codex tests skipped, and
-packaged Harness profile/CLI/SDK verification passed. The correction was applied
-to the existing temporary Web profile without changing its dedicated login.
-No further real request was sent after those two authorizations. Successful
-real generation through the corrected parser remains for the owner's UI check.
-
-## Refresh uncertainty, empty deltas, and safe diagnostics — 2026-10-11
-
-Three independent corrections were implemented:
-
-- Refresh dispatch first persists `refresh_pending` atomically. Lost replies,
-  malformed success bodies, failed persistence, server errors, and process
-  restarts cannot automatically resend a potentially consumed grant. A definite
-  HTTP 429 restores the prior grant; successful persistence or a fresh login
-  clears intent. The new recovery cases use only disposable synthetic stores.
-- Empty string text deltas are accepted as no-op updates. Non-string and
-  oversized deltas remain rejected, without duplicate block starts or endings.
-- Fixed diagnostic stage labels distinguish frame/event/text/terminal/catalog
-  and authentication failures. Unknown labels and mutated error messages are
-  discarded rather than surfaced. No body, token, identifier, or dynamic event
-  name is added to user-visible diagnostics.
-
-Verification passed 74 tests; three historical Codex tests were skipped. The
-actual packaged Harness profile and public CLI/SDK synthetic conversation passed.
-No real account request, token refresh, or login was run by the agent for these
-corrections. Real update interruption and account recovery remain unverified.
-
-## Security audit remediation — 2026-10-11
-
-The project's Node baseline is now 22.23.3 (Undici 6.28.1, OpenSSL 3.5.8), with
-matching manifests, lockfiles, version-manager files, and pre-authentication
-runtime admission in the public adapter/CLI. The dedicated official macOS arm64
-archive was SHA-256 verified. The temporary Web launcher and login helper use
-that binary; the global Node installation was not modified.
-
-Credential reads now reject non-regular entries before open, use no-follow and
-nonblocking open flags, and recheck descriptor ownership/type/permissions.
-A process-isolated FIFO test finishes with AUTH_STORE_INVALID and releases the
-store lock rather than blocking. Directory and established symlink cases are
-also refused. This is defensive local hardening, not proof of a remote exploit.
-
-HTTP JSON operations preserve caller cancellation after headers as ABORTED;
-internal deadlines remain TIMEOUT rather than a JSON parse failure.
-
-On Node 22.23.3, verification passed 77 tests with three historical Codex tests
-skipped. The packaged pinned Harness CLI/SDK profile also passed synthetic
-conversation and shutdown checks. No real login, refresh or model request was
-performed for this remediation. Real-account update/revocation and complete
-Web conversation coverage remain unverified.
-
-## Follow-up lifecycle corrections — 2026-10-11
-
-OAuth body reading now receives cancellation/deadline signals across polling,
-exchange and refresh. The reader is cancelled on abort and distinguishes caller
-ABORTED from deadline TIMEOUT. Durable refresh intent is not cleared on uncertain
-cancellation. Synthetic polling/body deadline tests cover the previously missed
-path; no real OAuth operation was run.
-
-Completed output items and terminal output use the same bounded text
-reconciliation. Item text is recovered even when terminal output is null.
-Repeated text/item/terminal completion does not duplicate blocks or text;
-contradictions, incomplete item status, unsupported roles/content, and oversized
-text fail closed.
-
-The bridge separately tracks owned authentication/HTTP/discovery operations and
-reader cancellation. close is idempotent, refuses new work, aborts transports,
-and waits for pending ownership cleanup with a five-second deadline. It fails
-with TIMEOUT instead of claiming completion if cleanup remains unresponsive.
-Synthetic tests demonstrate lock release before close completion and paused
-reader cancellation without requiring consumer progress.
-
-Node 22.23.3 verification passed 86 tests; three historical Codex tests were
-skipped. Packaged Harness CLI/SDK synthetic conversation and shutdown passed.
-Real account recovery, real service event variations and complete Web operation
-remain unverified. No account requests were sent for these fixes.
-
-## Admission and incremental SSE work bounds — 2026-10-11
-
-Admission now rejects pre-aborted requests before authentication/filesystem work.
-Each controller retains its capacity until owned auth/HTTP work and cancellation
-cleanup settle; the pending set remains separate shutdown bookkeeping. A burst
-of 32 requests while four cancelled auth operations were still settling was
-refused with LIMIT_EXCEEDED and peak auth concurrency stayed at four. The actual
-AuthStore pre-aborted reproducer entered filesystem preparation zero times.
-
-SSE framing scans bytes incrementally into a fixed 1 MiB frame buffer plus
-four delimiter bytes. It decodes/materializes each frame once, accounts bytes
-incrementally, and yields after 4096 processed bytes or 256 reads so ready tiny
-or empty fragments cannot indefinitely defer cancellation timers. Existing
-UTF-8, multiline data, mixed LF/CRLF, malformed/incomplete payload rejection,
-aggregate/frame/count/text bounds, and terminal-state checks are retained.
-
-Illustrative same-host measurements for malformed one-byte fragments improved
-from 282/4007 ms (32/128 KiB) to 33/76 ms. A scheduled 10 ms abort was observed at
-11 ms with ABORTED, rather than being deferred beyond parsing. Timings are not
-portable guarantees and are not asserted as fixed regression-test thresholds.
-
-Node 22.23.3 verification passed 92 tests; three historical Codex tests were
-skipped. Packaged Harness CLI/SDK synthetic conversation and shutdown passed.
-No real account request was sent. These two corrections do not complete the
-remaining public-release live verification, CI, license or reporting-channel
-preparation described in the workspace audit.
-
-## Installation, support contract, and recovery UX — 2026-10-11
-
-The initial target is macOS CLI/SDK and standalone Web; other OSes are refused
-by package metadata and pre-authentication platform admission. Desktop is not
-claimed as supported. Verification used macOS 26.6.2 / Apple Silicon with Node
-22.23.3. Intel/other OS/Desktop checks remain separate work.
-
-The new source installer creates only a fresh isolated directory, packs the
-local artifact, records integrity/commit/runtime, disables lifecycle scripts,
-uses an empty private HOME, and refuses overwrite. Auth/start helpers use the
-same HOME and required Node; shell paths with spaces/apostrophes are covered.
-A generated Web profile was started on localhost, reached an authenticated HTML
-page via GET, and was stopped without OAuth login or model requests.
-
-Doctor is read-only and secret-free. Missing stores are not created, locks are
-not acquired/stolen/removed, expired grants are not refreshed, and fixed state/
-action labels guide safe manual recovery. Dedicated tests cover missing,
-expired, insecure, locked and refresh-uncertain states. The English guides cover
-source installation, immutable updates, removal, support scope and lock recovery.
-Current-facing patch/security statements were updated from the old app-server
-assumptions.
-
-Root verification passed 94 tests with three historical Codex tests skipped;
-the separately scoped installer integration test passed, and packaged Harness
-CLI/SDK verification passed. The installer test requires the pinned full runtime
-and is invoked by npm run test:install; basic root verification retains its small
-peer dependency baseline. No normal profile or existing credential store was
-modified. Real first response on the guide path, live recovery, CI, license,
-security reporting channel and publication remain outstanding.
-
-## Continuous integration setup (2026-10-11)
-
-The CI workflow runs on push, pull request, and manual dispatch on `macos-15`
-with Node 22.23.3 from `.node-version`. Official checkout v7.0.1 and setup-node
-v7.1.0 are fixed to their release commit SHAs. Repository token permissions are
-read-only, checkout does not persist credentials, no cache or secrets are
-configured, and the job has a 20-minute deadline. Both locked dependency trees
-are installed with lifecycle scripts disabled and audited at the low threshold.
-The workflow verifies source syntax, unit/package behavior, the fresh isolated
-installer, and packaged CLI/SDK synthetic conversation, then requires tracked
-files to remain unchanged. Package checks now require the MIT license artifact
-and metadata. There is no publication or real-account step.
-
-Local clean-install verification on macOS with the pinned Node succeeded:
-94 normal tests passed, three historical app-server tests were skipped, the
-separate installation test passed, and the packaged Harness CLI/SDK synthetic
-conversation passed. Both npm audits reported zero known vulnerabilities.
-YAML parsing and `git diff --check` passed. Hosted runner evidence must be checked
-separately; local results do not demonstrate live subscription generation or
-refresh, nor the absence of undisclosed vulnerabilities.
+After removing obsolete transport-specific files, the root suite passed 53 tests
+with zero failures and zero skips. The separate isolated installer test and
+packaged Harness CLI/SDK synthetic conversation passed. Both locked dependency
+audits reported zero known vulnerabilities. Source/reference searches found no
+remaining obsolete transport imports, configuration assets or instructions.
+Shared input controls remain covered by transport-independent text tests.
+No real account operations were performed.
