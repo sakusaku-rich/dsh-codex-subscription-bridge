@@ -237,7 +237,7 @@ with TIMEOUT instead of claiming completion if cleanup remains unresponsive.
 Synthetic tests demonstrate lock release before close completion and paused
 reader cancellation without requiring consumer progress.
 
-Node 22.23.3 verification passed 85 tests; three historical Codex tests were
+Node 22.23.3 verification passed 86 tests; three historical Codex tests were
 skipped. Packaged Harness CLI/SDK synthetic conversation and shutdown passed.
 Real account recovery, real service event variations and complete Web operation
 remain unverified. No account requests were sent for these fixes.

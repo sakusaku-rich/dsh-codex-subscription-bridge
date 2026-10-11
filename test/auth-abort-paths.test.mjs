@@ -23,3 +23,12 @@ test('signal-aware body reads distinguish deadline from caller cancellation',asy
   try{await assert.rejects(readJson(response,1024,signal),{code:deadline?'TIMEOUT':'ABORTED'})}finally{clearTimeout(keepAlive)}
  }
 });
+test('poll cancellation remains ABORTED when a pending-status body is already errored',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'dsh-poll-status-'));const controller=new AbortController();
+ try{const store=new AuthStore(join(root,'auth'),new Http(async(url,options)=>{
+  if(url.endsWith('/usercode'))return Response.json({device_auth_id:'synthetic',user_code:'ABCD-EFGH',interval:0});
+  const response=new Response(new ReadableStream({start(stream){options.signal.addEventListener('abort',()=>stream.error(new DOMException('Synthetic abort','AbortError')),{once:true})}}),{status:403});
+  queueMicrotask(()=>controller.abort());return response;
+ }));await assert.rejects(store.login(()=>{},controller.signal),{code:'ABORTED'});
+ }finally{await rm(root,{recursive:true,force:true})}
+});

@@ -158,8 +158,12 @@ export class AuthStore {
         const pollSignal = AbortSignal.any([combined, pollTimeout]);
         const response = await this.http.open(`${ISSUER}/api/accounts/deviceauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ device_auth_id: device.device_auth_id, user_code: device.user_code }) }, pollSignal);
-        if ([403, 404].includes(response.status)) { await response.body?.cancel(); continue; }
-        if (!response.ok) { await response.body?.cancel(); throw statusError(response.status); }
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => {});
+          if (pollSignal.aborted) throw abortFailure(pollSignal);
+          if ([403, 404].includes(response.status)) continue;
+          throw statusError(response.status);
+        }
         const code = object(await readJson(response, MAX_AUTH, pollSignal));
         const tokens = await this.http.json(`${ISSUER}/oauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ grant_type: 'authorization_code', code: string(code.authorization_code, 8192), code_verifier: string(code.code_verifier, 8192),
