@@ -109,6 +109,23 @@ export class DirectBridge {
       }
       return blocks.get(key);
     };
+    function* reconcile(item) {
+      object(item);
+      if (!['message', 'reasoning'].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+      if (item.type === 'reasoning') return;
+      if (item.status !== undefined && item.status !== 'completed') throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+      if (item.role !== 'assistant' || !Array.isArray(item.content) || item.content.length > 64) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+      for (const [index, content] of item.content.entries()) {
+        if (content?.type !== 'output_text' || typeof content.text !== 'string') throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+        const block = getBlock(item.id, index);
+        if (!content.text.startsWith(block.text) || (block.ended && content.text !== block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+        const tail = content.text.slice(block.text.length);
+        outputBytes += Buffer.byteLength(tail); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
+        if (!block.started) { block.started = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-start', index: block.index, blockType: 'text' }; }
+        if (tail) { block.text += tail; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'text-delta', index: block.index, text: tail }; }
+        if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
+      }
+    }
     try {
       const models = await this.catalog(controller.signal, true);
       if (!models.some(model => model.id === options.model)) throw new BridgeError('MODEL_UNAVAILABLE');
@@ -143,25 +160,14 @@ export class DirectBridge {
         } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
           phase = 'SSE_OUTPUT_ITEM';
           if (!['message', 'reasoning'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+          if (event.type === 'response.output_item.done') yield* reconcile(event.item);
         } else if (event.type === 'response.completed') {
           phase = 'SSE_TERMINAL';
           if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
           if (event.response.output !== undefined && event.response.output !== null) {
             if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
           }
-          for (const item of event.response.output ?? []) {
-            if (item.type === 'reasoning') continue;
-            if (item.role !== 'assistant' || !Array.isArray(item.content) || item.content.length > 64) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-            for (const [index, content] of item.content.entries()) {
-              if (content?.type !== 'output_text' || typeof content.text !== 'string') throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-              const block = getBlock(item.id, index);
-              if (!content.text.startsWith(block.text) || (block.ended && content.text !== block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-              const tail = content.text.slice(block.text.length);
-              outputBytes += Buffer.byteLength(tail); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
-              if (!block.started) { block.started = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-start', index: block.index, blockType: 'text' }; }
-              if (tail) { block.text += tail; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'text-delta', index: block.index, text: tail }; }
-            }
-          }
+          for (const item of event.response.output ?? []) yield* reconcile(item);
           for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
           complete = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'finish', reason: { kind: 'stop' } }; return;
         } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
