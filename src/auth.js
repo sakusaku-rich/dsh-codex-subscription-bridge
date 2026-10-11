@@ -68,7 +68,11 @@ export class AuthStore {
   async read() {
     let file;
     try {
-      file = await open(join(this.directory, 'auth.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
+      const path = join(this.directory, 'auth.json');
+      // Reject special files before opening; nonblocking/no-follow flags also
+      // protect the open when the entry changes between lstat and open.
+      privateInfo(await lstat(path));
+      file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       const info = await file.stat(); privateInfo(info);
       if (info.size > MAX_AUTH) throw new BridgeError('AUTH_STORE_INVALID');
       const buffer = Buffer.alloc(MAX_AUTH + 1); const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
