@@ -191,3 +191,29 @@ test('a non-SSE MIME header never turns HTML, JSON errors, or truncated SSE into
     await bridge.close();
   }
 });
+test('ambiguous refresh outcomes retain durable intent and never resend the old grant', () => fixture(async root => {
+  for (const mode of ['lost-reply', 'bad-json', 'failed-save', 'server-error']) {
+    let calls = 0; const http = new Http(async () => {
+      calls++;
+      if (mode === 'lost-reply') throw new Error('synthetic-secret');
+      if (mode === 'bad-json') return new Response('{', { status: 200 });
+      if (mode === 'server-error') return json({}, 500);
+      return json({ ...tokens(), refresh_token: 'rotated' });
+    });
+    const directory = join(root, mode); const store = new AuthStore(directory, http);
+    await store.transaction(() => store.write(tokens(1)));
+    if (mode === 'failed-save') store.write = async () => { throw new Error('synthetic-save-failure'); };
+    await assert.rejects(store.token());
+    assert.equal(JSON.parse(await readFile(join(directory, 'auth.json'), 'utf8')).refresh_pending, true);
+    const other = new AuthStore(directory, http);
+    await assert.rejects(other.token(), { code: 'AUTH_REQUIRED' }); assert.equal(calls, 1);
+    await other.transaction(() => other.write(tokens()));
+    assert.equal(claims(await other.token()).exp > Date.now() / 1000, true); assert.equal(calls, 1);
+  }
+}));
+test('a persisted pre-dispatch refresh intent blocks replay after process restart', () => fixture(async root => {
+  const directory = join(root, 'auth'); const store = new AuthStore(directory);
+  await store.transaction(() => store.writeState({ version: 1, mode: 'chatgpt', ...tokens(1), refresh_pending: true }));
+  let calls = 0; const restarted = new AuthStore(directory, new Http(async () => { calls++; return json(tokens()); }));
+  await assert.rejects(restarted.token(), { code: 'AUTH_REQUIRED' }); assert.equal(calls, 0);
+}));

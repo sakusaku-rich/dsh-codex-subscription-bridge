@@ -51,10 +51,16 @@ exclusive temporary files after fsync. The directory itself cannot be a symlink.
 A private directory lock serializes read-refresh-write, explicit login, and
 logout across processes. Waiters reread the store after acquiring the lock.
 Refresh begins within 120 seconds of token expiry and checks account continuity.
-Terminal invalid-grant errors quarantine the local grant; rate limits and
-transient failures do not destroy it. Raw upstream bodies never become errors.
+Before dispatch, a durable `refresh_pending` state prevents replay after
+crashes, lost replies, malformed success responses, or persistence failures.
+Only a definite HTTP 429 rejection restores the prior grant for later retry.
+Successful persistence or explicit new login clears intent. Ambiguous outcomes
+require reauthentication instead of replaying the old refresh token.
+Terminal invalid-grant errors quarantine the local grant; rate limits do not
+destroy it. Raw upstream bodies never become errors.
 A crash after remote refresh but before durable local persistence can still
-require reauthentication; remote rotation cannot be made locally transactional.
+require reauthentication; durable intent prevents automatic replay, but remote
+rotation cannot be made locally transactional.
 
 Lock acquisition is bounded to 30 seconds. Login holds its lock while awaiting
 approval (at most 15 minutes); concurrent use may return `AUTH_BUSY`. Locks are

@@ -75,7 +75,7 @@ export class AuthStore {
       if (bytesRead > MAX_AUTH) throw new BridgeError('AUTH_STORE_INVALID');
       const state = object(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8')));
       if (state.version !== 1 || state.mode !== 'chatgpt') throw new BridgeError('AUTH_REQUIRED');
-      if (state.quarantined) throw new BridgeError('AUTH_REQUIRED');
+      if (state.quarantined || state.refresh_pending) throw new BridgeError('AUTH_REQUIRED');
       return credentials(state);
     } catch (error) {
       if (error instanceof BridgeError) throw error;
@@ -94,12 +94,17 @@ export class AuthStore {
       await rename(temp, target);
       const directory = await open(this.directory, constants.O_RDONLY | constants.O_NOFOLLOW);
       try { await directory.sync(); } finally { await directory.close(); }
-    } finally { await file?.close(); await rm(temp, { force: true }); }
+    } catch { throw new BridgeError('AUTH_STORE_INVALID'); }
+    finally { await file?.close(); await rm(temp, { force: true }); }
   }
   async token(signal) {
     return this.transaction(async () => {
       const stored = await this.read();
       if (claims(stored.access_token).exp * 1000 > Date.now() + 120_000) return stored.access_token;
+      if (signal?.aborted) throw new BridgeError('ABORTED');
+      // Persist intent before dispatch: a crash, lost reply, or failed save must
+      // never cause a consumed refresh grant to be sent again. Login clears it.
+      await this.writeState({ version: 1, mode: 'chatgpt', ...stored, refresh_pending: true });
       const timeout = AbortSignal.timeout(15_000); const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
       let response;
       try {
@@ -107,6 +112,9 @@ export class AuthStore {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
           body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: stored.refresh_token, client_id: CLIENT_ID }) }, combined);
         if (!response.ok) {
+          // A definite rate-limit rejection did not perform rotation. All
+          // ambiguous outcomes keep durable intent and require reauthentication.
+          if (response.status === 429) { await this.write(stored); throw statusError(429); }
           // Quarantine only terminal OAuth grant failures, never quota or transient failures.
           if ([400, 401, 403].includes(response.status)) {
             const payload = await readJson(response, MAX_AUTH).catch(() => ({}));
