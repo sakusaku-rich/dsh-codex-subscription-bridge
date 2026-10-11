@@ -100,3 +100,24 @@ The bounded real-account smoke script is prepared but has not been executed.
 Final stage result: 51 tests passed with the real executable enabled; the default
 run passes 48 tests and skips three opt-in real-binary tests. The packaged-profile
 check also passes against the security-fixed locked runtime.
+
+## Owner-authorized real-account smoke check
+
+On 2026-10-11 the owner explicitly authorized file-backed account discovery and
+one short model request. `scripts/smoke-account.mjs` ran against the trusted local
+Codex CLI 0.144.6 through the public adapter, with `credentialStore: file`.
+
+Result: passed, model `gpt-5.6-sol`, expected fixed reply matched, exit code 0.
+The selected model was the first advertised catalog entry. This demonstrates
+managed ChatGPT-mode admission, real model access, streamed text completion,
+and bridge cleanup for this single request. No additional model request followed.
+
+The bridge did not read, copy, import, or display authentication files or token
+values. Authentication was handled by Codex. Subscription quota may have been
+consumed and Codex may have updated its own cached authentication; whether an
+auth refresh or persistent credential update occurred was not measured. This
+result does not establish refresh/revocation behavior, entitlement to other
+models, long-session behavior, or general vulnerability absence.
+
+No normal Harness profile was installed or modified. Desktop/Web GUI behavior
+and real keyring access remain unverified. No PR or public package was created.

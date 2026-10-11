@@ -5,9 +5,10 @@ ChatGPT subscription login through the official local app-server.
 
 ## Status
 
-The configured backend and packaged Harness SDK profile work with synthetic
-authentication. **Real ChatGPT subscription access has not been tested.** Normal
-profile installation and Desktop/Web GUI verification have not been performed.
+The configured backend and packaged Harness SDK profile passed synthetic
+verification. An owner-authorized file-backed ChatGPT subscription smoke check
+also passed on 2026-10-11 with `gpt-5.6-sol`. Normal profile installation and
+Desktop/Web GUI verification have not been performed.
 
 The adapter connects only when a trusted absolute `executable` and an explicit
 `credentialStore` (`file` or `keyring`) are configured. Otherwise it returns
@@ -90,12 +91,13 @@ plugin. It does not update an existing Harness installation. See
 A separately authorized real-account smoke check is prepared in
 `scripts/smoke-account.mjs`. It reads the catalog and requests one short fixed
 reply. It may consume subscription quota and Codex may refresh its own stored
-credentials. It has not been run.
+credentials. One explicitly authorized file-backed run passed; no additional
+model requests were performed.
 
 ## Limits and project documents
 
 Search, images, quota display, remote access, and Harness tool forwarding are
-outside this MVP. Real refresh/revocation, model entitlement, long conversations,
+outside this MVP. Refresh/revocation behavior, entitlement to other models, long conversations,
 and Desktop/Web UI behavior remain unverified. No finite audit or test suite
 proves the absence of unknown vulnerabilities.
 

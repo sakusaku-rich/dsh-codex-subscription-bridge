@@ -139,5 +139,6 @@ Codex and cannot enlarge its fixed authority. Actual tool-call/result messages
 remain unsupported. The bridge emits text blocks only, including separate
 assistant items, and never translates a Codex tool call into a Harness action.
 
-The currently outstanding checks are explicitly authorized real-account access,
-keyring behavior, authentication refresh/revocation, and Desktop/Web GUI behavior.
+The owner-authorized file-backed account smoke check passed on 2026-10-11.
+Outstanding checks include keyring behavior, authentication refresh/revocation,
+long sessions, other model entitlements, and Desktop/Web GUI behavior.
