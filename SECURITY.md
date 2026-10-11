@@ -37,6 +37,6 @@ No finite audit proves absence of unknown vulnerabilities. See [design and limit
 
 ## Sharing diagnostics
 
-Never include credentials, device codes, or raw authenticated responses in a
+Never include credentials, device codes, or raw authenticated responses in an
 issue or pull request. Share only sanitized reproduction steps, fixed diagnostic
 labels, and runtime/version information.

@@ -91,7 +91,8 @@ It does not publish packages or perform account operations.
 The initial [hosted CI run](https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/actions/runs/38133918042)
 succeeded before the current source cleanup. Current cleanup results are recorded
 below after revalidation. The project is MIT-licensed and remains private.
-Authorized real-account E2E verification remains a release preparation task. Audit results only cover known advisories;
+Authorized real-account E2E verification remains a release preparation task.
+Audit results only cover known advisories;
 no finite audit or test suite establishes absence of unknown vulnerabilities.
 
 ## Current source verification (2026-10-11)
