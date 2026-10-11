@@ -1,66 +1,20 @@
 # MVP requirements
 
-## Purpose
+Use a dedicated ChatGPT OAuth login to connect Harness directly to the Codex
+subscription backend. The owner authorized this migration from managed
+app-server authentication. No Codex process or token import is required.
 
-Use an existing Codex ChatGPT subscription login as a model provider in DeepSeek
-Harness without creating another holder of OpenAI credentials.
+Expose live visible models, stream bounded text history, support cancellation,
+and produce credential-safe errors. Repository and product text remain English.
 
-## User-facing behavior
+Initial exclusions: browser PKCE fallback, Codex/Hermes token import, keyring,
+credential pools, API keys, custom endpoints, tools, images, search and quota UI.
 
-- An authenticated ChatGPT account exposes its available Codex models in the
-  Harness model selector.
-- A text request streams assistant text and a terminal outcome.
-- Cancellation stops the active request and releases its resources.
-- Missing authentication, API-key authentication, incompatible versions, and
-  unsupported requests produce clear, credential-safe failures.
+Acceptance requires synthetic dedicated login/refresh/logout, private storage,
+concurrent updates, terminal failure quarantine, fixed-origin HTTPS, bounded SSE,
+authentication-aware catalog caching, text history isolation, cancellation,
+shutdown, and actual packaged Harness CLI/SDK composition. Real OAuth/service/UI
+verification is a separately authorized step. Historical app-server tests remain
+regression references and are excluded from the package.
 
-All repository content and initial product strings use English.
-
-## Excluded features
-
-The initial version excludes custom OAuth, token import/export, API-key fallback,
-search integration, images, quota controls, remote access, and forwarding Harness
-tools to Codex. These exclusions do not automatically remove native Codex tools;
-their effective restrictions must be established before implementation is
-accepted.
-
-## Implementation prerequisites
-
-- Pin one supported Harness version and one supported Codex CLI version.
-- Verify their actual provider and app-server schemas rather than relying on an
-  unversioned example or another community plugin.
-- Use a trusted absolute Codex executable path and local stdio transport.
-- Determine how the supported Codex version constrains native tools, private
-  file reads, and network access. Reject the integration if the intended
-  restrictions cannot be enforced.
-- Select an explicit conversation lifecycle. Prefer fresh ephemeral request
-  threads if their history reconstruction is verified; any reuse must remain
-  owned by one Harness conversation and preserve its current authority.
-- Choose a minimal dependency graph, pin it, and retain a lockfile. Review
-  install-time scripts before allowing any execution.
-
-## Acceptance criteria
-
-The implementation must pass synthetic tests for:
-
-1. ChatGPT authentication admission and API-key mode rejection.
-2. Valid model discovery, malformed discovery responses, and catalog failure.
-3. Streaming completion, failure, cancellation, and bounded timeouts.
-4. Concurrent conversations and fork/import isolation.
-5. Permission changes between requests and unsupported policy rejection.
-6. Token-bearing stderr, RPC errors, malformed JSON, and oversized messages.
-7. Child-environment minimization and executable-path validation.
-8. Repeated shutdown and a child that ignores termination.
-9. Packaged artifact composition in an isolated Harness profile.
-
-Then, with explicit owner authorization, verify real model access and effective
-authority using the exact supported version pair. Account maintenance performed
-by Codex during that test must be disclosed; do not claim authentication refresh
-or revocation is verified merely because a single request succeeds.
-
-## Reference
-
-[Official Codex app-server documentation](https://learn.chatgpt.com/docs/app-server)
-describes the protocol, managed ChatGPT authentication, threads, turns, and
-permission settings. The implementation must additionally verify the schema and
-behavior of the pinned executable.
+See [direct connection design](DIRECT.md) and [security requirements](../SECURITY.md).

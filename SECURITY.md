@@ -1,54 +1,41 @@
 # Security requirements
 
-This document defines requirements for implementation. It does not claim that a
-working bridge exists or that vulnerabilities have been eliminated.
+## Trust and credential ownership
 
-## Trust model
+The direct adapter holds a dedicated ChatGPT OAuth login. It never reads, imports,
+updates, or deletes Codex/Hermes credentials. The owner explicitly authorized
+this change from the former app-server-only design.
 
-The plugin and the Codex app-server run under the local OS user. File permissions
-alone cannot protect that user's credentials from another process with the same
-authority. The bridge must not add an additional credential store or a token
-export surface.
-
-The Codex executable, Harness host, OS, and selected dependency versions remain
-part of the trusted runtime. Existing account access is reused through Codex's
-managed authentication; the plugin must not copy authentication files.
+The plugin, Harness, Node runtime, OS, and processes running as the same OS user
+remain trusted. Dedicated file permissions are not encryption or protection
+against that same user. The initial store is plaintext; keyring is not included.
 
 ## Required controls
 
-1. Validate an absolute executable path and use a fixed argument vector with
-   shell execution disabled. Do not search project directories for executables.
-2. Use a child environment allowlist and avoid inheriting unrelated project or
-   cloud secrets. Environment minimization does not provide filesystem isolation.
-3. Verify ChatGPT-managed account authentication before providing models or
-   starting a conversation. Fail explicitly on other authentication modes.
-4. Validate every incoming JSON-RPC message and enforce aggregate resource
-   bounds. Malformed input must terminate the connection safely.
-5. Return fixed errors and safe classifications. Never surface raw stderr,
-   response bodies, authorization URLs, or token-shaped fields in diagnostics.
-6. Keep each Harness conversation isolated. Forked or imported histories must
-   not reuse another conversation's live Codex thread.
-7. Apply supported authority restrictions before each request. Unsupported or
-   unverifiable permission mappings must fail closed.
-8. Prevent native Codex tools from gaining unintended filesystem, shell, network,
-   MCP, or application access. Approval handling alone is not evidence that all
-   tools are disabled, and read-only mode alone does not restrict file reads.
-9. Await cancellation and bounded shutdown; stop accepting events from retired
-   requests and terminate child processes that do not exit.
+- Use fixed HTTPS destinations and reject redirects and endpoint overrides.
+- Accept only a dedicated OAuth grant; reject raw keys and configuration tokens.
+- Keep tokens out of diagnostics, profile YAML, package output, and logs.
+- Print a one-time device code only in the explicitly invoked login command.
+- Validate private file ownership, modes, symlinks, shape, and size.
+- Serialize credential update, login and logout with a process-shared lock.
+- Persist rotated credentials atomically; quarantine terminal invalid grants.
+- Reread authentication on metadata cache hits and before model dispatch.
+- Bound requests, input/output, frames, queues, and waiting periods.
+- Cancel network readers on abort, timeout, shutdown and generator retirement.
+- Send text only, no tools, no resumed server IDs, and `store: false`.
+- Reject malformed, execution-bearing, failed, or incomplete streams.
 
 ## Verification boundary
 
-Normal tests use synthetic values and fake processes. A real-account test is a
-separate, explicitly authorized activity in an isolated Harness profile. Before
-normal installation, verify the exact supported version pair, model requests,
-cancellation, conversation forks, permission enforcement, process cleanup, and
-credential-safe diagnostics.
+All normal tests use disposable stores and in-memory HTTPS fixtures. No real
+OAuth flow, refresh, subscription request, or normal-profile installation is
+included. Each real account activity requires explicit authorization.
 
-No finite review or test suite establishes the absence of unknown
-vulnerabilities. Document the reviewed versions, checks, and remaining limits.
+The direct implementation has not yet been verified against real services.
+Inherited app-server smoke results do not validate it. No finite audit proves
+absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
 
 ## Reporting
 
-Do not post credentials or sensitive reproduction details in a public issue.
-This private repository currently has no published security contact. Agree on a
-private reporting channel with the owner before any public distribution.
+Never include credentials, device codes, or raw authenticated responses in a
+public issue. Agree on a private reporting channel before distribution.
