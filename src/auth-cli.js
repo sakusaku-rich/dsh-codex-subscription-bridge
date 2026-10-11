@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { assertNodeVersion } from './runtime.js';
+import { assertNodeVersion, assertPlatform } from './runtime.js';
 import { AuthStore, authDirectory } from './auth.js';
 import { failure } from './errors.js';
 const controller = new AbortController();
 process.once('SIGINT', () => controller.abort()); process.once('SIGTERM', () => controller.abort());
 try {
-  assertNodeVersion();
+  assertNodeVersion(); assertPlatform();
   const command = process.argv[2];
   if (process.argv.length !== 3 || !['login', 'status', 'logout'].includes(command)) {
     console.error('Usage: dsh-codex-subscription-auth <login|status|logout>'); process.exitCode = 2;

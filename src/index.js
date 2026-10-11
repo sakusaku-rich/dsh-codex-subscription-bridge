@@ -1,4 +1,4 @@
-import { assertNodeVersion } from './runtime.js';
+import { assertNodeVersion, assertPlatform } from './runtime.js';
 import { HarnessError, LlmAdapter } from '@deepseek-ai/dsh-llm';
 import { PROVIDER } from './text.js';
 import { DirectBridge } from './direct.js';
@@ -28,7 +28,7 @@ class SubscriptionAdapter extends LlmAdapter {
   }
 }
 export function apply(ctx, config = {}) {
-  assertNodeVersion();
+  assertNodeVersion(); assertPlatform();
   if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).length) throw new BridgeError('CONFIG_INVALID');
   const adapter = new SubscriptionAdapter(authenticationEnvironment(ctx));
   ctx.effect(() => { const unregister = ctx.llm.registerAdapter([PROVIDER], adapter);

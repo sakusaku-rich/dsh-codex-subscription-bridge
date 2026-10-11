@@ -5,3 +5,7 @@ export function assertNodeVersion(version = process.versions.node) {
   const [major, minor, patch] = version.split('.').map(Number);
   if (major !== 22 || minor < 23 || (minor === 23 && patch < 3)) throw new BridgeError('NODE_VERSION_UNSUPPORTED');
 }
+
+export function assertPlatform(platform = process.platform) {
+  if (platform !== 'darwin') throw new BridgeError('PLATFORM_UNSUPPORTED');
+}

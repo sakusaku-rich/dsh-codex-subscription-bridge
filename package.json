@@ -49,5 +49,8 @@
   },
   "bin": {
     "dsh-codex-subscription-auth": "./src/auth-cli.js"
-  }
+  },
+  "os": [
+    "darwin"
+  ]
 }
