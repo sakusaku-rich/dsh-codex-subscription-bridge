@@ -33,9 +33,11 @@ mutations are serialized. Shutdown aborts the login and waits for owned work.
 Unknown errors become fixed diagnostics rather than raw bodies or credentials.
 
 The settings component uses the host React and settings slot contract, fixed
-link destinations, escaped text, and an allowlist of diagnostic codes. It does
-not automatically start login on load and offers account actions only on the
-local/owned-host surface with secure browser randomness.
+link destinations, escaped text, and an allowlist of diagnostic codes. The panel
+is styled after the OpenAI interface language (near-monochrome palette, pill
+actions, monospace code display) with automatic light and dark palettes scoped
+to the section. It does not automatically start login on load and offers account
+actions only on the local/owned-host surface with secure browser randomness.
 
 Synthetic tests cover ownership, redaction, cancellation, logout, disposal,
 malformed/oversized requests, unauthorized Web requests and cross-Origin refusal,
