@@ -23,11 +23,11 @@ No Codex account credentials were read by the bridge or tests. No authentication
 was changed, app-server account session started, model requested, normal Harness
 profile installed, PR opened, or package published.
 
-The prototype does not satisfy all MVP acceptance criteria. Effective native
+At that first-stage snapshot, the prototype did not satisfy all MVP acceptance criteria. Effective native
 authority, inherited startup configuration, exact production executable/version
 admission, real history semantics, full Harness profile composition, account
-refresh, and revocation remain unverified. The production gate prevents use
-until the pre-dispatch safety prerequisite is resolved.
+refresh, and revocation remain unverified. At that first-stage snapshot, the production gate prevented use pending
+pre-dispatch isolation verification.
 
 All protocol response values, account identities, conversation text, stderr,
 and token-like examples used by tests are synthetic. Tests do not copy code
@@ -66,6 +66,37 @@ account admission with a synthetic managed-account response. No real ChatGPT
 login, account refresh, or subscription model access was tested.
 
 A separate restrictive macOS Seatbelt attempt did not start Codex successfully
-and is not counted as a verified isolation control. The public production gate
-remains closed. Full Harness bundle-loader composition and separately authorized
-real-account testing remain outstanding.
+and is not counted as a verified isolation control. At that second-stage snapshot, the public production gate remained closed.
+The next stage below completed loader composition and wired the configured
+launcher. Real-account testing remains separately authorized.
+
+## Packaged profile and configured launcher stage
+
+The current configured adapter is connected to the isolated launcher. Both an
+absolute executable and a credential store are required; missing configuration
+returns `CONFIG_REQUIRED` without account access. The declared route is text-only.
+
+The completed tests now include:
+
+- Exact public Harness profile composition and the CLI/SDK initialization path.
+- Packaged provider registration, model discovery, and a configured SDK text turn
+  through a synthetic Codex executable, followed by clean shutdown.
+- An adversarial project dotenv authentication path ignored through the original
+  launcher snapshot; API keys excluded from the child environment.
+- Precise managed-auth mode admission using a token-free status request.
+- Real Codex refusal of a synthetic API-key file without changing that file.
+- Multiple assistant text items, discarded Harness declarations, and rejection
+  of actual tool execution history.
+- Explicit file/keyring storage selection; automatic fallback is refused.
+
+The credential-free real-binary suite and packaged profile check pass. The
+patched verification runtime's npm audit reports zero known vulnerabilities;
+see HARNESS.md for the initial advisory findings and applicability limits.
+
+No real-account model request, keyring access, refresh/revocation check,
+Desktop/Web GUI check, normal profile installation, or PR was performed.
+The bounded real-account smoke script is prepared but has not been executed.
+
+Final stage result: 51 tests passed with the real executable enabled; the default
+run passes 48 tests and skips three opt-in real-binary tests. The packaged-profile
+check also passes against the security-fixed locked runtime.

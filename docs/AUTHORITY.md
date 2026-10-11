@@ -1,17 +1,19 @@
-# Live-access release blocker
+# Authority isolation
 
-## Decision
+## Current decision
 
-Keep `createProductionSession()` closed with `AUTHORITY_UNVERIFIED` until native
-operations and inherited configuration can be constrained before any user input
-or authentication-backed model dispatch. The production entry point does not
-accept a session factory, credentials, executable, or authority bypass setting.
-The injected factory in the internal bridge is only a synthetic testing seam.
+The public adapter now uses the versioned isolated launcher only when a trusted
+absolute executable and an explicit credential store are configured. Missing
+configuration fails with `CONFIG_REQUIRED`; arbitrary permissions, process
+arguments, raw tokens, API-key modes, and migration fallback are unsupported.
 
-This follows the repository requirement: "Prove native Codex tool restrictions
-before accepting real conversation input." A read-only sandbox is insufficient
-because it can still permit private reads, and a model-visible tool omission
-alone does not prove that a dispatch-only handler cannot run.
+The full credential-free binary and packaged Harness SDK tests pass. A real
+account is still an explicitly authorized verification step, not an automated
+baseline test. Only macOS with the pinned CLI is admitted.
+
+This follows the requirement to establish tool restrictions before user input.
+It does not treat a read-only sandbox as filesystem read confinement. Codex's
+own process, OS, host, and dependencies remain trusted.
 
 ## Evidence examined
 
@@ -41,7 +43,7 @@ Inference: `environments: []`, `approvalPolicy: never`, and an empty restricted
 read sandbox do not by themselves prove the required containment. This
 investigation does not prove that no supported isolation mechanism exists.
 
-## Remaining implementation work
+## Original prerequisite checklist (historical)
 
 1. Establish a supported way to isolate configuration and prevent every
    external native capability before initialization. This includes MCP,
@@ -105,12 +107,37 @@ The change now uses the pinned schema: `readOnly` with `networkAccess: false`. A
 macOS Seatbelt launch attempt exited before Codex startup, so it has not been
 accepted as a verified alternative.
 
-The production gate remains closed. The candidate isolated launcher exists as
-an internal module, but is not connected to the public plugin entry point.
+The isolated launcher is now connected to the public adapter behind explicit
+executable and credential-store configuration. The unconfigured route never
+launches Codex.
 The full credential-free protocol/adapter test now passes, including history
 injection, visible text streaming, native execution rejection, and absence of
 the synthetic private sentinel in model requests. This does not prove OS-level
 read confinement: `readOnly` still permits broad reads by trusted Codex itself.
-The isolated launcher must additionally be exercised through the full pinned
-Harness loader before it is connected to the public entry point. Real-account
+The launcher has additionally been exercised through the pinned Harness
+loader and public SDK CLI using synthetic authentication. Real-account
 verification remains a separately authorized activity.
+
+## Authentication mode and storage
+
+`account/read` normalizes external ChatGPT tokens to a ChatGPT account summary.
+The pinned legacy `getAuthStatus` endpoint exposes the precise backing mode;
+the bridge calls it with both `includeToken: false` and `refreshToken: false`.
+Only `authMethod: chatgpt` with `authToken: null` is admitted. The API-key
+file-rejection test uses a synthetic auth file and verifies that it is unchanged.
+The bridge never calls login, logout, token import, or config-read endpoints.
+
+The storage selector is explicit (`file` or `keyring`) and is embedded into the
+same authoritative lock. There is no automatic credential-store migration.
+The launcher preserves the inherited `CODEX_HOME` or inherited HOME default,
+while using a private child HOME/cwd and temporary database/log paths. The
+launcher snapshot's process layer prevents a project dotenv file from replacing
+the authentication location. Real keyring access remains unverified.
+
+Harness's tool declarations are discarded metadata; they are not forwarded to
+Codex and cannot enlarge its fixed authority. Actual tool-call/result messages
+remain unsupported. The bridge emits text blocks only, including separate
+assistant items, and never translates a Codex tool call into a Harness action.
+
+The currently outstanding checks are explicitly authorized real-account access,
+keyring behavior, authentication refresh/revocation, and Desktop/Web GUI behavior.
