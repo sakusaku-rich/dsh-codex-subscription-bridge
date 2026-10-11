@@ -162,7 +162,9 @@ verified locally rather than claimed as a CI check.
 
 The packaged client adds Settings → ChatGPT subscription. Explicit login reveals
 only the temporary user-facing sign-in code and the fixed OpenAI link to its
-initiating tab. Access/refresh tokens stay in the backend. Local diagnosis,
+initiating tab. Clicking the code copies it to the local clipboard and shows a
+short confirmation; the copy itself performs no network activity. Access/refresh
+tokens stay in the backend. Local diagnosis,
 cancellation and confirmed local logout use existing dedicated-store controls.
 A random tab identifier, not a code or token, may persist in sessionStorage for
 reload ownership. Login/logout notify model observers through atomic adapter

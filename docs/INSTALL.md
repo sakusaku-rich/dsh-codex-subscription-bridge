@@ -55,8 +55,9 @@ reviewed checkout for distribution.
 sh artifacts/subscription-web/start.sh
 ```
 
-Open Settings → ChatGPT subscription → Log in, then enter the displayed one-time
-sign-in code on the linked OpenAI page. The generated auth helper remains optional
+Open Settings → ChatGPT subscription → Log in, then click the displayed one-time
+sign-in code to copy it and paste it on the linked OpenAI page. The generated auth
+helper remains optional
 for developer/recovery diagnosis; doctor does not contact OpenAI or create a
 missing store. Never paste codes or credentials into an issue.
 

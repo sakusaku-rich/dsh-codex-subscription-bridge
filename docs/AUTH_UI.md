@@ -2,8 +2,9 @@
 
 In Desktop or standalone Web, open **Settings → ChatGPT subscription**.
 Click **Log in** to start a dedicated device login. The page displays a temporary
-**one-time sign-in code** and a fixed `https://auth.openai.com/codex/device` link.
-Enter the code on that page and approve it in your browser. Harness polls for
+**one-time sign-in code** that you can click to copy, and a fixed
+`https://auth.openai.com/codex/device` link. Paste or enter the code on that page
+and approve it in your browser. Harness polls for
 completion and updates the panel, then refreshes model observers.
 
 The displayed code is not an access token. Access and refresh tokens stay in

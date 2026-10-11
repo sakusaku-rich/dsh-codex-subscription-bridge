@@ -20,6 +20,9 @@ test('client registers a settings section and renders only safe state and the fi
   assert.equal(serialized.includes('untrusted.invalid'), false);
   assert.ok(serialized.includes('SYNTHETIC-CODE'));
   assert.ok(serialized.includes('https://auth.openai.com/codex/device'));
+  assert.ok(serialized.includes('Copy the one-time sign-in code'));
+  assert.ok(serialized.includes('Click the code to copy it'));
+  assert.equal(serialized.includes('Enter this code'), false);
   serverState.owned = false;
   assert.equal(JSON.stringify(component({ connection })).includes('SYNTHETIC-CODE'), false);
 });

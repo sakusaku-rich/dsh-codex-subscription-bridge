@@ -40,8 +40,9 @@ pin 22.23.3 for development. The public adapter and authentication CLI refuse
 older or unverified runtimes before accessing credentials.
 
 In Desktop or standalone Web, open **Settings → ChatGPT subscription → Log in**.
-The page shows a **one-time sign-in code** and a fixed OpenAI sign-in link. Enter
-that code in your browser; the page updates after approval. Cancel login, refresh
+The page shows a **one-time sign-in code** that you can click to copy and a fixed
+OpenAI sign-in link. Paste or enter that code in your browser; the page updates
+after approval. Cancel login, refresh
 local status, and log out from the same page. Access/refresh tokens remain in the
 backend and are never sent to the settings page. See [authentication UI](docs/AUTH_UI.md).
 

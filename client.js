@@ -54,6 +54,11 @@ window.__ModuleLoader__.load({
       '.dshcsb-code-label{margin:0;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dshcsb-muted);}',
       '.dshcsb-code-value{margin:0;font-family:ui-monospace,"SFMono-Regular","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:24px;line-height:32px;letter-spacing:.14em;font-weight:500;word-break:break-all;}',
       '.dshcsb-code-hint{margin:0;font-size:12px;line-height:18px;color:var(--dshcsb-muted);}',
+      '.dshcsb-code-copy{margin:0;padding:0;border:0;background:none;color:inherit;cursor:pointer;text-align:left;transition:opacity .15s ease;}',
+      '.dshcsb-code-copy:hover{opacity:.7;}',
+      '.dshcsb-code-copy:focus-visible{outline:2px solid var(--dshcsb-ok);outline-offset:2px;}',
+      '.dshcsb-code-feedback{margin:0;font-size:12px;line-height:18px;color:var(--dshcsb-ok);}',
+      '.dshcsb-code-feedback-bad{color:var(--dshcsb-bad);}',
       '.dshcsb-cta{display:inline-flex;align-items:center;gap:6px;border-radius:9999px;padding:8px 16px;background:var(--dshcsb-primary-bg);color:var(--dshcsb-primary-fg);font-size:13px;font-weight:600;line-height:20px;text-decoration:none;transition:background .15s ease;align-self:flex-start;}',
       '.dshcsb-cta:hover{background:var(--dshcsb-primary-hover);}',
       '.dshcsb-actions{display:flex;flex-wrap:wrap;gap:10px;}',
@@ -76,6 +81,8 @@ window.__ModuleLoader__.load({
       const current = React.useRef(null);
       const request = React.useRef(null);
       const generation = React.useRef(0);
+      const [copied, setCopied] = React.useState('');
+      const copyTimer = React.useRef(null);
       const call = async (action, args = {}) => {
         const controller = new AbortController(); request.current?.abort(); request.current = controller;
         const revision = ++generation.current;
@@ -97,6 +104,30 @@ window.__ModuleLoader__.load({
         const timer = setInterval(() => { if (current.current?.active && !request.current) void call('status'); }, 1000);
         return () => { mounted.current = false; generation.current++; request.current?.abort(); clearInterval(timer); };
       }, [connection]);
+      const code = state?.owned && state.phase === 'waiting' && typeof state.device?.code === 'string' && /^[A-Za-z0-9-]{1,128}$/u.test(state.device.code) ? state.device.code : null;
+      React.useEffect(() => {
+        setCopied('');
+        return () => { if (copyTimer.current) { clearTimeout(copyTimer.current); copyTimer.current = null; } };
+      }, [code]);
+      const showCopyResult = ok => {
+        if (!mounted.current) return;
+        setCopied(ok ? 'copied' : 'failed');
+        if (copyTimer.current) clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => { copyTimer.current = null; if (mounted.current) setCopied(''); }, 2500);
+      };
+      const copyCode = async () => {
+        if (!code) return;
+        try {
+          if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(code); showCopyResult(true); return; }
+          const area = document.createElement('textarea');
+          area.value = code; area.setAttribute('readonly', '');
+          area.style.position = 'fixed'; area.style.opacity = '0';
+          document.body.appendChild(area); area.select();
+          let wrote = false;
+          try { wrote = document.execCommand('copy'); } finally { area.remove(); }
+          showCopyResult(wrote);
+        } catch { showCopyResult(false); }
+      };
       const action = async (name, args) => {
         setBusy(true);
         if (name === 'cancel') setState(previous => previous ? { ...previous, device: undefined, phase: 'cancelling' } : previous);
@@ -110,7 +141,6 @@ window.__ModuleLoader__.load({
           h('p', { className: 'dshcsb-subtitle' }, 'Open this settings page locally in a browser with secure randomness support.'),
         ]);
       }
-      const code = state?.owned && state.phase === 'waiting' && typeof state.device?.code === 'string' && /^[A-Za-z0-9-]{1,128}$/u.test(state.device.code) ? state.device.code : null;
       const local = state?.local?.auth;
       const localText = local === 'stored' ? 'A local subscription login is stored.' : ['expired', 'refresh_due'].includes(local) ? 'The stored login may refresh during normal use.' : local === 'relogin_required' ? 'Log in again to recover the local authentication state.' : local === 'missing' ? 'No local subscription login is stored.' : 'Local authentication has not been checked or is busy.';
       const alertText = error || state?.phase === 'failed' ? error || safeError(state.error) : null;
@@ -125,8 +155,9 @@ window.__ModuleLoader__.load({
         alertText ? h('p', { className: 'dshcsb-alert', role: 'alert' }, alertText) : null,
         code ? h('div', { className: 'dshcsb-code' },
           h('p', { className: 'dshcsb-code-label' }, 'One-time sign-in code'),
-          h('code', { className: 'dshcsb-code-value', style: { userSelect: 'all' } }, code),
-          h('p', { className: 'dshcsb-code-hint' }, 'Enter this code on the OpenAI sign-in page. It is not an access token. Keep it private; this page updates after approval.'),
+          h('button', { className: 'dshcsb-code-value dshcsb-code-copy', type: 'button', style: { userSelect: 'all' }, 'aria-label': 'Copy the one-time sign-in code', title: 'Click to copy the code', onClick: () => void copyCode() }, code),
+          h('p', { className: 'dshcsb-code-hint' }, 'Click the code to copy it, then enter it on the OpenAI sign-in page. It is not an access token. Keep it private; this page updates after approval.'),
+          copied === 'copied' ? h('p', { className: 'dshcsb-code-feedback', role: 'status' }, 'Copied to the clipboard.') : copied === 'failed' ? h('p', { className: 'dshcsb-code-feedback dshcsb-code-feedback-bad', role: 'status' }, 'Copy failed. Select the code and copy it manually.') : null,
           h('a', { className: 'dshcsb-cta', href: 'https://auth.openai.com/codex/device', target: '_blank', rel: 'noopener noreferrer' }, 'Open ChatGPT sign-in page')) : null,
         h('div', { className: 'dshcsb-actions' },
           h('button', { className: 'dshcsb-btn dshcsb-primary', type: 'button', disabled: busy || Boolean(state?.active), onClick: () => void action('login') }, local === 'stored' ? 'Log in again' : 'Log in'),

@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Direct Codex subscription provider for DeepSeek Harness with dedicated
   ChatGPT OAuth device login, streamed text conversations, and cancellation.
-- Settings UI section with one-time sign-in code display, login, cancel,
-  refresh, and logout actions.
+- Settings UI section with a click-to-copy one-time sign-in code display, login,
+  cancel, refresh, and logout actions.
 - Authentication CLI (`dsh-codex-subscription-auth`) with `login`, `status`,
   `doctor`, and `logout` commands.
 

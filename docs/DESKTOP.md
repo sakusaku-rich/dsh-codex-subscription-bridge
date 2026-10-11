@@ -44,8 +44,9 @@ GUI. No login or GUI is automatically started by preparation.
    a single-instance lock; otherwise the new invocation may focus the old window.
 2. Start `sh artifacts/desktop-verification/desktop.sh` from Terminal, keeping it
    open. This launcher is only for selecting the dedicated verification profile.
-3. Open **Settings → ChatGPT subscription**. Click **Log in** and enter the
-   displayed one-time sign-in code on the linked OpenAI page. The panel updates
+3. Open **Settings → ChatGPT subscription**. Click **Log in**, click the displayed
+   one-time sign-in code to copy it, and paste it on the linked OpenAI page. The
+   panel updates
    after approval; no authentication script is needed for this flow.
 4. Select `Codex (ChatGPT subscription, text only)` and an advertised model. Send
    a short prompt, then ask a follow-up. Cancel another turn and verify a later
