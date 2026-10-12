@@ -2,7 +2,7 @@
 
 A minimal DeepSeek Harness provider that connects directly to the Codex subscription backend using a dedicated ChatGPT OAuth login. It forwards Harness tool definitions and executed tool-call history, and sends user message images as base64 `input_image` data URLs. The bridge never executes tools itself; execution stays in the Harness host.
 
-"OpenAI", "ChatGPT", and "Codex" are trademarks of OpenAI. This project is an independent tool and is not affiliated with, endorsed by, or sponsored by OpenAI or DeepSeek. Connecting a ChatGPT subscription through this adapter is an account operation governed by the applicable terms of service; using it may violate those terms and put the account at risk.
+"OpenAI", "ChatGPT", and "Codex" are trademarks of OpenAI. This project is an independent tool and is not affiliated with, endorsed by, or sponsored by OpenAI or DeepSeek. Whether connecting a ChatGPT subscription through this adapter is permitted under the applicable terms is unverified; review the applicable terms before use.
 
 ## Requirements
 
