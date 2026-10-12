@@ -15,13 +15,15 @@ set -eu
 
 TAG=""
 DIRECTORY=""
+SURFACE="web"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --tag) TAG="${2:-}"; shift 2 ;;
     --directory) DIRECTORY="${2:-}"; shift 2 ;;
+    --surface) SURFACE="${2:-}"; shift 2 ;;
     -h|--help)
       cat <<'USAGE'
-Usage: sh install.sh --tag <vX.Y.Z> --directory <absolute new directory>
+Usage: sh install.sh --tag <vX.Y.Z> --directory <absolute new directory> [--surface web|desktop]
 
 Downloads the pinned release installer bundle for <vX.Y.Z>, verifies its
 published SHA-256 checksum, and prepares an isolated signed-out Harness profile
@@ -31,6 +33,10 @@ destination must not. Sign-in happens afterwards inside Harness.
 Options:
   --tag <vX.Y.Z>          The released tag to install. Required.
   --directory <path>      An absolute, not-yet-existing destination. Required.
+  --surface <web|desktop> Which verified host to prepare for. Defaults to web.
+                          Desktop requires the installed DeepSeek Harness
+                          Desktop 0.2.0-rc.2 at /Applications and uses its own
+                          Electron host; a different build is refused.
 
 Environment:
   DSH_INSTALL_SOURCE   Override the download source for an offline or mirrored
@@ -48,6 +54,10 @@ done
 
 [ -n "$TAG" ] || { echo "install.sh: --tag is required (for example --tag v0.1.0)" >&2; exit 2; }
 [ -n "$DIRECTORY" ] || { echo "install.sh: --directory is required" >&2; exit 2; }
+case "$SURFACE" in
+  web|desktop) : ;;
+  *) echo "install.sh: --surface must be web or desktop" >&2; exit 2 ;;
+esac
 
 case "$DIRECTORY" in
   /*) : ;;
@@ -202,5 +212,5 @@ echo "Verifying the packaged plugin artifact"
 # lifecycle scripts disabled, then writes the profile, its manifest and its
 # launchers. It receives the artifact we already verified, not a fresh download,
 # and the resolved npm CLI path, so it never has to guess a package manager.
-echo "Preparing the isolated profile at $DIRECTORY"
-"$NODE" "$PREPARE" --directory "$DIRECTORY" --artifact "$PLUGIN" --checksums "$WORK/SHA256SUMS" --tag "$TAG" --npm-cli "$NPM_EXECPATH"
+echo "Preparing the isolated $SURFACE profile at $DIRECTORY"
+"$NODE" "$PREPARE" --directory "$DIRECTORY" --artifact "$PLUGIN" --checksums "$WORK/SHA256SUMS" --tag "$TAG" --npm-cli "$NPM_EXECPATH" --surface "$SURFACE"
