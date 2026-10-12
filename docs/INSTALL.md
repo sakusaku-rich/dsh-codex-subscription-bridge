@@ -49,7 +49,7 @@ Stop the server with Ctrl-C and let shutdown complete before recovery/removal. F
 
 Stop the old profile. Obtain/review a new pinned commit, use its required Node and locked runtime, then prepare a different new directory (for example `artifacts/subscription-web-next`). Inspect its manifest and diagnose it. Log in explicitly there and verify the new profile before removing the old one.
 
-Do not copy old auth.json or share a refresh-token copy across installations. The old and new profile use separate credential stores. This procedure does not promise that provider-side session policy leaves every other login unchanged. There is no automatic update channel; see [the changelog](../CHANGELOG.md) for release history and follow the same reviewed-commit procedure for updates.
+Do not copy old auth.json or share a refresh-token copy across installations. The old and new profile use separate credential stores. This procedure does not promise that provider-side session policy leaves every other login unchanged. There is no automatic update channel; review the commit history between your installed commit and the new one, then follow the same reviewed-commit procedure for updates.
 
 ## Remove this dedicated installation
 
