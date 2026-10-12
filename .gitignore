@@ -1,9 +1,11 @@
+# Build outputs are ignored only at the repository root, so a source directory
+# such as scripts/lib is never silently excluded by the lib/ pattern.
 node_modules/
-dist/
-lib/
-coverage/
-artifacts/
-work/
+/dist/
+/lib/
+/coverage/
+/artifacts/
+/work/
 .env*
 *.log
 *.key
