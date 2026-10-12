@@ -2,17 +2,11 @@
 
 ## Language
 
-Use English for repository content: source code, comments, documentation, tests,
-diagnostics, commit messages, issues, and pull requests. Do not add translated
-copies unless the owner explicitly requests them. Conversations with the owner
-may use their preferred language.
+Use English for repository content: source code, comments, documentation, tests, diagnostics, commit messages, issues, and pull requests. Do not add translated copies unless the owner explicitly requests them. Conversations with the owner may use their preferred language.
 
 ## Scope
 
-Read [docs/MVP.md](docs/MVP.md), [docs/DIRECT.md](docs/DIRECT.md), and
-[SECURITY.md](SECURITY.md) before implementation. The owner authorized direct
-Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature
-set limited to model selection, streamed text conversations, and cancellation.
+Read [docs/MVP.md](docs/MVP.md), [docs/DIRECT.md](docs/DIRECT.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations, and cancellation.
 
 ## Credential and transport handling
 
@@ -27,17 +21,10 @@ set limited to model selection, streamed text conversations, and cancellation.
 
 ## Git workflow
 
-Fetch current remote references and use a task-specific worktree based on remote
-main. Do not edit files on the default branch. Split independent changes into
-reviewable commits and use English Conventional Commit messages.
+Fetch current remote references and use a task-specific worktree based on remote main. Do not edit files on the default branch. Split independent changes into reviewable commits and use English Conventional Commit messages.
 
-Do not create pull requests, publish packages, change account authentication, or
-install into a normal Harness profile without the owner's explicit instruction.
+Do not create pull requests, publish packages, change account authentication, or install into a normal Harness profile without the owner's explicit instruction.
 
 ## Verification
 
-Use synthetic credentials and in-memory HTTPS fixtures in normal tests. Never
-make paid model calls or use the owner's existing authentication in automated
-tests. Pin supported Harness and dependency versions before implementing
-their integration. Keep source, packaged artifacts, and documented behavior
-consistent. Report unverified behavior and remaining security risks explicitly.
+Use synthetic credentials and in-memory HTTPS fixtures in normal tests. Never make paid model calls or use the owner's existing authentication in automated tests. Pin supported Harness and dependency versions before implementing their integration. Keep source, packaged artifacts, and documented behavior consistent. Report unverified behavior and remaining security risks explicitly.

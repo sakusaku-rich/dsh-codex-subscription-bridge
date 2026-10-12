@@ -32,6 +32,4 @@ What you expected to happen instead.
 
 **Diagnostics**
 
-Fixed diagnostic labels (for example `AUTH_REQUIRED`, `CONFIG_INVALID`) and
-runtime/version output are helpful. Do not paste token values, `auth.json`
-contents, or model responses.
+Fixed diagnostic labels (for example `AUTH_REQUIRED`, `CONFIG_INVALID`) and runtime/version output are helpful. Do not paste token values, `auth.json` contents, or model responses.
