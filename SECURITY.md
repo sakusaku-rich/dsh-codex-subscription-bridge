@@ -28,7 +28,7 @@ The plugin, Harness, Node runtime, OS, and processes running as the same OS user
 
 All normal tests use disposable stores and in-memory HTTPS fixtures. No real OAuth flow, refresh, subscription request, or normal-profile installation is included. Each real account activity requires explicit authorization.
 
-The owner confirmed dedicated login and model selection; authorized diagnostics received a real SSE-framed response. Successful generation through the current adapter, real tool-call and image turns against the subscription backend, real refresh/revocation and complete Web behavior remain unverified. No finite audit proves absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
+Real-account evidence and its limits are recorded in [verification](docs/VERIFICATION.md). No finite audit proves absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
 
 ## Reporting a problem
 

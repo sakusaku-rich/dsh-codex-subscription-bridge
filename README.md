@@ -43,17 +43,17 @@ Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or 
 
 ## Status
 
-This is an experimental prototype. Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition; see [the verification record](docs/VERIFICATION.md). Real-account evidence is limited: dedicated login and model selection are owner-confirmed, but successful generation through the corrected adapter, real tool-call and image turns, and real refresh/revocation remain unverified. Do not treat this prototype as a completed security audit.
+This is an experimental prototype. Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition. Real-account evidence is limited; [the verification record](docs/VERIFICATION.md#real-account-evidence-and-limits) records exactly what is confirmed and what remains unverified. Do not treat this prototype as a completed security audit.
 
 ## Development
 
-Harness 0.2.0-rc.2 and Cordis 4.0.4 remain pinned. HTTP uses bundled MIT-licensed Undici 7.29.1 with its own dispatcher, independent of the host fetch/dispatcher; no dependency lifecycle scripts are required for the shipped plugin. The reproducible check commands are recorded in [the verification record](docs/VERIFICATION.md#reproducible-checks), including the packaged profile checks.
+Harness 0.2.0-rc.2 and Cordis 4.0.4 remain pinned, and the shipped plugin needs no dependency lifecycle scripts. The reproducible check commands are recorded in [the verification record](docs/VERIFICATION.md#reproducible-checks), including the packaged profile checks.
 
 A real-account check is separate and requires authorization. The prepared `scripts/smoke-account.mjs --allow-real-account` command sends one fixed short prompt using the dedicated login. It may consume subscription quota and refresh this plugin's stored tokens. It has not been run for the direct implementation.
 
 [CI](.github/workflows/ci.yml) runs the same reproducible checks on a GitHub-hosted macOS runner with the exact `.node-version`, installing both lockfiles with lifecycle scripts disabled; it never uses subscription credentials or real-account calls. See [continuous integration](docs/VERIFICATION.md#continuous-integration) for the workflow details.
 
-See [direct connection design](docs/DIRECT.md), [security requirements](SECURITY.md), [verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
+See [the MVP scope](docs/MVP.md), [direct connection design](docs/DIRECT.md), [security requirements](SECURITY.md), [verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
 
 ## Contributing
 

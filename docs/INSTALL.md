@@ -37,17 +37,13 @@ The profile depends on this checkout's pinned verification runtime and the Node 
 sh artifacts/subscription-web/start.sh
 ```
 
-Open Settings → ChatGPT subscription → Log in, then click the displayed one-time sign-in code to copy it and paste it on the linked OpenAI page. The generated auth helper remains optional for developer/recovery diagnosis; doctor does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
+Open Settings → ChatGPT subscription → Log in, then click the displayed one-time sign-in code to copy it and paste it on the linked OpenAI page. The panel updates after approval; see [the authentication UI](AUTH_UI.md). The generated auth helper remains optional for developer/recovery diagnosis; doctor does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
 
-The Web server binds only to 127.0.0.1 and picks an available port. Open the local bootstrap URL printed in your terminal. Treat its login token as private and do not expose the listener remotely. Select `Codex (ChatGPT subscription)` and an advertised model. Start a fresh conversation; Harness tool definitions and executed tool-call history are forwarded, and user message images are sent as `input_image` data URLs. Non-image file attachments never reach the bridge (the Harness runtime projects them to text first). `temperature` is validated and forwarded; `maxTokens` is accepted as an advisory budget but not forwarded; `stop` sequences are rejected. Real tool-call and image turns on the subscription backend are unverified. Sending a prompt consumes subscription allowance.
+The Web server binds only to 127.0.0.1 and picks an available port. Open the local bootstrap URL printed in your terminal. Treat its login token as private and do not expose the listener remotely. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation. What the provider sends and enforces, including option handling and error labels, is described in [the provider behavior summary](../README.md#what-the-provider-sends-and-enforces) and [the design and limits](DIRECT.md). Sending a prompt consumes subscription allowance.
 
-Dedicated login/model selection were owner-confirmed in another temporary profile. The installation, local diagnosis and profile composition are tested with synthetic fixtures. Real first response, multi-turn and cancellation on this new path must still be manually verified; they are not claimed as completed.
+The installation, local diagnosis and profile composition are tested with synthetic fixtures; real-account evidence and current limits are recorded in [the verification record](VERIFICATION.md#real-account-evidence-and-limits). Verify the real first response on this profile manually before relying on it.
 
 Stop the server with Ctrl-C and let shutdown complete before recovery/removal. For authentication problems, see [recovery](RECOVERY.md).
-
-## Sign in inside Harness
-
-Open Settings → ChatGPT subscription → Log in. Enter the one-time sign-in code on the linked OpenAI page and wait for the panel to update. Access/refresh tokens stay in the backend. Use Cancel login and Log out in this section; the generated auth helper is optional for developer/recovery use. See [authentication UI](AUTH_UI.md).
 
 ## Update without mutating a running installation
 
