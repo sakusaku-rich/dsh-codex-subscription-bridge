@@ -30,7 +30,7 @@ The prepared directory records package integrity, commit and Desktop build. `aut
 5. Record the reviewed commit, model and pass/fail result. Share only fixed error labels; never share codes, auth files, bootstrap URLs or raw logs/bodies.
 6. Use **Log out** in the same settings section to remove the local login when finished. Quit Desktop before filesystem recovery/removal.
 
-The generated `auth.sh` remains an optional developer/recovery tool, not the normal sign-in flow. See [the authentication UI](AUTH_UI.md).
+The generated `auth.sh` remains an optional developer/recovery tool, not the normal sign-in flow, which is the in-app panel described in [the README](../README.md).
 
 With the helper's explicit DSH_HOME, credentials are located at `<directory>/harness/.dsh-codex-subscription-bridge/auth.json`. Desktop's login-shell HOME merge cannot redirect this store. A bare standalone auth CLI uses its own HOME-based location instead, so always use the generated helper for this profile.
 

@@ -11,7 +11,7 @@ The plugin, Harness, Node runtime, OS, and processes running as the same OS user
 - Use fixed HTTPS destinations and reject redirects and endpoint overrides.
 - Use pinned bundled Undici with an owned dispatcher, independent of host fetch.
 - Accept only a dedicated OAuth grant; reject raw keys and configuration tokens.
-- Keep tokens out of diagnostics, profile YAML, package output, and logs.
+- Keep tokens out of diagnostics, profile YAML, package output, logs, and browser storage.
 - Reveal a one-time sign-in code only after explicit login, to its initiating UI or the explicitly invoked CLI; never return access/refresh tokens to the client.
 - Use authenticated Connection routes for UI actions, preserve the Gateway, disable response caching, bound payloads, and join login work during disposal.
 - Validate private file ownership, modes, symlinks, shape, and size.

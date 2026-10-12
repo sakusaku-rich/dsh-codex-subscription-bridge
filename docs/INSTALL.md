@@ -37,7 +37,7 @@ The profile depends on this checkout's pinned verification runtime and the Node 
 sh artifacts/subscription-web/start.sh
 ```
 
-Open Settings → ChatGPT subscription → Log in, then click the displayed one-time sign-in code to copy it and paste it on the linked OpenAI page. The panel updates after approval; see [the authentication UI](AUTH_UI.md). The generated auth helper remains optional for developer/recovery diagnosis; doctor does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
+Open Settings → ChatGPT subscription → Log in, then click the displayed one-time sign-in code to copy it and paste it on the linked OpenAI page. The panel updates after approval. The generated auth helper remains optional for developer/recovery diagnosis; doctor does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
 
 The Web server binds only to 127.0.0.1 and picks an available port. Open the local bootstrap URL printed in your terminal. Treat its login token as private and do not expose the listener remotely. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation. What the provider sends and enforces, including option handling and error labels, is described in [the provider behavior summary](../README.md#what-the-provider-sends-and-enforces) and [the design and limits](DIRECT.md). Sending a prompt consumes subscription allowance.
 

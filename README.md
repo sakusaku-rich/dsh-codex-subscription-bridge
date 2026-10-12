@@ -14,7 +14,7 @@ A minimal DeepSeek Harness provider that connects directly to the Codex subscrip
 ## Install and sign in
 
 1. Follow [the installation guide](docs/INSTALL.md) to prepare the isolated source-checkout profile and start it. The same guide covers updates without mutating a running installation and removal; Desktop uses [its separate verification profile](docs/DESKTOP.md).
-2. In Harness, open **Settings → ChatGPT subscription → Log in**, click the displayed one-time sign-in code to copy it, and paste or enter it on the linked OpenAI page. The panel updates after approval. Cancel login, refresh local status, and log out from the same page; see [authentication UI](docs/AUTH_UI.md).
+2. In Harness, open **Settings → ChatGPT subscription** and click **Log in**. The panel shows a temporary one-time sign-in code that you can click to copy, and a fixed `https://auth.openai.com/codex/device` link; paste or enter the code on that page and approve it in your browser. Harness polls for completion and updates the panel, then model observers refresh. The code is not an access token and disappears after cancellation, completion, or failure; do not share it or put it in logs. **Cancel login** stops a pending login, **Refresh status** reads only local state, and **Log out** removes only this plugin's local grant after confirmation without revoking provider sessions.
 3. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation.
 
 `node src/auth-cli.js login`, `status`, `doctor`, and `logout` from the checkout remain an optional developer/recovery path; the packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness (Desktop uses its generated `auth.sh`). `doctor` does not contact OpenAI, and `logout` removes only this plugin's local login — it does not revoke tokens server-side or change Codex's login. For diagnosis and recovery see [the recovery guide](docs/RECOVERY.md).
@@ -53,7 +53,7 @@ A real-account check is separate and requires authorization. The prepared `scrip
 
 [CI](.github/workflows/ci.yml) runs the same reproducible checks on a GitHub-hosted macOS runner with the exact `.node-version`, installing both lockfiles with lifecycle scripts disabled; it never uses subscription credentials or real-account calls. See [continuous integration](docs/VERIFICATION.md#continuous-integration) for the workflow details.
 
-See [the MVP scope](docs/MVP.md), [direct connection design](docs/DIRECT.md), [security requirements](SECURITY.md), [verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
+See [the MVP scope](docs/MVP.md), [direct connection design](docs/DIRECT.md), [authentication panel design](docs/DESIGN.md), [security requirements](SECURITY.md), [verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
 
 ## Contributing
 
