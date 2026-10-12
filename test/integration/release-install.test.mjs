@@ -51,6 +51,89 @@ function runInstaller(release, directory, extraArguments = []) {
   });
 }
 
+/**
+ * Whether the verified Desktop host is installed. CI has no Harness Desktop, so
+ * the Desktop surface assertions are skipped there rather than weakened.
+ */
+function installedDesktopExecutable() {
+  const app = '/Applications/DeepSeek Harness.app';
+  const executable = join(app, 'Contents/MacOS/DeepSeek Harness');
+  const probe = `const p=require(${JSON.stringify(join(app, 'Contents/Resources/app.asar/package.json'))});` +
+    `process.stdout.write('FACTS'+JSON.stringify({version:p.version,electron:process.versions.electron,node:process.versions.node}))`;
+  const result = spawnSync(executable, ['-p', probe], { encoding: 'utf8', env: { ELECTRON_RUN_AS_NODE: '1' }, timeout: 20_000 });
+  if (result.status !== 0) return undefined;
+  // Electron may emit warnings on the same stream, so only the marked line is
+  // read rather than parsing whatever happened to be printed.
+  const line = result.stdout.split('\n').find((row) => row.startsWith('FACTS'));
+  if (line === undefined) return undefined;
+  // Electron also prints the expression's own return value, so the marked JSON
+  // object is extracted rather than assuming it ends the line.
+  const marked = /\{.*\}/u.exec(line.slice('FACTS'.length));
+  if (marked === null) return undefined;
+  const facts = JSON.parse(marked[0]);
+  return facts.version === '0.2.0-rc.2' && facts.electron === '44.0.0' && facts.node === '24.18.1' ? executable : undefined;
+}
+
+test('release installer refuses an unknown surface', { timeout: 60_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-release-surface-'));
+  const target = join(root, 'profile-target');
+  try {
+    const { release } = await publishSyntheticRelease(root);
+    const installation = runInstaller(release, target, ['--surface', 'native']);
+    assert.equal(installation.status, 2);
+    assert.match(installation.stderr, /--surface must be web or desktop/u);
+    await assert.rejects(access(target), { code: 'ENOENT' });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('release installer prepares a signed-out Desktop profile from the released artifact', { timeout: 600_000, skip: installedDesktopExecutable() === undefined ? 'the verified DeepSeek Harness Desktop is not installed' : false }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-release-desktop-'));
+  const target = join(root, 'desktop-profile');
+  try {
+    const { release, packageDigest } = await publishSyntheticRelease(root);
+    const installation = runInstaller(release, target, ['--surface', 'desktop']);
+    assert.equal(installation.status, 0, installation.stderr);
+
+    // The Desktop profile uses the name and host the source Desktop installer
+    // verifies, and records the host pair rather than a runtime copy.
+    const manifest = JSON.parse(await readFile(join(target, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.surface, 'desktop');
+    assert.equal(manifest.electron, '44.0.0');
+    assert.equal(manifest.hostNode, '24.18.1');
+    assert.equal(manifest.release, TAG);
+    assert.equal(manifest.sha256, packageDigest);
+    assert.equal(manifest.workingTreeMayContainChanges, false);
+    await access(join(target, 'harness/profiles/desktop'));
+    // The standalone launchers belong to the Web surface only.
+    await assert.rejects(access(join(target, 'start.sh')), { code: 'ENOENT' });
+    await assert.rejects(access(join(target, 'runtime')), { code: 'ENOENT' });
+    // Desktop's resolver supplies the host peers from its ASAR tree, so the
+    // profile must not shadow them with a standalone copy.
+    await assert.rejects(access(join(target, 'harness/profiles/desktop/node_modules/@deepseek-ai/cordis')), { code: 'ENOENT' });
+    await assert.rejects(access(join(target, 'harness/profiles/desktop/node_modules/@deepseek-ai/dsh-llm')), { code: 'ENOENT' });
+    // Preparation alone creates no credential store at all.
+    await assert.rejects(access(join(target, 'harness/.dsh-codex-subscription-bridge')), { code: 'ENOENT' });
+
+    // Loading the profile through Desktop's own ASAR resolver registers the
+    // bridge. This is the path the application uses; it starts no GUI, performs
+    // no login, and contacts no service.
+    const load = spawnSync(installedDesktopExecutable(), [join(process.cwd(), 'scripts/verify-desktop-release.mjs'), target], {
+      encoding: 'utf8', timeout: 180_000, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    });
+    assert.equal(load.status, 0, load.stderr);
+    assert.match(load.stdout, /RELEASE_DESKTOP_PROFILE_OK/u);
+
+    // Preparation and the unauthenticated catalog read create no grant. The
+    // store's private directory may appear as its 0700 home, but no credential
+    // file is written, so the profile stays signed out.
+    await assert.rejects(access(join(target, 'harness/.dsh-codex-subscription-bridge/auth.json')), { code: 'ENOENT' });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('release installer verifies a synthetic release and prepares a signed-out profile', { timeout: 600_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-release-install-'));
   // A destination containing a space and an apostrophe exercises the shell

@@ -27,6 +27,21 @@ less install.sh
 sh install.sh --tag v0.1.0 --directory "$PWD/artifacts/subscription-web"
 ```
 
+`--surface` selects the verified host and defaults to `web`:
+
+| Surface | Profile | Launcher | Host |
+| --- | --- | --- | --- |
+| `web` (default) | `subscription-web` | `start.sh` | The pinned standalone Node 22.23.3 runtime fetched during preparation. |
+| `desktop` | `desktop` | `desktop.sh` | The installed DeepSeek Harness Desktop 0.2.0-rc.2, used with its exact Electron 44.0.0 / Node 24.18.1 pair. |
+
+For a Desktop profile, prepare with `--surface desktop` and start it with the generated `desktop.sh`:
+
+```sh
+sh install.sh --tag v0.1.0 --directory "$PWD/artifacts/desktop-profile" --surface desktop
+```
+
+The Desktop surface is refused unless the installed application matches the verified host pair exactly; it is never worked around. Desktop's runtime resolver supplies the host peers from the application's own tree, so a Desktop profile deliberately does not contain a standalone runtime copy and does not build one. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for what the Desktop profile does and does not isolate, and for the owner-operated sign-in steps.
+
 The command performs three visible steps and never pipes a download into a shell:
 
 1. Download the release installer bundle and its `SHA256SUMS` into a private temporary directory.
