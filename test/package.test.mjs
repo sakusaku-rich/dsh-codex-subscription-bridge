@@ -13,7 +13,7 @@ test('real Harness service registers the guarded provider and disposes it', asyn
   const ctx = new Context(); ctx.provide('launchEnvironment', { getFrom: name => name === 'HOME' ? { value: root } : undefined }); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
   await new Promise((resolve) => setImmediate(resolve));
   try {
-    assert.deepEqual(ctx.llm.listProviders(), [{ id: 'codex-subscription', name: 'Codex (ChatGPT subscription, text only)' }]);
+    assert.deepEqual(ctx.llm.listProviders(), [{ id: 'codex-subscription', name: 'Codex (ChatGPT subscription)' }]);
     await assert.rejects(ctx.llm.listModels('codex-subscription'), { code: 'AUTH_REQUIRED' });
     const chunks = [];
     for await (const chunk of ctx.llm.stream({ provider: 'codex-subscription', model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic message' }] }] })) chunks.push(chunk);

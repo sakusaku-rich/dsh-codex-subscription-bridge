@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DirectBridge, events } from '../src/direct.js';
 import { AuthStore, claims } from '../src/auth.js';
-import { BridgeError } from '../src/errors.js';
+import { BridgeError, failure } from '../src/errors.js';
 import { Http, BASE, ISSUER } from '../src/http.js';
 const jwt = (exp = Math.floor(Date.now() / 1000) + 3600, account = 'synthetic-account') => `x.${Buffer.from(JSON.stringify({ exp, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
 const tokens = (exp) => ({ access_token: jwt(exp), refresh_token: 'synthetic-refresh-secret' });
@@ -79,15 +79,95 @@ test('catalog caches metadata, rechecks auth, shares concurrent calls and exclud
   auth.token = async () => { throw new BridgeError('AUTH_REQUIRED'); };
   await assert.rejects(bridge.listModels(), { code: 'AUTH_REQUIRED' }); await bridge.close();
 });
-test('stream sends only bounded text, no tools, no persistence, and normalizes deltas', async () => {
+test('stream forwards tools and reasoning effort, stays unpersisted, and normalizes deltas', async () => {
   const calls = []; const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
     calls.push({ url, options }); return url.includes('/models?') ? json({ models: [model] }) : sse(delta, { ...delta, type: 'response.output_text.done', text: 'Hello!' }, completed);
   }));
-  const chunks = await collect(bridge.stream(input({ tools: [{ name: 'shell' }] })));
+  const chunks = await collect(bridge.stream(input({ tools: [{ name: 'shell', description: 'Run shell', parameters: { type: 'object' }, deferLoading: true }], reasoningEffort: 'max' })));
   assert.equal(chunks.at(-1).reason.kind, 'stop'); assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello!');
-  const body = JSON.parse(calls.at(-1).options.body); assert.equal(body.store, false); assert.equal(body.stream, true); assert.equal(body.tools, undefined);
+  const body = JSON.parse(calls.at(-1).options.body); assert.equal(body.store, false); assert.equal(body.stream, true);
+  assert.deepEqual(body.tools, [{ type: 'function', name: 'shell', description: 'Run shell', strict: false, parameters: { type: 'object' } }]);
+  assert.deepEqual(body.reasoning, { effort: 'high' });
+  await assert.rejects(collect(bridge.stream(input({ reasoningEffort: 'bogus' }))), { code: 'INPUT_UNSUPPORTED' });
+  assert.equal((await bridge.listModels()).find(entry => entry.id === 'test-model').inputModalities.join(','), 'text,image');
   assert.equal(calls.at(-1).options.headers['ChatGPT-Account-ID'], 'synthetic-account');
   await bridge.close();
+});
+test('native tool calls stream as blocks, pair with history outputs, and replay idempotently', async () => {
+  const call = { type: 'function_call', call_id: 'call-1', name: 'shell', arguments: '{"cmd":"ls"}', status: 'completed' };
+  const calls = []; const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
+    calls.push({ url, options }); return url.includes('/models?') ? json({ models: [model] }) : sse(
+      { type: 'response.output_item.added', item: call },
+      { type: 'response.function_call_arguments.delta', item_id: 'call-1', delta: '{"cmd"' },
+      { type: 'response.output_item.done', item: call },
+      { type: 'response.completed', response: { status: 'completed', output: [call], usage: { input_tokens: 12, output_tokens: 4, total_tokens: 16, input_tokens_details: { cached_tokens: 3 }, output_tokens_details: { reasoning_tokens: 2 } } } });
+  }));
+  const messages = [
+    { role: 'user', content: [{ type: 'text', text: 'List files' }] },
+    { role: 'assistant', content: [{ type: 'tool-call', id: 'call-9', name: 'shell', arguments: '{"cmd":"pwd"}' }] },
+    { role: 'tool', toolCallId: 'call-9', source: { kind: 'tool', callId: 'call-9' }, content: [{ type: 'text', text: '/tmp' }] },
+  ];
+  const chunks = await collect(bridge.stream(input({ messages, tools: [{ name: 'shell', parameters: { type: 'object' } }] })));
+  assert.deepEqual(chunks.slice(0, 3), [
+    { type: 'block-start', index: 0, blockType: 'tool-call' },
+    { type: 'tool-call-delta', index: 0, id: 'call-1', name: 'shell', argumentsDelta: '' },
+    { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call-1', name: 'shell', arguments: '{"cmd":"ls"}' } },
+  ]);
+  assert.deepEqual(chunks[3], { type: 'usage', usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16, cacheReadTokens: 3, reasoningTokens: 2 } });
+  assert.deepEqual(chunks.at(-1).reason, { kind: 'tool-calls' });
+  const body = JSON.parse(calls.at(-1).options.body);
+  assert.deepEqual(body.input, [
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'List files' }] },
+    { type: 'function_call', call_id: 'call-9', name: 'shell', arguments: '{"cmd":"pwd"}' },
+    { type: 'function_call_output', call_id: 'call-9', output: '/tmp' },
+  ]);
+  await bridge.close();
+});
+test('image input is read through the attachment service and sent as data URLs', async () => {
+  const attachmentId = `sha256:${'ab'.repeat(32)}`;
+  const ref = { attachmentId, mediaType: 'image/png', bytes: 3, width: 1024, height: 768 };
+  let requested; const calls = []; const attachments = { readImageRequest: async (candidate, target) => { requested = { candidate, target }; return { ...ref, data: Uint8Array.of(1, 2, 3) }; } };
+  const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
+    calls.push({ url, options }); return url.includes('/models?') ? json({ models: [model] }) : sse(delta, completed);
+  }), {},
+    { resolveAttachments: () => attachments, resolveImageAccess: (list) => list });
+  const messages = [{ role: 'user', content: [{ type: 'image', attachment: ref }, { type: 'text', text: 'Describe' }] }];
+  await collect(bridge.stream(input({ messages })));
+  const body = JSON.parse(calls.at(-1).options.body);
+  assert.deepEqual(requested.candidate, ref); assert.equal(requested.target.width, 1024); assert.equal(requested.target.height, 768);
+  assert.deepEqual(body.input, [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }, { type: 'input_text', text: 'Describe' }] }]);
+  const pricing = bridge.imageRequestPricing('codex-subscription', 'test-model');
+  assert.deepEqual(pricing.priceImages([{ attachment: ref, offloaded: false }])[0], { visualTokens: 765, text: pricing.priceImages([{ attachment: ref, offloaded: false }])[0].text });
+  assert.deepEqual(pricing.priceImages([{ attachment: ref, offloaded: true }])[0], { visualTokens: 0, text: pricing.priceImages([{ attachment: ref, offloaded: true }])[0].text });
+  await bridge.close();
+});
+test('missing attachment service and aggregate offload budgets fail with fixed labels', async () => {
+  const ref = { attachmentId: `sha256:${'cd'.repeat(32)}`, mediaType: 'image/png', bytes: 16 * 1024 * 1024, width: 1024, height: 768 };
+  const messages = [{ role: 'user', content: [{ type: 'image', attachment: { ...ref, attachmentId: `sha256:${'ef'.repeat(32)}`, bytes: 3 } }] }];
+  const noService = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, completed)));
+  await assert.rejects(collect(noService.stream(input({ messages }))), { code: 'UNSUPPORTED_CONTENT', diagnostic: 'IMAGE_PREPARE' });
+  await noService.close();
+  const attachments = { readImageRequest: async (candidate) => ({ ...candidate, data: Uint8Array.of(0) }) };
+  const oversized = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, completed)), {},
+    { resolveAttachments: () => attachments, resolveImageAccess: () => undefined });
+  await assert.rejects(collect(oversized.stream(input({ messages: [{ role: 'user', content: [{ type: 'image', attachment: ref }] }] }))),
+    error => { if (error.code !== 'IMAGE_OFFLOAD_REQUIRED' || error.diagnostic !== 'IMAGE_OFFLOAD' || error.offloadImages !== 1) return false;
+      assert.deepEqual(failure(error), { code: 'IMAGE_OFFLOAD_REQUIRED', message: error.message, offloadImages: 1 }); return true; });
+  await oversized.close();
+});
+test('incomplete tool-call streams and malformed arguments fail safely', async () => {
+  const added = { type: 'function_call', call_id: 'call-1', name: 'shell', arguments: '{}', status: 'completed' };
+  for (const [response, diagnostic] of [
+    [sse({ type: 'response.output_item.added', item: added }), 'SSE_INCOMPLETE'],
+    [sse({ type: 'response.output_item.done', item: { ...added, arguments: 'nope' } }), 'SSE_TOOL_CALL'],
+    [sse({ type: 'response.output_item.done', item: { ...added, arguments: '[1]' } }), 'SSE_TOOL_CALL'],
+    [sse({ type: 'response.output_item.done', item: { ...added, status: 'in_progress' } }), 'SSE_TOOL_CALL'],
+    [sse(delta, { type: 'response.completed', response: { status: 'completed', output: [added], usage: { input_tokens: -1, output_tokens: 0 } } }), 'SSE_TERMINAL'],
+  ]) {
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : response));
+    await assert.rejects(collect(bridge.stream(input())), error => error.code === 'PROTOCOL_INVALID' && error.diagnostic === diagnostic);
+    await bridge.close();
+  }
 });
 test('EOF, native tool calls, failure, malformed catalogs, and rate limits fail safely', async () => {
   for (const response of [sse(delta), sse({ type: 'response.output_item.added', item: { type: 'function_call' } }), sse({ type: 'response.failed', response: { error: { message: 'secret' } } }), json({}, 429)]) {

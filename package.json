@@ -37,6 +37,7 @@
     "src/auth-cli.js",
     "src/http.js",
     "src/text.js",
+    "src/image.js",
     "src/runtime.js",
     "src/errors.js",
     "src/environment.js",
