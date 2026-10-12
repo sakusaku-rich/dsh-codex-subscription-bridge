@@ -38,6 +38,6 @@ Expected modes are 0700 for the dedicated directory and 0600 for auth.json, owne
 
 ## Runtime, protocol, or quota failures
 
-NODE_VERSION_UNSUPPORTED requires Node 22 >=22.23.3 or the tested Desktop Electron 44.0.0 / Node 24.18.1 pair. PLATFORM_UNSUPPORTED means macOS is required. Other Desktop versions require fresh compatibility verification; do not bypass the guard or edit a Desktop-bundled runtime. See [Desktop verification](DESKTOP.md).
+NODE_VERSION_UNSUPPORTED requires Node 22 >=22.23.3 or the tested Desktop Electron 44.0.0 / Node 24.18.1 pair. PLATFORM_UNSUPPORTED means macOS is required. Other Desktop versions require fresh compatibility verification; do not bypass the guard or edit a Desktop-bundled runtime. See [Desktop verification](DESKTOP_VERIFICATION.md).
 
 Protocol diagnostics contain fixed stage labels such as SSE_FRAME or SSE_TERMINAL. Share only the label, reviewed commit, runtime and sanitized reproduction steps; never include tokens, one-time codes, bootstrap URLs, auth.json or raw logs/bodies. A terminal `QUOTA` means the ChatGPT plan usage limit was reached; it may carry a "Try again in about N minutes." hint. Transient `RATE_LIMIT` covers all other rate-limit responses. Repeated re-login does not establish or increase allowance; no quota interpretation/automatic retry policy is implemented beyond surfacing that fixed message.

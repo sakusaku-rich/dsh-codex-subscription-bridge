@@ -13,17 +13,17 @@ A minimal DeepSeek Harness provider that connects directly to the Codex subscrip
 
 ## Install and sign in
 
-1. Follow [the installation guide](docs/INSTALL.md) to prepare the isolated source-checkout profile and start it. The same guide covers updates without mutating a running installation and removal; Desktop uses [its separate verification profile](docs/DESKTOP.md).
+1. Follow [the installation guide](docs/INSTALL.md) to prepare the isolated source-checkout profile and start it. The same guide covers updates without mutating a running installation and removal; Desktop uses [its separate verification profile](docs/DESKTOP_VERIFICATION.md).
 2. In Harness, open **Settings → ChatGPT subscription** and click **Log in**. The panel shows a temporary one-time sign-in code that you can click to copy, and a fixed `https://auth.openai.com/codex/device` link; paste or enter the code on that page and approve it in your browser. Harness polls for completion and updates the panel, then model observers refresh. The code is not an access token and disappears after cancellation, completion, or failure; do not share it or put it in logs. **Cancel login** stops a pending login, **Refresh status** reads only local state, and **Log out** removes only this plugin's local grant after confirmation without revoking provider sessions.
 3. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation.
 
-`node src/auth-cli.js login`, `status`, `doctor`, and `logout` from the checkout remain an optional developer/recovery path; the packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness (Desktop uses its generated `auth.sh`). `doctor` does not contact OpenAI, and `logout` removes only this plugin's local login — it does not revoke tokens server-side or change Codex's login. For diagnosis and recovery see [the recovery guide](docs/RECOVERY.md).
+`node src/auth-cli.js login`, `status`, `doctor`, and `logout` from the checkout remain an optional developer/recovery path; the packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness (Desktop uses its generated `auth.sh`). `doctor` does not contact OpenAI, and `logout` removes only this plugin's local login — it does not revoke tokens server-side or change Codex's login. For diagnosis and recovery see [the troubleshooting guide](docs/TROUBLESHOOTING.md).
 
 Credentials are stored in `~/.dsh-codex-subscription-bridge/auth.json` with a 0700 directory and 0600 file; a dedicated Desktop launch with `DSH_HOME` stores the grant under `$DSH_HOME/.dsh-codex-subscription-bridge/auth.json` instead. This is plaintext storage protected by filesystem permissions, not a keyring. Never upload, paste, commit, or copy that file into an issue.
 
 ## Harness configuration
 
-Use the bundle only in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md); the Desktop host loads it in [its separate verification profile](docs/DESKTOP.md). The adapter has no configuration keys:
+Use the bundle only in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md); the Desktop host loads it in [its separate verification profile](docs/DESKTOP_VERIFICATION.md). The adapter has no configuration keys:
 
 ```yaml
 - id: llm-codex-subscription
@@ -55,15 +55,15 @@ A real-account check is separate and requires authorization. The prepared `scrip
 
 ## Documentation
 
-- [MVP requirements](docs/MVP.md) — what the initial release includes and excludes.
+- [Initial scope](docs/SCOPE.md) — what the initial release includes and excludes.
 - [Installation guide](docs/INSTALL.md) — profile preparation, updates, removal, and the support matrix.
-- [Desktop verification](docs/DESKTOP.md) — the separate Desktop host profile and its launcher.
-- [Direct connection design](docs/DIRECT.md) — architecture, behavior guarantees, and limits.
-- [Authentication panel design](docs/DESIGN.md) — the sign-in panel's visual and interaction policy.
+- [Desktop verification](docs/DESKTOP_VERIFICATION.md) — the separate Desktop host profile and its launcher.
+- [Direct connection architecture](docs/ARCHITECTURE.md) — behavior guarantees and limits.
+- [Authentication panel design](docs/UI_DESIGN.md) — the sign-in panel's visual and interaction policy.
 - [Security requirements](SECURITY.md) — controls, problem reporting, and supported versions.
 - [Verification record](docs/VERIFICATION.md) — what was verified, the reproducible checks, and CI.
-- [Local diagnosis and recovery](docs/RECOVERY.md) — recovery from lock, refresh, and quota problems.
-- [Packaged Harness verification](docs/HARNESS.md) — the reproducible packaged baseline.
+- [Local diagnosis and recovery](docs/TROUBLESHOOTING.md) — recovery from lock, refresh, and quota problems.
+- [Packaged Harness verification](docs/PACKAGED_VERIFICATION.md) — the reproducible packaged baseline.
 
 ## Contributing
 
