@@ -20,14 +20,14 @@ The plugin, Harness, Node runtime, OS, and processes running as the same OS user
 - Reread authentication on metadata cache hits and before model dispatch.
 - Bound requests, input/output, frames, queues, and waiting periods.
 - Cancel network readers on abort, timeout, shutdown and generator retirement.
-- Send text only, no tools, no resumed server IDs, and `store: false`.
-- Reject malformed, execution-bearing, failed, or incomplete streams.
+- Send only validated text, tool definitions, executed tool-call history, and user image data URLs; never execute tools in the bridge; use no resumed server IDs and `store: false`.
+- Reject malformed, non-function execution items, failed, or incomplete streams.
 
 ## Verification boundary
 
 All normal tests use disposable stores and in-memory HTTPS fixtures. No real OAuth flow, refresh, subscription request, or normal-profile installation is included. Each real account activity requires explicit authorization.
 
-The owner confirmed dedicated login and model selection; authorized diagnostics received a real SSE-framed response. Successful generation through the current adapter, real refresh/revocation and complete Web behavior remain unverified. No finite audit proves absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
+The owner confirmed dedicated login and model selection; authorized diagnostics received a real SSE-framed response. Successful generation through the current adapter, real tool-call and image turns against the subscription backend, real refresh/revocation and complete Web behavior remain unverified. No finite audit proves absence of unknown vulnerabilities. See [design and limits](docs/DIRECT.md).
 
 ## Reporting a problem
 

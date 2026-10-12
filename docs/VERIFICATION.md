@@ -23,8 +23,8 @@ The root suite uses the small pinned Cordis/LLM peer dependency tree. The separa
 - Durable refresh intent prevents automatic replay after ambiguous remote outcomes, cancellation, persistence failure, and process restart. A definite HTTP 429 rejection allows retry; uncertain outcomes require a fresh login.
 - Fixed HTTPS origins, redirect refusal, bounded JSON, safe fixed error codes and diagnostic labels, and cancellation after response headers.
 - Live-catalog validation, hidden-model exclusion, compatibility fallback, auth-aware caching and fresh admission for each turn.
-- Bounded text history, ignored tool declarations and replay metadata, and rejection of execution history, images and generation overrides.
-- Incremental bounded SSE framing, split UTF-8, CRLF/multiline data, empty text deltas, non-SSE MIME compatibility, completed-item reconciliation, and refusal of malformed, contradictory, execution-bearing or incomplete responses.
+- Bounded text history with validated tool definitions and executed tool-call history, user message images as `input_image` data URLs, offload-budget refusal with `IMAGE_OFFLOAD_REQUIRED`, and rejection of non-image files, other-role images, and generation overrides.
+- Incremental bounded SSE framing, split UTF-8, CRLF/multiline data, empty text deltas, non-SSE MIME compatibility, completed-item and idempotent completed `function_call` reconciliation, and refusal of malformed, contradictory, non-function execution-bearing or incomplete responses.
 - Four-operation admission including cancellation cleanup, pre-aborted refusal, paused-reader cancellation, event-loop yields, timeouts and bounded shutdown.
 - Public adapter registration/disposal, actual npm tarball composition, MIT license inclusion, missing-auth errors, and synthetic CLI/SDK conversation.
 - Fresh isolated Web-profile preparation, quoted paths, overwrite refusal and read-only doctor behavior for missing, insecure, locked and uncertain stores.
@@ -80,3 +80,11 @@ Four exact authenticated POST routes use the existing Connection Fetch seam, inc
 Browser verification used a disposable standalone Web profile and synthetic OAuth responses. It demonstrated panel display, one-time code/link, cancellation, restarting login, automatic completion after simulated approval and local logout. Normal settings API behavior remained intact. No real OpenAI login, refresh or model request was performed. The installed Desktop runtime's Fetch/IPC seam is also exercised by the packaged-profile synthetic check; full real GUI/service behavior remains owner-operated verification.
 
 Final local checks: 66 root tests passed on Node 22.23.3 and the installed Electron host, with zero failures or skips. The authenticated Web route test, separate installer test, packaged CLI/SDK conversation and installed Desktop Fetch/IPC seam all passed. Account operations in these checks used synthetic stores/responses only. The real-account verification boundary is unchanged.
+
+## Tool passthrough and image input (2026-10-12)
+
+Harness tool definitions are validated (bounded names, sizes and JSON object parameters) and forwarded as `function` tools with `strict: false`; executed tool-call history is forwarded as `function_call`/`function_call_output` items; user message images are read through the attachment service and sent as `input_image` base64 data URLs. The bridge still never executes tools, resumes server IDs or persists server conversations, and reasoning effort maps to `low`/`high` only. Oversized image requests fail with `IMAGE_OFFLOAD_REQUIRED` carrying an offload count so the Harness host can mark its oldest images offloaded and retry.
+
+Synthetic tests cover tool projection and passthrough streams, malformed arguments and tool-call statuses, incomplete tool-call responses, image data-URL preparation, offload-budget refusals, and pricing placeholders for offloaded images. Real tool-call and image turns against the subscription backend remain unverified, as do acceptance of `input_image`, exact `strict: false` requirements, vision-token accounting and reasoning effort values beyond `low`/`high` on the subscription route.
+
+Local Node 22.23.2 refuses adapter registration with `NODE_VERSION_UNSUPPORTED`, producing the same four environment-only failures as the previous baseline while the remaining 72 tests pass; hosted CI on Node 22.23.3 remains the authoritative check for the new tests. No real account operations were performed for this change.

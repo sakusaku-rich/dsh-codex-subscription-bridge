@@ -6,7 +6,7 @@ This is an experimental source-checkout installation, not a published npm releas
 
 | Surface / OS | Status |
 | --- | --- |
-| macOS CLI/SDK text provider | Synthetic packaged integration verified |
+| macOS CLI/SDK provider (text, tool passthrough, images) | Synthetic packaged integration verified |
 | macOS Web profile | Setup/startup verified; full real conversation pending |
 | macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified; UI/service pending |
 | Linux / Windows / other OS | Not supported; rejected before authentication |
@@ -39,7 +39,7 @@ sh artifacts/subscription-web/start.sh
 
 Open Settings → ChatGPT subscription → Log in, then click the displayed one-time sign-in code to copy it and paste it on the linked OpenAI page. The generated auth helper remains optional for developer/recovery diagnosis; doctor does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
 
-The Web server binds only to 127.0.0.1 and picks an available port. Open the local bootstrap URL printed in your terminal. Treat its login token as private and do not expose the listener remotely. Select `Codex (ChatGPT subscription, text only)` and an advertised model. Start a fresh text conversation; do not attach files, images or executed tool history. Sending a prompt consumes subscription allowance.
+The Web server binds only to 127.0.0.1 and picks an available port. Open the local bootstrap URL printed in your terminal. Treat its login token as private and do not expose the listener remotely. Select `Codex (ChatGPT subscription)` and an advertised model. Start a fresh conversation; Harness tool definitions and executed tool-call history are forwarded, and user message images are sent as `input_image` data URLs, while non-image file attachments and generation overrides are rejected. Real tool-call and image turns on the subscription backend are unverified. Sending a prompt consumes subscription allowance.
 
 Dedicated login/model selection were owner-confirmed in another temporary profile. The installation, local diagnosis and profile composition are tested with synthetic fixtures. Real first response, multi-turn and cancellation on this new path must still be manually verified; they are not claimed as completed.
 

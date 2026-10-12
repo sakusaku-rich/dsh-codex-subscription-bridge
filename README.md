@@ -1,12 +1,12 @@
 # dsh-codex-subscription-bridge
 
-A minimal DeepSeek Harness text provider that connects directly to the Codex subscription backend using a dedicated ChatGPT OAuth login.
+A minimal DeepSeek Harness provider that connects directly to the Codex subscription backend using a dedicated ChatGPT OAuth login. It forwards Harness tool definitions and executed tool-call history, and sends user message images as base64 `input_image` data URLs. The bridge never executes tools itself; execution stays in the Harness host.
 
 "OpenAI", "ChatGPT", and "Codex" are trademarks of OpenAI. This project is an independent tool and is not affiliated with, endorsed by, or sponsored by OpenAI, DeepSeek, or Nous Research. Connecting a ChatGPT subscription through this adapter is an account operation governed by the applicable terms of service; using it may violate those terms and put the account at risk.
 
 ## Status
 
-The direct implementation passes synthetic authentication, refresh, streaming, cancellation, and packaged Harness CLI/SDK verification. The owner confirmed dedicated login and model selection. Authorized diagnostics confirmed an authenticated catalog advertising `gpt-6.1-sol` and an HTTP 200 SSE-framed response with a non-SSE MIME header. Successful generation through the corrected adapter, real refresh/revocation, latency, and full Web UI operation remain unverified. Do not treat this prototype as a completed security audit.
+The direct implementation passes synthetic authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK verification. The owner confirmed dedicated login and model selection. Authorized diagnostics confirmed an authenticated catalog advertising `gpt-6.1-sol` and an HTTP 200 SSE-framed response with a non-SSE MIME header. Successful generation through the corrected adapter, real tool-call and image turns against the subscription backend, real refresh/revocation, latency, and full Web UI operation remain unverified. Do not treat this prototype as a completed security audit.
 
 The adapter uses dedicated OAuth and HTTPS. Normal-profile installation has not been performed; install only into the isolated profile described in [the installation guide](docs/INSTALL.md).
 
@@ -42,11 +42,11 @@ Use the bundle in an authorized profile. The adapter has no configuration keys:
   config: {}
 ```
 
-Any configuration key fails with `CONFIG_INVALID`. The route is `codex-subscription`, displayed as `Codex (ChatGPT subscription, text only)`.
+Any configuration key fails with `CONFIG_INVALID`. The route is `codex-subscription`, displayed as `Codex (ChatGPT subscription)`. Catalog models advertise `text,image` input modalities.
 
 The provider fetches visible subscription models directly. A 60-second in-memory catalog cache reduces repeated requests; authentication is reread on cache hits. Each conversation request freshly verifies the catalog and its credentials. Compatibility selectors are pinned by design; synthetic model aliases and unadvertised models are not added. Visibility does not prove entitlement to a successful request.
 
-Only bounded text history is sent, with `store: false` and no tool definitions. Harness tool declarations are ignored; executed tool history, images, files, and generation overrides are rejected. No conversation IDs are resumed or chained. Search, images, quota display, tool forwarding, and remote access are outside the initial scope.
+Only bounded text history is sent, with `store: false` and no conversation IDs resumed or chained. Harness tool definitions are validated and forwarded as strict function tools; executed tool-call history is forwarded as `function_call`/`function_call_output` items. The bridge never executes tools; execution stays in the Harness host. Image blocks in user messages are read through the attachment service and sent as `input_image` data URLs; images in other roles, file attachments, and generation overrides such as temperature, max tokens, and stop sequences are rejected. Reasoning effort maps to `low` or `high` only. Oversized image requests fail with `IMAGE_OFFLOAD_REQUIRED` so the Harness host can offload its oldest images and retry. Search, quota display, and remote access remain outside the initial scope.
 
 ## Development
 

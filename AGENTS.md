@@ -6,7 +6,7 @@ Use English for repository content: source code, comments, documentation, tests,
 
 ## Scope
 
-Read [docs/MVP.md](docs/MVP.md), [docs/DIRECT.md](docs/DIRECT.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations, and cancellation.
+Read [docs/MVP.md](docs/MVP.md), [docs/DIRECT.md](docs/DIRECT.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations with validated tool passthrough and user image input, and cancellation.
 
 ## Credential and transport handling
 
@@ -17,7 +17,8 @@ Read [docs/MVP.md](docs/MVP.md), [docs/DIRECT.md](docs/DIRECT.md), and [SECURITY
 - Use fixed HTTPS destinations, reject redirects, and return safe fixed errors.
 - Serialize refresh/login/logout and enforce private file ownership/modes.
 - Bound network operations and text/protocol sizes; cancel paused readers.
-- Do not forward tools, resume server IDs, or persist server conversations.
+- Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, and user image blocks.
+- Do not resume server IDs or persist server conversations.
 
 ## Git workflow
 
