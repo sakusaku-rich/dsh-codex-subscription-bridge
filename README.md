@@ -53,7 +53,17 @@ A real-account check is separate and requires authorization. The prepared `scrip
 
 [CI](.github/workflows/ci.yml) runs the same reproducible checks on a GitHub-hosted macOS runner with the exact `.node-version`, installing both lockfiles with lifecycle scripts disabled; it never uses subscription credentials or real-account calls. See [continuous integration](docs/VERIFICATION.md#continuous-integration) for the workflow details.
 
-See [the MVP scope](docs/MVP.md), [direct connection design](docs/DIRECT.md), [authentication panel design](docs/DESIGN.md), [security requirements](SECURITY.md), [verification record](docs/VERIFICATION.md), and [Harness runtime](docs/HARNESS.md).
+## Documentation
+
+- [MVP requirements](docs/MVP.md) — what the initial release includes and excludes.
+- [Installation guide](docs/INSTALL.md) — profile preparation, updates, removal, and the support matrix.
+- [Desktop verification](docs/DESKTOP.md) — the separate Desktop host profile and its launcher.
+- [Direct connection design](docs/DIRECT.md) — architecture, behavior guarantees, and limits.
+- [Authentication panel design](docs/DESIGN.md) — the sign-in panel's visual and interaction policy.
+- [Security requirements](SECURITY.md) — controls, problem reporting, and supported versions.
+- [Verification record](docs/VERIFICATION.md) — what was verified, the reproducible checks, and CI.
+- [Local diagnosis and recovery](docs/RECOVERY.md) — recovery from lock, refresh, and quota problems.
+- [Packaged Harness verification](docs/HARNESS.md) — the reproducible packaged baseline.
 
 ## Contributing
 
