@@ -20,8 +20,9 @@ The plugin, Harness, Node runtime, OS, and processes running as the same OS user
 - Reread authentication on metadata cache hits and before model dispatch.
 - Bound requests, input/output, frames, queues, and waiting periods.
 - Cancel network readers on abort, timeout, shutdown and generator retirement.
-- Send only validated text, tool definitions, executed tool-call history, and user image data URLs; never execute tools in the bridge; use no resumed server IDs and `store: false`.
+- Send only validated text, tool definitions, executed tool-call history, user image data URLs, and validated `temperature`; never execute tools in the bridge; use no resumed server IDs and `store: false`.
 - Reject malformed, non-function execution items, failed, or incomplete streams.
+- Classify HTTP 429 bodies within a bounded read: a recognized plan usage limit becomes terminal `QUOTA` whose only upstream-derived part is a reset hint computed from a validated integer (at most one week); upstream text, `plan_type`, and unrecognized bodies never reach error messages, which fall back to fixed `QUOTA`/`RATE_LIMIT` wording.
 
 ## Verification boundary
 
