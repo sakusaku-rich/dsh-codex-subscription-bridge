@@ -23,7 +23,7 @@ Credentials are stored in `~/.dsh-codex-subscription-bridge/auth.json` with a 07
 
 ## Harness configuration
 
-Use the bundle in an authorized profile. The adapter has no configuration keys:
+Use the bundle only in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md); the Desktop host loads it in [its separate verification profile](docs/DESKTOP.md). The adapter has no configuration keys:
 
 ```yaml
 - id: llm-codex-subscription
