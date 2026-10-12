@@ -18,81 +18,39 @@ The root suite uses the small pinned Cordis/LLM peer dependency tree. The separa
 
 ## Covered controls
 
-- Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release.
+- Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release, including retry when a losing acquirer releases the lock after EEXIST but before its metadata check.
 - Device login, logout, process-shared serialization, account continuity, grant quarantine and quota handling using synthetic HTTP responses and stores.
 - Durable refresh intent prevents automatic replay after ambiguous remote outcomes, cancellation, persistence failure, and process restart. A definite HTTP 429 rejection allows retry; uncertain outcomes require a fresh login.
 - Fixed HTTPS origins, redirect refusal, bounded JSON, safe fixed error codes and diagnostic labels, and cancellation after response headers.
 - Live-catalog validation, hidden-model exclusion, compatibility fallback, auth-aware caching and fresh admission for each turn.
-- Bounded text history with validated tool definitions and executed tool-call history, user message images as `input_image` data URLs, offload-budget refusal with `IMAGE_OFFLOAD_REQUIRED`, rejection of other-role images, and `stop` rejection. `temperature` is validated to 0–2 and forwarded; `maxTokens` is validated and accepted as an advisory budget without forwarding.
+- Bounded text history up to the 1024-message cap with validated tool definitions and executed tool-call history, user message images as `input_image` data URLs, offload-budget refusal with `IMAGE_OFFLOAD_REQUIRED`, rejection of other-role images, and `stop` rejection. `temperature` is validated to 0–2 and forwarded; `maxTokens` is validated and accepted as an advisory budget without forwarding. Synthetic 429 responses cover usage-limit bodies with and without `resets_at`, past and clamped resets, non-usage codes, oversized and unreadable bodies, and the bounded reset hint.
 - Incremental bounded SSE framing, split UTF-8, CRLF/multiline data, empty text deltas, non-SSE MIME compatibility, completed-item and idempotent completed `function_call` reconciliation, and refusal of malformed, contradictory, non-function execution-bearing or incomplete responses.
 - Four-operation admission including cancellation cleanup, pre-aborted refusal, paused-reader cancellation, event-loop yields, timeouts and bounded shutdown.
+- The sign-in panel in a browser with synthetic OAuth responses: panel display, one-time code and fixed link, local diagnosis, cancellation, restarted login, automatic completion after simulated approval, confirmed local logout, and rejection of unknown fields and oversized payloads, with the settings API unchanged.
 - Public adapter registration/disposal, actual npm tarball composition, MIT license inclusion, missing-auth errors, and synthetic CLI/SDK conversation.
 - Fresh isolated Web-profile preparation, quoted paths, overwrite refusal and read-only doctor behavior for missing, insecure, locked and uncertain stores.
+- The installed Desktop host pair: the packaged synthetic CLI/SDK conversation and shutdown on the Electron executable, and a disposable profile conversation driven through Desktop's ASAR resolver with actual host peers.
 
 The source installer creates a new directory with an empty private HOME. It records the package integrity, commit, Node and Harness versions and disables installation scripts. Verification does not modify a normal Harness profile.
 
 ## Runtime and platform evidence
 
-Local verification used macOS 26.6.2 / Apple Silicon and official Node 22.23.3 (Undici 6.28.1, OpenSSL 3.5.8). The macOS arm64 Node archive SHA-256 was checked: `23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53`. The public adapter and auth CLI refuse older/unverified Node versions and unsupported OSes before credential access. Intel macOS remains unverified; Desktop host/profile verification is recorded below. Other OSes are unsupported by the initial platform contract.
+Local verification used macOS 26.6.2 / Apple Silicon and official Node 22.23.3 (Undici 6.28.1, OpenSSL 3.5.8). The macOS arm64 Node archive SHA-256 was checked: `23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53`. The public adapter and auth CLI refuse older/unverified Node versions and unsupported OSes before credential access. Intel macOS remains unverified; other OSes are unsupported by the initial platform contract.
+
+The installed DeepSeek Harness Desktop 0.2.0-rc.2 (build `5e9e301dd9dc8923b2762f76dacfc5751f6ca851`, Electron 44.0.0 / Node 24.18.1, host Cordis 4.0.4 / LLM 0.2.0-rc.2) ran the root suite on both standalone Node 22.23.3 and the Electron executable, and all three npm audits (plugin, Harness runtime, Electron test package) reported zero known vulnerabilities. Electron's own OS preferences and updater state are outside the dedicated Harness-home isolation.
 
 A generated standalone Web profile reached an authenticated localhost HTML page with HTTP 303/200 and was stopped without OAuth login or a model request. This checks startup and HTTP readiness, not a complete real Web conversation.
+
+The current root suite counts 79 tests. A local Node 22.23.2 run produces four known environment-only version-gate failures; hosted CI on Node 22.23.3 passes the full suite and is the authoritative check.
 
 ## Real-account evidence and limits
 
 The owner confirmed dedicated device login and model selection. Two separately authorized short diagnostic requests confirmed an authenticated catalog including `gpt-6.1-sol` and an HTTP 200 response with a 6992-byte SSE-framed body under a non-SSE MIME header. No credentials, account IDs, prompt text or response text were printed or saved. The exact media type was not retained.
 
-The parser now validates bounded SSE events and explicit successful completion rather than requiring a particular MIME header. Synthetic tests cover the corrected path. Successful real generation through the corrected adapter, real refresh/revocation, interruption recovery, entitlement to other models, latency and complete Web conversation remain unverified. Each further account operation requires separate explicit authorization. The prepared real-account smoke command is not part of CI and has not been run for this transport.
+Real successful generation through the adapter, real refresh and revocation, interruption recovery, entitlement to models beyond those confirmed, latency and a complete Web conversation remain unverified. Real tool-call and image turns, upstream acceptance of forwarded `temperature`, `input_image` acceptance, `strict: false` requirements, vision-token accounting, reasoning efforts beyond `low`/`high`, and the presence of `resets_at` or `plan_type` in real 429 bodies remain unverified. Full real GUI, login, refresh and revocation behavior on the installed Desktop runtime remains owner-operated verification. Each further account operation requires separate explicit authorization. The prepared real-account smoke command is not part of CI and has not been run for this transport; authorized real-account E2E verification remains a release preparation task.
 
 ## Continuous integration
 
 [CI](../.github/workflows/ci.yml) runs on pushes to the default branch, manual dispatch and pull requests that are not drafts; marking a draft ready for review starts its first run. CI uses `macos-15` and `.node-version`. Official checkout v7.0.1 and setup-node v7.1.0 are pinned to commit SHAs. Token access is read-only, checkout credentials are not persisted, and no cache or repository secrets are configured. The job has a 20-minute deadline, disables install scripts, audits both locked trees, runs all reproducible checks above, and requires tracked files to remain unchanged. It does not publish packages or perform account operations.
 
-The initial [hosted CI run](https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/actions/runs/38133918042) succeeded before the current source cleanup; it is a historical record. Current cleanup results are recorded below after revalidation. The packaged tarball excludes `.github`, so the CI link above resolves only inside a full checkout. Authorized real-account E2E verification remains a release preparation task. Audit results only cover known advisories; no finite audit or test suite establishes absence of unknown vulnerabilities.
-
-## Current source verification (2026-10-11)
-
-After removing obsolete transport-specific files, the root suite passed 53 tests with zero failures and zero skips. The separate isolated installer test and packaged Harness CLI/SDK synthetic conversation passed. Both locked dependency audits reported zero known vulnerabilities. Source/reference searches found no remaining obsolete transport imports, configuration assets or instructions. Shared input controls remain covered by transport-independent text tests. No real account operations were performed.
-
-## JSON ingestion and lock contention corrections (2026-10-11)
-
-JSON response bodies now use a fixed buffer bounded by their payload limit instead of retaining a Buffer for every chunk. Empty chunks add no retained payload; bounded read/byte batches yield to the event loop and recheck abort. Synthetic indefinitely ready empty/one-byte streams are cancelled by caller abort and deadline timers. Split UTF-8 and exact/over-limit payloads remain covered.
-
-A legitimate owner can release auth.lock after another process receives EEXIST but before its metadata check. ENOENT now retries acquisition within the original 30-second deadline. Permission/type/symlink checks, cancellation and no-stealing semantics remain enforced. A subprocess fixture deterministically imposes that interleaving and checks release, insecure replacement, symlink, abort and deadline.
-
-Root verification passed 56 tests without failures or skips. The isolated installer test and packaged Harness CLI/SDK synthetic conversation passed. No real account operation was performed. Authorized real-account E2E verification remains a separate release requirement.
-
-## macOS Desktop host support (2026-10-11)
-
-Installed DeepSeek Harness Desktop 0.2.0-rc.2, build 5e9e301dd9dc8923b2762f76dacfc5751f6ca851, uses Electron 44.0.0 / Node 24.18.1 and host Cordis 4.0.4 / LLM 0.2.0-rc.2. The public adapter and authentication CLI now admit that exact pair, while ordinary Node 24 and unverified Electron pairs remain refused. Plugin HTTP uses bundled MIT-licensed Undici 7.29.1 with its own Agent instead of the host's older fetch/global dispatcher. Installation hooks remain disabled for the shipped plugin. This does not patch other host features.
-
-All 58 root tests passed on standalone Node 22.23.3 and on the installed Electron executable in Node mode, without failures or skips. Packaged synthetic CLI/SDK conversation and shutdown passed on Electron. A separate disposable profile used installed Desktop's ASAR runtime resolver and actual host peers, registered the packaged provider, and completed a synthetic text conversation. The source installer test passed. All three npm audits (plugin, Harness runtime, and separate Electron test package) reported zero known vulnerabilities.
-
-Desktop's resolver supplies ASAR peers; external symlinks into the virtual ASAR tree were found unsuitable and are not created by the Desktop installer. The installer refuses existing directories, checks the installed app/runtime/peers, and produces an explicit auth helper and Desktop launcher. With launcher-owned DSH_HOME, Desktop's shell-environment merge cannot redirect the credential store. The helpers have not performed real login or launched the GUI. Electron OS preferences/updater state are outside the dedicated Harness-home isolation. Real GUI/model/refresh/revocation checks remain owner-operated work.
-
-CI adds a locked Electron 44.0.0 test package and an explicit checksum-verifying binary download before synthetic host checks. It does not install Harness Desktop, run real login or make model requests. The installed-ASAR composition lane is verified locally rather than claimed as a CI check.
-
-## In-app device login UI (2026-10-12)
-
-The packaged client adds Settings → ChatGPT subscription. Explicit login reveals only the temporary user-facing sign-in code and the fixed OpenAI link to its initiating tab. Clicking the code copies it to the local clipboard and shows a short confirmation; the copy itself performs no network activity. Access/refresh tokens stay in the backend. Local diagnosis, cancellation and confirmed local logout use existing dedicated-store controls. A random tab identifier, not a code or token, may persist in sessionStorage for reload ownership. Login/logout notify model observers through atomic adapter route replacement; no new model routes or API-key fallback are added.
-
-Four exact authenticated POST routes use the existing Connection Fetch seam, including Desktop IPC, without replacing the sole Gateway interceptor. Payloads, framing, body size and deadlines are bounded; responses disable caching. UI and Host shutdown cancel requests and join owned login cleanup. Errors and link values are allowlisted; client text is escaped and no arbitrary backend URL is rendered. Unknown fields and oversized payloads are rejected.
-
-Browser verification used a disposable standalone Web profile and synthetic OAuth responses. It demonstrated panel display, one-time code/link, cancellation, restarting login, automatic completion after simulated approval and local logout. Normal settings API behavior remained intact. No real OpenAI login, refresh or model request was performed. The installed Desktop runtime's Fetch/IPC seam is also exercised by the packaged-profile synthetic check; full real GUI/service behavior remains owner-operated verification.
-
-Final local checks: 66 root tests passed on Node 22.23.3 and the installed Electron host, with zero failures or skips. The authenticated Web route test, separate installer test, packaged CLI/SDK conversation and installed Desktop Fetch/IPC seam all passed. Account operations in these checks used synthetic stores/responses only. The real-account verification boundary is unchanged.
-
-## Tool passthrough and image input (2026-10-12)
-
-Harness tool definitions are validated (bounded names, sizes and JSON object parameters) and forwarded as `function` tools with `strict: false`; executed tool-call history is forwarded as `function_call`/`function_call_output` items; user message images are read through the attachment service and sent as `input_image` base64 data URLs. The bridge still never executes tools, resumes server IDs or persists server conversations, and reasoning effort maps to `low`/`high` only. Oversized image requests fail with `IMAGE_OFFLOAD_REQUIRED` carrying an offload count so the Harness host can mark its oldest images offloaded and retry.
-
-Synthetic tests cover tool projection and passthrough streams, malformed arguments and tool-call statuses, incomplete tool-call responses, image data-URL preparation, offload-budget refusals, and pricing placeholders for offloaded images. Real tool-call and image turns against the subscription backend remain unverified, as do acceptance of `input_image`, exact `strict: false` requirements, vision-token accounting and reasoning effort values beyond `low`/`high` on the subscription route.
-
-Local Node 22.23.2 refuses adapter registration with `NODE_VERSION_UNSUPPORTED`, producing the same four environment-only failures as the previous baseline while the remaining 72 tests pass; hosted CI on Node 22.23.3 remains the authoritative check for the new tests. No real account operations were performed for this change.
-
-## Generation overrides and quota classification (2026-10-12)
-
-User-requested generation settings are no longer rejected wholesale: `temperature` is validated to a finite 0–2 number and forwarded in the Responses request body; `maxTokens` is validated to a safe integer 1–1,000,000 and accepted as an advisory budget but deliberately not forwarded, matching the subscription route adapter's own precedent of omitting `max_output_tokens`; `stop` remains rejected with fixed `UNSUPPORTED_OPTION` labeling. The input message cap rose from 128 to 1024, matching the runtime projection limit. HTTP 429 responses are classified from a bounded (16 KiB) error body: recognized plan usage limits (`usage_limit_reached`, `usage_not_included`, or a dsh-llm quota match) become terminal `QUOTA`, optionally carrying a "Try again in about N minutes." hint derived only from a validated `resets_at` integer clamped to one week; any other or unreadable 429 body stays transient `RATE_LIMIT` (the previous non-canonical `RATE_LIMITED` code is retired). The hint is the only error-message part derived from upstream data; upstream text and `plan_type` never appear in errors or requests.
-
-Non-image file attachments require no bridge handling: the Harness runtime projects file blocks to text before every adapter dispatch, so the earlier "file attachments are rejected" claim was moot and is corrected in the docs. Synthetic tests now cover temperature/maxTokens validation and forwarding, the 1024-message bound, 429 classification variants (usage limit with and without reset, past reset, clamped reset, non-usage codes, oversized/unreadable bodies) and the bounded hint message.
-
-Local verification passed 79 root tests with only the four known environment-only failures; hosted CI on Node 22.23.3 remains the authoritative check. No real account operations were performed; upstream acceptance of forwarded `temperature` and the presence of `resets_at`/`plan_type` in real 429 bodies remain unverified.
+CI adds a locked Electron 44.0.0 test package and an explicit checksum-verifying binary download before synthetic host checks; it does not install Harness Desktop or run real login. The installed-ASAR composition lane is verified locally rather than claimed as a CI check. The packaged tarball excludes `.github`, so the workflow link above resolves only inside a full checkout. Audit results only cover known advisories; no finite audit or test suite establishes absence of unknown vulnerabilities.
