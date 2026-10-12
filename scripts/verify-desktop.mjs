@@ -1,0 +1,15 @@
+import { readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { join, isAbsolute } from 'node:path';
+const require = createRequire(import.meta.url);
+const executable = process.env.DSH_DESKTOP_EXECUTABLE ?? require('../verification/desktop/node_modules/electron');
+if (!isAbsolute(executable) || !process.env.npm_execpath) throw new Error('Run through npm with an absolute Desktop executable.');
+const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+const versions = JSON.parse(execFileSync(executable, ['-p', 'JSON.stringify(process.versions)'], { env, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] }));
+if (versions.node !== '24.18.1' || versions.electron !== '44.0.0') throw new Error('Only Electron 44.0.0 / Node 24.18.1 is verified.');
+const tests = readdirSync('test').filter(name => name.endsWith('.test.mjs')).map(name => join('test', name));
+execFileSync(executable, ['--test', ...tests], { env, stdio: 'inherit', timeout: 30000 });
+execFileSync(executable, ['scripts/verify-profile.mjs'], { env: { ...env, DSH_VERIFY_CLI: join(process.cwd(), 'verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js') }, stdio: 'inherit', timeout: 45000 });
+if (process.env.DSH_DESKTOP_EXECUTABLE) execFileSync(executable, ['--expose-internals', 'scripts/verify-installed-desktop.mjs'], { env, stdio: 'inherit', timeout: 45000 });
+console.log('DESKTOP_HOST_SYNTHETIC_OK (no real account operations)');

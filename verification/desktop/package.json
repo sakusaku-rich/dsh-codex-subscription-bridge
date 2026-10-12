@@ -1,0 +1,6 @@
+{
+  "name": "dsh-bridge-desktop-verification",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": { "electron": "44.0.0" }
+}

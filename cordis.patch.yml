@@ -1,0 +1,4 @@
+# Register the direct text provider; a dedicated OAuth login is required.
+- insert:
+    - id: llm-codex-subscription
+      name: dsh-codex-subscription-bridge

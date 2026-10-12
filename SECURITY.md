@@ -1,54 +1,54 @@
 # Security requirements
 
-This document defines requirements for implementation. It does not claim that a
-working bridge exists or that vulnerabilities have been eliminated.
+## Trust and credential ownership
 
-## Trust model
+The direct adapter holds a dedicated ChatGPT OAuth login. It never reads, imports, updates, or deletes Codex credentials.
 
-The plugin and the Codex app-server run under the local OS user. File permissions
-alone cannot protect that user's credentials from another process with the same
-authority. The bridge must not add an additional credential store or a token
-export surface.
-
-The Codex executable, Harness host, OS, and selected dependency versions remain
-part of the trusted runtime. Existing account access is reused through Codex's
-managed authentication; the plugin must not copy authentication files.
+The plugin, Harness, Node runtime, OS, and processes running as the same OS user remain trusted. Desktop admission does not patch or audit all Electron/Chromium or other Harness features. Dedicated file permissions are not encryption or protection against that same user. The initial store is plaintext; keyring is not included.
 
 ## Required controls
 
-1. Validate an absolute executable path and use a fixed argument vector with
-   shell execution disabled. Do not search project directories for executables.
-2. Use a child environment allowlist and avoid inheriting unrelated project or
-   cloud secrets. Environment minimization does not provide filesystem isolation.
-3. Verify ChatGPT-managed account authentication before providing models or
-   starting a conversation. Fail explicitly on other authentication modes.
-4. Validate every incoming JSON-RPC message and enforce aggregate resource
-   bounds. Malformed input must terminate the connection safely.
-5. Return fixed errors and safe classifications. Never surface raw stderr,
-   response bodies, authorization URLs, or token-shaped fields in diagnostics.
-6. Keep each Harness conversation isolated. Forked or imported histories must
-   not reuse another conversation's live Codex thread.
-7. Apply supported authority restrictions before each request. Unsupported or
-   unverifiable permission mappings must fail closed.
-8. Prevent native Codex tools from gaining unintended filesystem, shell, network,
-   MCP, or application access. Approval handling alone is not evidence that all
-   tools are disabled, and read-only mode alone does not restrict file reads.
-9. Await cancellation and bounded shutdown; stop accepting events from retired
-   requests and terminate child processes that do not exit.
+- Use fixed HTTPS destinations and reject redirects and endpoint overrides.
+- Use pinned bundled Undici with an owned dispatcher, independent of host fetch.
+- Accept only a dedicated OAuth grant; reject raw keys and configuration tokens.
+- Keep tokens out of diagnostics, profile YAML, package output, logs, and browser storage.
+- Reveal a one-time sign-in code only after explicit login, to its initiating UI or the explicitly invoked CLI; never return access/refresh tokens to the client.
+- Use authenticated Connection routes for UI actions, preserve the Gateway, disable response caching, bound payloads, and join login work during disposal.
+- Validate private file ownership, modes, symlinks, shape, and size.
+- Serialize credential update, login and logout with a process-shared lock.
+- Persist rotated credentials atomically; quarantine terminal invalid grants.
+- Reread authentication on metadata cache hits and before model dispatch.
+- Bound requests, input/output, frames, queues, and waiting periods.
+- Cancel network readers on abort, timeout, shutdown and generator retirement.
+- Send only validated text, tool definitions, executed tool-call history, user image data URLs, and validated `temperature`; never execute tools in the bridge; use no resumed server IDs and `store: false`.
+- Reject malformed, non-function execution items, failed, or incomplete streams.
+- Classify HTTP 429 bodies within a bounded read: a recognized plan usage limit becomes terminal `QUOTA` whose only upstream-derived part is a reset hint computed from a validated integer (at most one week); upstream text, `plan_type`, and unrecognized bodies never reach error messages, which fall back to fixed `QUOTA`/`RATE_LIMIT` wording.
 
 ## Verification boundary
 
-Normal tests use synthetic values and fake processes. A real-account test is a
-separate, explicitly authorized activity in an isolated Harness profile. Before
-normal installation, verify the exact supported version pair, model requests,
-cancellation, conversation forks, permission enforcement, process cleanup, and
-credential-safe diagnostics.
+All normal tests use disposable stores and in-memory HTTPS fixtures. No real OAuth flow, refresh, subscription request, or normal-profile installation is included. Each real account activity requires explicit authorization.
 
-No finite review or test suite establishes the absence of unknown
-vulnerabilities. Document the reviewed versions, checks, and remaining limits.
+Real-account evidence and its limits are recorded in [verification](docs/VERIFICATION.md). No finite audit proves absence of unknown vulnerabilities. See [architecture and limits](docs/ARCHITECTURE.md).
 
-## Reporting
+## Reporting a problem
 
-Do not post credentials or sensitive reproduction details in a public issue.
-This private repository currently has no published security contact. Agree on a
-private reporting channel with the owner before any public distribution.
+Report every problem, including vulnerabilities, as a GitHub Issue in this repository. Issues are the single reporting channel for this project; no private vulnerability reporting address or email exists.
+
+Never include credentials, device codes, authentication files, or raw authenticated responses in issues or pull requests. Share only sanitized reproduction steps, fixed diagnostic labels, and runtime/version information.
+
+For an exploitable vulnerability without a released fix, keep the issue to the minimum detail needed to reproduce it, and say that the report describes an unpatched issue so it can be prioritized. Once a fixed release is published, full detail is welcome.
+
+Pull requests that fix a reported problem directly are welcome. Reports are confirmed, fixed, released, and only then discussed in public detail; please do not publish unpatched issues elsewhere before that fix is available.
+
+## Supported versions
+
+| Version | Supported |
+| --- | --- |
+| `0.0.x` prototype on `main` | yes |
+| Older or published releases | none exist |
+
+## Scope
+
+In scope: this repository's plugin source, authentication CLI, bundled client, and the dedicated credential store under `~/.dsh-codex-subscription-bridge`.
+
+Out of scope: DeepSeek Harness itself, the OpenAI/ChatGPT/Codex services and their infrastructure, the bundled dependency versions as shipped by their own projects, and any host outside the documented installation surfaces. Report problems in those systems to the corresponding projects.

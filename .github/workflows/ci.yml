@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
+    name: macOS / pinned Node / synthetic verification
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DSH_TELEMETRY_DISABLED: 'true'
+      npm_config_ignore_scripts: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install locked plugin dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install locked Harness verification runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix verification/runtime
+      - name: Audit plugin dependencies
+        run: npm audit --audit-level=low
+      - name: Audit Harness verification runtime
+        run: npm audit --audit-level=low --prefix verification/runtime
+      - name: Check source and run unit and package tests
+        run: npm run verify
+      - name: Verify isolated installation and recovery commands
+        run: npm run test:install
+      - name: Verify packaged Harness CLI and SDK conversation
+        run: |
+          export DSH_VERIFY_CLI="$GITHUB_WORKSPACE/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+          npm run test:profile
+      - name: Verify authenticated settings operations and browser trust
+        run: npm run test:auth-ui
+      - name: Install pinned Electron verification package
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix verification/desktop
+      - name: Download the checksum-verified Electron test binary
+        run: node verification/desktop/node_modules/electron/install.js
+      - name: Verify Electron Desktop host using synthetic credentials
+        run: npm run test:desktop
+      - name: Check patch formatting
+        run: git diff --check
+      - name: Require verification to leave tracked files unchanged
+        run: git diff --exit-code

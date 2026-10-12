@@ -1,0 +1,98 @@
+{
+  "name": "dsh-codex-subscription-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A direct DeepSeek Harness provider for dedicated ChatGPT subscription OAuth",
+  "author": "sakusaku-rich",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sakusaku-rich/dsh-codex-subscription-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/issues"
+  },
+  "homepage": "https://github.com/sakusaku-rich/dsh-codex-subscription-bridge#readme",
+  "keywords": [
+    "deepseek-harness",
+    "chatgpt",
+    "codex",
+    "subscription",
+    "oauth",
+    "plugin"
+  ],
+  "engines": {
+    "node": ">=22.23.3 <23 || 24.18.1"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./client": "./client.js"
+  },
+  "files": [
+    "src/index.js",
+    "src/direct.js",
+    "src/sse.js",
+    "src/auth.js",
+    "src/auth-cli.js",
+    "src/http.js",
+    "src/text.js",
+    "src/image.js",
+    "src/runtime.js",
+    "src/errors.js",
+    "src/environment.js",
+    "cordis.patch.yml",
+    "README.md",
+    "SECURITY.md",
+    "docs",
+    "LICENSE",
+    "AGENTS.md",
+    "src/auth-ui.js",
+    "client.js"
+  ],
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test test/*.test.mjs",
+    "verify": "npm run check && npm test",
+    "test:profile": "node scripts/verify-profile.mjs",
+    "prepare:profile": "node scripts/prepare-profile.mjs",
+    "test:install": "node --test test/integration/prepare-profile.test.mjs",
+    "test:desktop": "node scripts/verify-desktop.mjs",
+    "prepare:desktop": "node scripts/prepare-desktop.mjs",
+    "test:auth-ui": "node --test test/integration/auth-ui-http.test.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "bin": {
+    "dsh-codex-subscription-auth": "./src/auth-cli.js"
+  },
+  "os": [
+    "darwin"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "undici": "7.29.1"
+  },
+  "bundledDependencies": [
+    "undici"
+  ]
+}
