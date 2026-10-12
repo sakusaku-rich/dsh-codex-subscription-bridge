@@ -6,7 +6,7 @@ import { BridgeError, classified, object, string } from './errors.js';
 import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT } from './text.js';
 import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, estimateVisionTokens, imageDataUrl, requestImageTarget } from './image.js';
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
-import { Http, BASE, statusError } from './http.js';
+import { Http, BASE, classifyStatusError } from './http.js';
 import { accountHeaders } from './auth.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
@@ -194,14 +194,15 @@ export class DirectBridge {
       response = await this.own(async () => {
         const result = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({ model: options.model, instructions, input: input.filter(item => !(item.type === 'message' && item.role === 'developer')),
-          store: false, stream: true, ...(plan.tools === undefined ? {} : { tools: plan.tools }), ...(plan.reasoning === undefined ? {} : { reasoning: plan.reasoning }) }) }, controller.signal);
+          store: false, stream: true, ...(plan.temperature === undefined ? {} : { temperature: plan.temperature }),
+          ...(plan.tools === undefined ? {} : { tools: plan.tools }), ...(plan.reasoning === undefined ? {} : { reasoning: plan.reasoning }) }) }, controller.signal);
         const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}), controller);
         controller.signal.addEventListener('abort', cancel, { once: true });
         controller.removeBodyAbort = () => controller.signal.removeEventListener('abort', cancel);
         if (controller.signal.aborted) await cancel();
         return result;
       }, controller.signal);
-      if (!response.ok) { await response.body?.cancel(); throw statusError(response.status); }
+      if (!response.ok) throw await classifyStatusError(response.status, response, controller.signal);
       // The subscription backend can send valid SSE without an SSE MIME header.
       // Trust the bounded frame/event parser and terminal state, not Content-Type.
       phase = 'SSE_FRAME';

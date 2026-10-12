@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateInput, PROVIDER, TEXT_LIMIT, TOOL_PARAMETERS_LIMIT, TOOLS_BYTES_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, IMAGE_MEDIA_TYPES } from '../src/text.js';
+import { validateInput, PROVIDER, TEXT_LIMIT, MESSAGE_LIMIT, TOOL_PARAMETERS_LIMIT, TOOLS_BYTES_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, IMAGE_MEDIA_TYPES } from '../src/text.js';
 import { REQUEST_IMAGE_ATTACHMENT_MAX_BYTES } from '../src/image.js';
 const input = (overrides = {}) => ({ provider: PROVIDER, messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic prompt' }] }], ...overrides });
 const image = (overrides = {}) => ({ type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 1024, height: 768 }, ...overrides });
@@ -38,14 +38,28 @@ test('images become wire placeholders with per-attachment request targets', () =
 
 test('unsupported inputs and text bounds are refused before transport', () => {
   for (const overrides of [
-    { tools: {} }, { temperature: 0 }, { maxTokens: 10 }, { stop: [] }, { reasoningEffort: 'medium' },
-    { messages: [] }, { messages: Array(129).fill(input().messages[0]) },
+    { tools: {} }, { reasoningEffort: 'medium' },
+    { messages: [] }, { messages: Array(MESSAGE_LIMIT + 1).fill(input().messages[0]) },
     { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Last assistant' }] }] },
     { messages: [{ role: 'user', content: Array(65).fill({ type: 'text', text: '' }) }] },
     { system: 'x'.repeat(TEXT_LIMIT + 1) },
     { messages: [{ role: 'user', content: [{ type: 'text', text: 'x'.repeat(TEXT_LIMIT + 1) }] }] },
   ]) assert.throws(() => validateInput(input(overrides)), { code: 'INPUT_UNSUPPORTED' });
   assert.doesNotThrow(() => validateInput(input({ messages: [{ role: 'user', content: [{ type: 'text', text: 'x'.repeat(TEXT_LIMIT) }] }] })));
+  assert.doesNotThrow(() => validateInput(input({ messages: Array(MESSAGE_LIMIT).fill(input().messages[0]) })));
+});
+
+test('generation overrides forward temperature and accept advisory budgets', () => {
+  assert.equal(validateInput(input({ temperature: 0.7, maxTokens: 4096 })).temperature, 0.7);
+  assert.equal(validateInput(input({ maxTokens: 4096 })).temperature, undefined);
+  assert.equal(validateInput(input()).temperature, undefined);
+  for (const overrides of [
+    { temperature: 'warm' }, { temperature: Number.NaN }, { temperature: -0.1 }, { temperature: 2.1 },
+    { maxTokens: 0 }, { maxTokens: 1.5 }, { maxTokens: 1000001 }, { maxTokens: 'many' },
+    { stop: [] }, { stop: 'END' },
+  ]) assert.throws(() => validateInput(input(overrides)), error => error.code === 'UNSUPPORTED_OPTION' && error.diagnostic === 'STOP' ||
+    error.code === 'INPUT_UNSUPPORTED' && ['TEMPERATURE', 'MAX_TOKENS'].includes(error.diagnostic),
+    `expected refusal for ${JSON.stringify(overrides)}`);
 });
 
 test('tool declarations are validated conservatively', () => {

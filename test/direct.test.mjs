@@ -47,8 +47,8 @@ test('terminal refresh failures are quarantined; quota failures retain the refre
   for (const [status, error] of [[400, 'invalid_grant'], [429, 'rate_limit']]) {
     let calls = 0; const store = new AuthStore(join(root, `auth-${status}`), new Http(async () => { calls++; return json({ error }, status); }));
     await store.transaction(() => store.write(tokens(1)));
-    await assert.rejects(store.token(), { code: status === 400 ? 'AUTH_REQUIRED' : 'RATE_LIMITED' });
-    await assert.rejects(store.token(), { code: status === 400 ? 'AUTH_REQUIRED' : 'RATE_LIMITED' });
+    await assert.rejects(store.token(), { code: status === 400 ? 'AUTH_REQUIRED' : 'RATE_LIMIT' });
+    await assert.rejects(store.token(), { code: status === 400 ? 'AUTH_REQUIRED' : 'RATE_LIMIT' });
     assert.equal(calls, status === 400 ? 1 : 2);
   }
 }));
@@ -172,11 +172,49 @@ test('incomplete tool-call streams and malformed arguments fail safely', async (
 test('EOF, native tool calls, failure, malformed catalogs, and rate limits fail safely', async () => {
   for (const response of [sse(delta), sse({ type: 'response.output_item.added', item: { type: 'function_call' } }), sse({ type: 'response.failed', response: { error: { message: 'secret' } } }), json({}, 429)]) {
     const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : response));
-    await assert.rejects(collect(bridge.stream(input())), error => ['PROTOCOL_INVALID', 'UPSTREAM_FAILED', 'RATE_LIMITED'].includes(error.code) && !error.message.includes('secret'));
+    await assert.rejects(collect(bridge.stream(input())), error => ['PROTOCOL_INVALID', 'UPSTREAM_FAILED', 'RATE_LIMIT'].includes(error.code) && !error.message.includes('secret'));
     await bridge.close();
   }
   const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async () => json({ models: [{ ...model, visibility: 'bogus' }] })));
   await assert.rejects(bridge.listModels(), { code: 'PROTOCOL_INVALID' }); await bridge.close();
+});
+test('temperature is forwarded and usage-limit 429s become quota with a bounded hint', async () => {
+  const calls = []; let resetsAt = Math.floor(Date.now() / 1000) + 3600;
+  const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
+    calls.push({ url, options });
+    return url.includes('/models?') ? json({ models: [model] })
+      : json({ error: { code: 'usage_limit_reached', resets_at: resetsAt, plan_type: 'plus', message: 'secret-upstream-text' } }, 429);
+  }));
+  await assert.rejects(collect(bridge.stream(input({ temperature: 0.7 }))), error => error.code === 'QUOTA'
+    && error.message.includes('Try again in about 60 minutes.') && !error.message.includes('secret-upstream-text') && !error.message.includes('plus'));
+  assert.equal(JSON.parse(calls.at(-1).options.body).temperature, 0.7);
+  resetsAt = Math.floor(Date.now() / 1000) - 600; // Past reset: the hint drops out.
+  await assert.rejects(collect(bridge.stream(input())), error => error.code === 'QUOTA' && error.message.startsWith('The ChatGPT plan usage limit was reached. ['));
+  resetsAt = 1e12; // Implausible epoch: the hint clamps to a week.
+  await assert.rejects(collect(bridge.stream(input())), error => error.code === 'QUOTA' && error.message.includes('Try again in about 10080 minutes.'));
+  await bridge.close();
+});
+test('non-usage 429 bodies and unreadable bodies stay transient rate limits', async () => {
+  for (const [payload, code, message] of [
+    [{ error: { code: 'rate_limit_exceeded' } }, 'RATE_LIMIT', undefined],
+    [{ error: { type: 'server_error' } }, 'RATE_LIMIT', undefined],
+    [{ error: {} }, 'RATE_LIMIT', undefined],
+    [{}, 'RATE_LIMIT', undefined],
+    [{ error: { code: 'usage_limit_reached' } }, 'QUOTA', 'The ChatGPT plan usage limit was reached.'],
+    [{ error: { code: 'usage_not_included' } }, 'QUOTA', 'The ChatGPT plan usage limit was reached.'],
+    [{ error: { code: 'usage_limit_reached', resets_at: 0 } }, 'QUOTA', 'The ChatGPT plan usage limit was reached.'],
+  ]) {
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : json(payload, 429)));
+    await assert.rejects(collect(bridge.stream(input())), error => {
+      if (error.code !== code) return false;
+      if (message !== undefined) assert.equal(error.message, `${message} [HTTP_REQUEST]`); else assert.doesNotMatch(error.message, /minute/);
+      return true;
+    });
+    await bridge.close();
+  }
+  const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : new Response('Too Many Requests', { status: 429 })));
+  await assert.rejects(collect(bridge.stream(input())), { code: 'RATE_LIMIT' });
+  await bridge.close();
 });
 test('cancellation and turn deadline abort the underlying request', async () => {
   for (const timeout of [false, true]) {
@@ -342,6 +380,9 @@ test('diagnostics use fixed allowlisted labels and discard mutable upstream mess
   assert.equal(failure(new Error('synthetic-secret')).message.includes('synthetic-secret'), false);
   assert.equal(new BridgeError('__proto__', 'synthetic-secret').code, 'UPSTREAM_FAILED');
   assert.equal(failure(new BridgeError('PROTOCOL_INVALID', 'SSE_FRAME')).message.endsWith('[SSE_FRAME]'), true);
+  assert.equal(failure(new BridgeError('QUOTA', undefined, { resetMinutes: 90 })).message.endsWith('Try again in about 90 minutes.'), true);
+  assert.equal(new BridgeError('QUOTA', undefined, { resetMinutes: 0 }).message, 'The ChatGPT plan usage limit was reached.');
+  assert.equal(new BridgeError('QUOTA', undefined, { resetMinutes: 20000 }).message, 'The ChatGPT plan usage limit was reached.');
   for (const [response, label] of [
     [new Response('data: {\n\n'), 'SSE_FRAME'],
     [sse({ type: 'synthetic_secret' }), 'SSE_EVENT_UNSUPPORTED'],

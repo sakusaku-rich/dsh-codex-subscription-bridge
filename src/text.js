@@ -12,6 +12,11 @@ export const TOOLS_BYTES_LIMIT = 256 * 1024;
 export const TOOL_BYTES_LIMIT = 2 * 1024 * 1024;
 export const CALL_ID_LIMIT = 256;
 export const BLOCK_LIMIT = 64;
+// Agent turns interleave tool calls and results as separate messages; the old
+// 128-message cap rejected long working sessions well before byte limits
+// bound the request. 1024 items with the unchanged byte limits keeps the wire
+// shape bounded while covering any pre-compaction session.
+export const MESSAGE_LIMIT = 1024;
 export const IMAGE_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const ATTACHMENT_ID = /^sha256:[0-9a-f]{64}$/;
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
@@ -23,6 +28,27 @@ function reasoningEffort(value) {
   if (value === 'off' || value === 'low') return { effort: 'low' };
   if (value === 'high' || value === 'max') return { effort: 'high' };
   throw new BridgeError('INPUT_UNSUPPORTED');
+}
+
+function requestTemperature(value) {
+  // Forwarded verbatim as the Responses `temperature` field, like the
+  // subscription route's own adapter. The Responses API documents 0..2.
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 2) {
+    throw new BridgeError('INPUT_UNSUPPORTED', 'TEMPERATURE');
+  }
+  return value;
+}
+
+function requestMaxTokens(value) {
+  // Accepted and shape-checked but not forwarded: the subscription route's own
+  // adapter omits `max_output_tokens` for this route, so a turn token budget
+  // stays advisory. Values that the runtime itself would reject are still
+  // refused so a caller cannot mistake silence for acceptance.
+  if (value === undefined) return;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 1_000_000) {
+    throw new BridgeError('INPUT_UNSUPPORTED', 'MAX_TOKENS');
+  }
 }
 
 function validateToolHistory(value) {
@@ -110,12 +136,20 @@ function serializeToolResult(message, calls, results, toolBytesRef) {
 * Validate one request and derive the Responses wire items for it.
 * @param options - Harness generate options for this provider.
 * @returns a plan: `input` wire items with image placeholders, `tools` wire
-*   declarations, `reasoning` effort mapping, and per-attachment image entries
+*   declarations, `reasoning` effort mapping, a validated `temperature` when
+*   the request carries one, and per-attachment image entries
 *   with their durable references, request targets, and original blocks.
 */
 export function validateInput(options) {
-  if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > 128 || !options.messages.length ||
-      options.temperature !== undefined || options.maxTokens !== undefined || options.stop !== undefined) throw new BridgeError('INPUT_UNSUPPORTED');
+  if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > MESSAGE_LIMIT || !options.messages.length) {
+    throw new BridgeError('INPUT_UNSUPPORTED');
+  }
+  // Generation overrides: temperature is forwarded, a turn token budget is
+  // accepted but not forwarded (documented exception), stop sequences stay
+  // unsupported like the route's own adapter.
+  const temperature = requestTemperature(options.temperature);
+  requestMaxTokens(options.maxTokens);
+  if (options.stop !== undefined) throw new BridgeError('UNSUPPORTED_OPTION', 'STOP');
   const reasoning = reasoningEffort(options.reasoningEffort);
   const tools = serializeTools(options.tools);
   validateToolHistory(options.toolHistory);
@@ -179,5 +213,5 @@ export function validateInput(options) {
   for (const callId of calls) if (!results.has(callId)) throw new BridgeError('INPUT_UNSUPPORTED');
   const last = input.at(-1);
   if (!last || !((last.type === 'message' && last.role === 'user') || last.type === 'function_call_output')) throw new BridgeError('INPUT_UNSUPPORTED');
-  return { input, tools, reasoning, images, imageBlocks };
+  return { input, tools, reasoning, temperature, images, imageBlocks };
 }

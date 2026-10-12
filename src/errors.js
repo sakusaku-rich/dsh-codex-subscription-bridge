@@ -2,7 +2,13 @@ const messages = Object.freeze({
   AUTH_REQUIRED: 'A dedicated subscription login is required. Open ChatGPT subscription in Harness settings or run dsh-codex-subscription-auth login.',
   AUTH_STORE_INVALID: 'The dedicated authentication store is invalid or insecure.',
   AUTH_BUSY: 'The authentication store is busy. A crashed owner may require manual lock recovery.',
-  RATE_LIMITED: 'The subscription service rate or usage limit was reached.',
+  // Canonical transient rate-limit code from the shared failure taxonomy.
+  RATE_LIMIT: 'The subscription service rate limit was reached.',
+  // Plan usage cap recognized from structured upstream usage-limit codes; the
+  // optional reset hint below is the only message part derived from upstream
+  // data, and it is a validated integer, never upstream text.
+  QUOTA: 'The ChatGPT plan usage limit was reached.',
+  UNSUPPORTED_OPTION: 'The request option is not supported by this subscription route.',
   PLATFORM_UNSUPPORTED: 'This bridge currently supports macOS only.',
   NODE_VERSION_UNSUPPORTED: 'Use Node.js 22 >=22.23.3 or the supported Electron 44.0.0 Desktop host.',
   CONFIG_INVALID: 'The bridge configuration is invalid.',
@@ -22,13 +28,21 @@ const diagnostics = new Set([
   'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_EVENT_TYPE',
   'SSE_EVENT_UNSUPPORTED', 'SSE_TEXT_DELTA', 'SSE_TEXT_COMPLETION',
   'SSE_OUTPUT_ITEM', 'SSE_TOOL_CALL', 'SSE_TERMINAL', 'SSE_INCOMPLETE',
-  'TOOL_INPUT', 'IMAGE_PREPARE', 'IMAGE_OFFLOAD',
+  'TOOL_INPUT', 'IMAGE_PREPARE', 'IMAGE_OFFLOAD', 'STOP', 'TEMPERATURE', 'MAX_TOKENS',
 ]);
+// Longest reset hint the classifier may derive, in minutes (one week).
+const RESET_MINUTES_LIMIT = 10080;
 export class BridgeError extends Error {
   constructor(code, diagnostic, extras) {
     const safeCode = Object.hasOwn(messages, code) ? code : 'UPSTREAM_FAILED';
     const label = diagnostics.has(diagnostic) ? diagnostic : undefined;
-    super(messages[safeCode] + (label ? ` [${label}]` : ''));
+    // A reset hint is a validated integer count, not upstream text, so it can
+    // join the fixed message without leaking request or response content.
+    const resetMinutes = extras !== null && typeof extras === 'object' &&
+      Number.isSafeInteger(extras.resetMinutes) && extras.resetMinutes >= 1 && extras.resetMinutes <= RESET_MINUTES_LIMIT
+      ? extras.resetMinutes : undefined;
+    super(messages[safeCode] + (resetMinutes !== undefined
+      ? ` Try again in about ${resetMinutes} minute${resetMinutes === 1 ? '' : 's'}.` : '') + (label ? ` [${label}]` : ''));
     this.diagnostic = label;
     this.name = 'BridgeError';
     this.code = safeCode;
@@ -37,13 +51,15 @@ export class BridgeError extends Error {
     // fixed message so no request detail leaks into error text.
     this.offloadImages = extras !== null && typeof extras === 'object' &&
       Number.isSafeInteger(extras.offloadImages) && extras.offloadImages > 0 ? extras.offloadImages : undefined;
+    this.resetMinutes = resetMinutes;
   }
 }
 /** Reconstruct from fixed code/label allowlists; never trust a mutable message. */
 export function classified(error, diagnostic) {
-  return new BridgeError(error instanceof BridgeError ? error.code : 'UPSTREAM_FAILED',
-    error instanceof BridgeError && diagnostics.has(error.diagnostic) ? error.diagnostic : diagnostic,
-    error instanceof BridgeError ? { offloadImages: error.offloadImages } : undefined);
+  const safe = error instanceof BridgeError ? error : undefined;
+  return new BridgeError(safe ? safe.code : 'UPSTREAM_FAILED',
+    safe && diagnostics.has(safe.diagnostic) ? safe.diagnostic : diagnostic,
+    safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes } : undefined);
 }
 export const failure = (error) => {
   const safe = classified(error);
