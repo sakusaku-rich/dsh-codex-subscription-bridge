@@ -98,14 +98,14 @@ if (desktop === undefined) {
 }
 
 // Install the already-verified plugin artifact from the local file, offline, so
-// no network fetch can substitute a different package for the reviewed one. The
-// Desktop host loads its own web application, so that bundle is not listed.
+// no network fetch can substitute a different package for the reviewed one.
+// Both surfaces list the web application bundle: the Desktop host boots through
+// `ctx.connection` and `ctx.webServer`, which that bundle provides, so omitting
+// it makes the Desktop host fail during startup before any profile loads.
 await writeFile(join(profile, 'package.json'), JSON.stringify({
   private: true, type: 'module',
   dependencies: { [PLUGIN_NAME]: `file:${artifactPath}` },
-  dsh: { profile: { bundles: desktop === undefined
-    ? ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', PLUGIN_NAME]
-    : ['@deepseek-ai/dsh-base', PLUGIN_NAME] } },
+  dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', PLUGIN_NAME] } },
 }, null, 2));
 execFileSync(process.execPath, [npmCli, 'install', '--ignore-scripts', '--offline', '--legacy-peer-deps', '--no-audit', '--no-fund', '--cache', join(root, 'cache')], {
   cwd: profile, env, stdio: 'pipe', timeout: INSTALL_TIMEOUT,

@@ -106,6 +106,11 @@ test('release installer prepares a signed-out Desktop profile from the released 
     assert.equal(manifest.sha256, packageDigest);
     assert.equal(manifest.workingTreeMayContainChanges, false);
     await access(join(target, 'harness/profiles/desktop'));
+    // The Desktop host boots through ctx.connection and ctx.webServer, so the
+    // web application bundle must be listed even though the host supplies its
+    // own peers. Omitting it fails host startup before any profile is served.
+    const bundles = JSON.parse(await readFile(join(target, 'harness/profiles/desktop/package.json'), 'utf8')).dsh.profile.bundles;
+    assert.deepEqual(bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-codex-subscription-bridge']);
     // The standalone launchers belong to the Web surface only.
     await assert.rejects(access(join(target, 'start.sh')), { code: 'ENOENT' });
     await assert.rejects(access(join(target, 'runtime')), { code: 'ENOENT' });
