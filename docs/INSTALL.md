@@ -69,6 +69,28 @@ A release carries four assets. The installer bundle is separate from the publish
 
 For both install paths the parent directory must exist and the destination must not. The sections below on what preparation creates, how to start and sign in, how to update, and how to remove apply to both paths.
 
+## Install into an existing profile
+
+The isolated path above creates a profile of its own, so it does not carry over settings, credentials or other plugins from the profile you already use. Desktop can instead install into an existing profile, keeping all of that in place:
+
+```sh
+sh install.sh --tag v0.0.1 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
+```
+
+This mode is Desktop-only and refuses a Web surface, because the standalone Web launch needs a runtime that only an isolated directory owns.
+
+It differs from the isolated path in ways worth knowing before you run it:
+
+- **It modifies a profile you are using.** The bridge is added to that profile's dependency and bundle lists. Existing plugins and `cordis.patch.yml` are left untouched.
+- **The application's own pnpm is used.** The profile is a pnpm project, so the pnpm bundled with the installed Desktop is resolved and version-checked. The system `pnpm` is never consulted, so a different major cannot rewrite the lockfile in an incompatible format.
+- **`package.json` and the lockfile are backed up first.** The copy is written to `.bridge-backup-<timestamp>/` inside the profile, and the run prints that path. If the install fails, those files are restored automatically and the run says so.
+- **An install is refused when the bridge is already listed**, rather than repointing an existing entry.
+- **There is no `manifest.json` for this mode.** The isolated path records the release tag and verified digest there; a shared profile keeps the application's own layout, so the same record is written to the backup directory as `installed.json`.
+
+Restart the application to load the bridge. To undo the install, copy `package.json` and `pnpm-lock.yaml` from the backup directory back over the profile and run the same pnpm install again.
+
+Because this mode changes a working environment, it is the less reversible of the two paths. Prefer the isolated install unless you specifically need the existing profile's settings and plugins.
+
 ## Prepare an isolated profile from a source checkout
 
 From the reviewed checkout, with the required Node active:

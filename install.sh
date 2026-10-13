@@ -15,28 +15,39 @@ set -eu
 
 TAG=""
 DIRECTORY=""
+PROFILE=""
 SURFACE="web"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --tag) TAG="${2:-}"; shift 2 ;;
     --directory) DIRECTORY="${2:-}"; shift 2 ;;
+    --profile) PROFILE="${2:-}"; shift 2 ;;
     --surface) SURFACE="${2:-}"; shift 2 ;;
     -h|--help)
       cat <<'USAGE'
-Usage: sh install.sh --tag <vX.Y.Z> --directory <absolute new directory> [--surface web|desktop]
+Usage: sh install.sh --tag <vX.Y.Z> (--directory <absolute new directory> | --profile <absolute existing profile>) [--surface web|desktop]
 
 Downloads the pinned release installer bundle for <vX.Y.Z>, verifies its
-published SHA-256 checksum, and prepares an isolated signed-out Harness profile
-in <absolute new directory>. The parent directory must already exist and the
-destination must not. Sign-in happens afterwards inside Harness.
+published SHA-256 checksum, and installs the bridge. Sign-in happens afterwards
+inside Harness.
+
+Modes:
+  --directory <path>   Prepare a new isolated, signed-out Harness profile in an
+                       absolute, not-yet-existing directory. The parent must
+                       already exist. Nothing outside that directory is touched.
+  --profile <path>     Install into an existing Harness profile, keeping its
+                       configuration, credentials and other plugins. Backs up
+                       package.json and the lockfile first and restores them if
+                       the install fails. Desktop only.
 
 Options:
   --tag <vX.Y.Z>          The released tag to install. Required.
-  --directory <path>      An absolute, not-yet-existing destination. Required.
-  --surface <web|desktop> Which verified host to prepare for. Defaults to web.
+  --surface <web|desktop> Which verified host to target. Defaults to web.
                           Desktop requires the installed DeepSeek Harness
                           Desktop 0.2.0-rc.2 at /Applications and uses its own
                           Electron host; a different build is refused.
+
+Exactly one of --directory or --profile is required.
 
 Environment:
   DSH_INSTALL_SOURCE   Override the download source for an offline or mirrored
@@ -52,19 +63,31 @@ USAGE
   esac
 done
 
-[ -n "$TAG" ] || { echo "install.sh: --tag is required (for example --tag v0.1.0)" >&2; exit 2; }
-[ -n "$DIRECTORY" ] || { echo "install.sh: --directory is required" >&2; exit 2; }
+[ -n "$TAG" ] || { echo "install.sh: --tag is required (for example --tag v0.0.1)" >&2; exit 2; }
+[ -n "$DIRECTORY" ] || [ -n "$PROFILE" ] || { echo "install.sh: one of --directory or --profile is required" >&2; exit 2; }
+[ -z "$DIRECTORY" ] || [ -z "$PROFILE" ] || { echo "install.sh: --directory and --profile cannot be combined" >&2; exit 2; }
 case "$SURFACE" in
   web|desktop) : ;;
   *) echo "install.sh: --surface must be web or desktop" >&2; exit 2 ;;
 esac
+# Installing into an existing profile is Desktop-only: the standalone Web
+# surface launches from a runtime this script would have to place somewhere, and
+# a shared profile has no such location to own.
+if [ -n "$PROFILE" ] && [ "$SURFACE" != "desktop" ]; then
+  echo "install.sh: --profile requires --surface desktop" >&2; exit 2
+fi
 
-case "$DIRECTORY" in
+case "$DIRECTORY$PROFILE" in
   /*) : ;;
-  *) echo "install.sh: --directory must be an absolute path" >&2; exit 2 ;;
+  *) echo "install.sh: the target path must be absolute" >&2; exit 2 ;;
 esac
-[ ! -e "$DIRECTORY" ] || { echo "install.sh: refusing to use an existing destination: $DIRECTORY" >&2; exit 1; }
-[ -d "$(dirname "$DIRECTORY")" ] || { echo "install.sh: the parent of --directory must already exist" >&2; exit 2; }
+if [ -n "$PROFILE" ]; then
+  [ -d "$PROFILE" ] || { echo "install.sh: --profile must name an existing directory: $PROFILE" >&2; exit 1; }
+  [ -f "$PROFILE/package.json" ] || { echo "install.sh: $PROFILE has no package.json, so it is not a prepared profile" >&2; exit 1; }
+else
+  [ ! -e "$DIRECTORY" ] || { echo "install.sh: refusing to use an existing destination: $DIRECTORY" >&2; exit 1; }
+  [ -d "$(dirname "$DIRECTORY")" ] || { echo "install.sh: the parent of --directory must already exist" >&2; exit 2; }
+fi
 
 # A tag becomes a URL path segment and drives the default asset name, so it is
 # held to the same v-prefixed semver shape the build and prepare scripts use.
@@ -240,5 +263,15 @@ echo "Verifying the packaged plugin artifact"
 # lifecycle scripts disabled, then writes the profile, its manifest and its
 # launchers. It receives the artifact we already verified, not a fresh download,
 # and the resolved npm CLI path, so it never has to guess a package manager.
-echo "Preparing the isolated $SURFACE profile at $DIRECTORY"
-"$NODE" "$PREPARE" --directory "$DIRECTORY" --artifact "$PLUGIN" --checksums "$WORK/SHA256SUMS" --tag "$TAG" --npm-cli "$NPM_EXECPATH" --surface "$SURFACE"
+if [ -n "$PROFILE" ]; then
+  # The existing-profile path uses the application's own package manager and
+  # keeps the profile's configuration, credentials and other plugins in place.
+  INSTALL="$WORK/unpacked/package/scripts/install-into-profile.mjs"
+  PNPM_CLI="$("$NODE" "$WORK/unpacked/package/scripts/lib/find-pnpm.mjs")"
+  [ -f "$INSTALL" ] || { echo "install.sh: the bundle does not contain scripts/install-into-profile.mjs" >&2; exit 1; }
+  echo "Installing into the existing profile at $PROFILE"
+  "$NODE" "$INSTALL" --profile "$PROFILE" --artifact "$PLUGIN" --checksums "$WORK/SHA256SUMS" --tag "$TAG" --pnpm-cli "$PNPM_CLI"
+else
+  echo "Preparing the isolated $SURFACE profile at $DIRECTORY"
+  "$NODE" "$PREPARE" --directory "$DIRECTORY" --artifact "$PLUGIN" --checksums "$WORK/SHA256SUMS" --tag "$TAG" --npm-cli "$NPM_EXECPATH" --surface "$SURFACE"
+fi
