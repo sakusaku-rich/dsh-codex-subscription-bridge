@@ -50,6 +50,8 @@ jobs:
         run: npm run verify
       - name: Verify isolated installation and recovery commands
         run: npm run test:install
+      - name: Verify the release install path against a synthetic release
+        run: npm run test:release-install
       - name: Verify packaged Harness CLI and SDK conversation
         run: |
           export DSH_VERIFY_CLI="$GITHUB_WORKSPACE/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"

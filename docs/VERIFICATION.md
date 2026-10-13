@@ -9,10 +9,14 @@ npm ci --ignore-scripts
 npm ci --ignore-scripts --prefix verification/runtime
 npm run verify
 npm run test:install
+npm run test:release-install
 DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
+DSH_DESKTOP_EXECUTABLE="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" npm run test:desktop
 npm audit --audit-level=low
 npm audit --audit-level=low --prefix verification/runtime
 ```
+
+The `test:desktop` lane requires the pinned `verification/desktop` Electron package (or an explicit executable) and runs the root suite on the Desktop host. On the machine used for this record that lane fails inside `test/package.test.mjs`, which invokes `npm pack` as a child process; the same failure reproduces on the base commit before the release path was added, so it predates this work and is recorded rather than attributed to it. The Desktop release surface is covered independently by `test:release-install`, which drives the installed application's own resolver.
 
 The root suite uses the small pinned Cordis/LLM peer dependency tree. The separate installation and profile checks require the full locked Harness 0.2.0-rc.2 runtime. All automated authentication and service fixtures are synthetic and disposable. Tests never import existing Codex credentials or send real model requests.
 
@@ -29,9 +33,18 @@ The root suite uses the small pinned Cordis/LLM peer dependency tree. The separa
 - The sign-in panel in a browser with synthetic OAuth responses: panel display, one-time code and fixed link, local diagnosis, cancellation, restarted login, automatic completion after simulated approval, confirmed local logout, and rejection of unknown fields and oversized payloads, with the settings API unchanged.
 - Public adapter registration/disposal, actual npm tarball composition, MIT license inclusion, missing-auth errors, and synthetic CLI/SDK conversation.
 - Fresh isolated Web-profile preparation, quoted paths, overwrite refusal and read-only doctor behavior for missing, insecure, locked and uncertain stores.
+- The release install path against a locally built synthetic release: checksum parsing, fixed release-host URL construction, tag and asset-name refusal, a tampered bundle and an unlisted bundle refused with nothing created, a bundle whose packaged plugin is unlisted, an unreviewed transport, usage errors, and a full install whose manifest records the release identity with `workingTreeMayContainChanges` false.
+- The release asset build itself: a tag that disagrees with `package.json`, an existing output directory, and development tooling appearing in the published package are all refused.
+- The Desktop release surface on the installed application: the `desktop` profile name, the recorded host pair, no standalone runtime directory, no shadowing host peers, no launcher for the other surface, and no credential store after preparation; then the prepared profile registering the bridge when loaded through the application's own ASAR resolver, with an unauthenticated catalog read refused as `AUTH_REQUIRED`. This lane is skipped, not weakened, where the verified Desktop is absent, so CI does not claim it.
 - The installed Desktop host pair: the packaged synthetic CLI/SDK conversation and shutdown on the Electron executable, and a disposable profile conversation driven through Desktop's ASAR resolver with actual host peers.
 
-The source installer creates a new directory with an empty private HOME. It records the package integrity, commit, Node and Harness versions and disables installation scripts. Verification does not modify a normal Harness profile.
+The source installer creates a new directory with an empty private HOME. It records the package integrity, commit, Node and Harness versions and disables installation scripts. The release installer verifies a downloaded artifact against its published SHA-256 before unpacking or running anything, records the release tag and verified digest instead of a commit, and fetches the pinned Harness runtime with lifecycle scripts disabled. A Desktop profile additionally records the verified host pair, deliberately contains no standalone runtime, and takes its host peers from the application tree. Verification does not modify a normal Harness profile.
+
+The Desktop surface was checked by hand on the installed application at `5e9e301dd9dc8923b2762f76dacfc5751f6ca851` (Electron 44.0.0 / Node 24.18.1, Cordis 4.0.4 / LLM 0.2.0-rc.2): a profile prepared from a locally built release loaded through the application's ASAR resolver, provided `ctx.connection` and `ctx.webServer`, and registered `codex-subscription` alongside the host's own providers. An earlier iteration of this path omitted the web application bundle from the Desktop profile on the reasoning that the host supplies its own peers; the installed application then failed during host startup with `Cannot read properties of undefined (reading 'authenticatedUrl')` from `dsh-desktop-host`, because that host reads `ctx.connection` while booting. Owner-operated GUI launch caught this, and the synthetic verifier was extended to assert both services after the fact. The lesson is recorded here deliberately: asserting only provider registration did not prove the profile could boot.
+
+The generated `auth.sh` does not work for a Desktop profile. It loads the plugin directly rather than through the application's profile boot, so `@deepseek-ai/dsh-llm` is resolved only by Node's ordinary directory walk. A profile that happens to sit under a tree also containing those peers makes the helper appear to work, which briefly produced a wrong conclusion during this work: the same artifact succeeded under `artifacts/` in the checkout and failed under `TMPDIR`. The limitation is real and also affects the existing source Desktop installer, so it predates the release path; it is recorded in [the Desktop guide](DESKTOP_VERIFICATION.md). No GUI was launched during automated checks: an Electron GUI cannot start in the sandboxed shell used for them, and a plain application launch failed there identically, so GUI startup remains owner-verified.
+
+The release install tests build a synthetic release into a temporary directory with the real release build script and drive the real `install.sh` against it over a `file://` transport. They never contact GitHub or the real repository, and the plugin package never comes from the npm registry. That path has therefore not been exercised against an actual published GitHub release: the `https://` download branch, redirect refusal and reachability of a real release asset remain unverified until a release is tagged.
 
 ## Runtime and platform evidence
 
@@ -41,7 +54,7 @@ The installed DeepSeek Harness Desktop 0.2.0-rc.2 (build `5e9e301dd9dc8923b2762f
 
 A generated standalone Web profile reached an authenticated localhost HTML page with HTTP 303/200 and was stopped without OAuth login or a model request. This checks startup and HTTP readiness, not a complete real Web conversation.
 
-The current root suite counts 79 tests. A local Node 22.23.2 run produces four known environment-only version-gate failures; hosted CI on Node 22.23.3 passes the full suite and is the authoritative check.
+The current root suite counts 87 tests. A local Node 22.23.2 run produces four known environment-only version-gate failures; hosted CI on Node 22.23.3 passes the full suite and is the authoritative check.
 
 ## Real-account evidence and limits
 
@@ -54,3 +67,5 @@ Real successful generation through the adapter, real refresh and revocation, int
 [CI](../.github/workflows/ci.yml) runs on pushes to the default branch, manual dispatch and pull requests that are not drafts; marking a draft ready for review starts its first run. CI uses `macos-15` and `.node-version`. Official checkout v7.0.1 and setup-node v7.1.0 are pinned to commit SHAs. Token access is read-only, checkout credentials are not persisted, and no cache or repository secrets are configured. The job has a 20-minute deadline, disables install scripts, audits both locked trees, runs all reproducible checks above, and requires tracked files to remain unchanged. It does not publish packages or perform account operations.
 
 CI adds a locked Electron 44.0.0 test package and an explicit checksum-verifying binary download before synthetic host checks; it does not install Harness Desktop or run real login. The installed-ASAR composition lane is verified locally rather than claimed as a CI check. The packaged tarball excludes `.github`, so the workflow link above resolves only inside a full checkout. Audit results only cover known advisories; no finite audit or test suite establishes absence of unknown vulnerabilities.
+
+The release install lane runs in CI against a locally published synthetic release over a `file://` transport. It does not download a real release asset, and CI does not publish packages, tag releases, or perform account operations. Creating the first real release asset is a separate decision.

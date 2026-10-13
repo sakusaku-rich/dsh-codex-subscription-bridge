@@ -56,7 +56,9 @@
     "verify": "npm run check && npm test",
     "test:profile": "node scripts/verify-profile.mjs",
     "prepare:profile": "node scripts/prepare-profile.mjs",
+    "prepare:release": "node scripts/build-release-asset.mjs",
     "test:install": "node --test test/integration/prepare-profile.test.mjs",
+    "test:release-install": "node --test test/integration/release-install.test.mjs",
     "test:desktop": "node scripts/verify-desktop.mjs",
     "prepare:desktop": "node scripts/prepare-desktop.mjs",
     "test:auth-ui": "node --test test/integration/auth-ui-http.test.mjs"
