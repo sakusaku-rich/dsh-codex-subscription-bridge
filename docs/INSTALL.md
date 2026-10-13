@@ -50,6 +50,8 @@ The command performs three visible steps and never pipes a download into a shell
 
 Pinning is explicit: `--tag` selects a released tag, and every artifact is verified before it is used. `curl -fsSL` without a pipe writes the asset to disk so it can be inspected; nothing is executed before the checksum matches. If an artifact is missing from `SHA256SUMS`, or its digest differs, the installer refuses and creates nothing. The bundle is unpacked only after its own members have been checked for absolute paths and parent traversal.
 
+Downloads run over `https` only. GitHub answers a release-asset request with one redirect to its asset host, so the installer follows redirects hop by hop and validates every hop against a fixed two-host allowlist (`github.com` and `release-assets.githubusercontent.com`). A redirect anywhere else is refused before the response body is read, and the digest check applies to whatever was finally downloaded.
+
 Preparation needs network access once, to fetch the pinned Harness `0.2.0-rc.2` runtime from the npm registry. Every install runs with lifecycle scripts disabled (`--ignore-scripts`), and the resolved Harness and security-fixed leaf versions are asserted after resolution. The verified plugin package is then installed from the local file with `--offline`.
 
 ### What the release publishes
