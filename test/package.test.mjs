@@ -1,12 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, readFile, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, mkdir, symlink, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Context } from '@deepseek-ai/cordis';
 import { LlmRuntime } from '@deepseek-ai/dsh-llm';
 import * as plugin from '../src/index.js';
+
+/**
+ * Environment for a child that must run this package in isolation.
+ *
+ * `process.execPath` is the Electron binary on the Desktop lane, so the child
+ * needs ELECTRON_RUN_AS_NODE or it starts a GUI and exits silently. The rest of
+ * the caller's environment is deliberately not inherited: the plugin prefers
+ * DSH_HOME over HOME on that lane, so a real value would point the child at the
+ * actual store instead of the fixture.
+ */
+function childEnvironment(directory) {
+  return {
+    PATH: '/usr/bin:/bin', LANG: 'C.UTF-8',
+    HOME: directory, DSH_HOME: directory,
+    ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+  };
+}
 
 test('real Harness service registers the guarded provider and disposes it', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-public-plugin-'));
@@ -50,10 +67,47 @@ await new Promise(resolve => setImmediate(resolve));
 try { await ctx.llm.listModels('codex-subscription'); process.exitCode=1; }
 catch(error) { if(error.code !== 'AUTH_REQUIRED') process.exitCode=1; }
 await fiber.dispose(); await service.dispose();`;
-    execFileSync(process.execPath, ['--input-type=module', '-e', code], { cwd: profile, env: { ...process.env, HOME: temp }, stdio: 'pipe', timeout: 5000 });
+    execFileSync(process.execPath, ['--input-type=module', '-e', code], {
+      cwd: profile, env: childEnvironment(temp), stdio: 'pipe', timeout: 15_000,
+    });
     const manifest = JSON.parse(await readFile(join(profile, 'node_modules/dsh-codex-subscription-bridge/package.json'), 'utf8'));
     assert.equal(manifest.private, true);
     assert.equal(manifest.license, 'MIT');
     assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml');
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+
+test('the plugin selects its store from the environment it is handed', async () => {
+  // The package lane failed because its child inherited the caller environment
+  // and so selected the real store instead of the fixture. This pins the
+  // selection directly: the plugin creates its private store beneath whichever
+  // directory the environment names, so giving a fresh directory and observing
+  // the store appear inside it proves the caller's environment was not used.
+  const temp = await mkdtemp(join(tmpdir(), 'dsh-store-isolation-'));
+  try {
+    const handed = join(temp, 'handed');
+    await mkdir(handed, { mode: 0o700 });
+    const code = `import {Context} from '@deepseek-ai/cordis';
+import {LlmRuntime} from '@deepseek-ai/dsh-llm';
+import * as plugin from ${JSON.stringify(resolve('src/index.js'))};
+const ctx = new Context(); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
+await new Promise(resolve => setImmediate(resolve));
+try { await ctx.llm.listModels('codex-subscription'); console.log('NONE'); }
+catch (error) { console.log('REFUSED ' + error.code); }
+await fiber.dispose(); await service.dispose();`;
+    // DSH_HOME is what the Desktop host prefers, and HOME is what standalone
+    // Node uses; both name the same fresh directory so either host proves the
+    // same thing.
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', code], {
+      cwd: process.cwd(), env: childEnvironment(handed),
+      encoding: 'utf8', stdio: 'pipe', timeout: 15_000,
+    });
+    // A signed-out store is the expected refusal, which also shows the store was
+    // consulted rather than skipped.
+    assert.match(output, /REFUSED AUTH_REQUIRED/u);
+    // The store was created under the directory the child was handed. If the
+    // plugin had used the caller's environment it would have appeared elsewhere,
+    // and the real store would have been touched instead.
+    await stat(join(handed, '.dsh-codex-subscription-bridge'));
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
