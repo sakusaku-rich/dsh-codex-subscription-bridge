@@ -16,16 +16,24 @@ A minimal DeepSeek Harness provider that connects directly to the Codex subscrip
 Download the installer, read it, then run it against a new directory. The destination's parent must already exist, and nothing is executed before the checksum matches.
 
 ```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.1/install.sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
 less install.sh
 mkdir -p artifacts
-sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/subscription-web"
+sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
 sh artifacts/subscription-web/start.sh
 ```
 
-Both commands name the same tag on purpose. Downloading `install.sh` from `releases/latest` would pair a newer installer with an older `--tag`, so pin both together and replace `v0.0.1` with the release you reviewed.
+Both commands name the same tag on purpose. Downloading `install.sh` from `releases/latest` would pair a newer installer with an older `--tag`, so pin both together and replace `v0.0.2` with the release you reviewed.
 
 For a Desktop profile, which uses the installed DeepSeek Harness Desktop and its own Electron host, add `--surface desktop` and start the generated `desktop.sh` instead.
+
+That profile is isolated, so it starts without your existing plugins or settings. To install into the Desktop profile you already use and keep them:
+
+```sh
+sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
+```
+
+This modifies a profile you are using. It backs up `package.json` and the lockfile first, uses the pnpm bundled with Desktop, leaves `cordis.patch.yml` alone, and restores the backup if the install fails. Prefer the isolated install unless you need the existing profile's settings; see [the installation guide](docs/INSTALL.md#install-into-an-existing-profile).
 
 Then, in Harness, open **Settings → ChatGPT subscription**, click **Log in**, and approve the displayed one-time code on the linked OpenAI page. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation.
 

@@ -22,9 +22,9 @@ The plugin uses a dedicated plaintext OAuth store; no Codex installation or toke
 Download the published `install.sh` release asset, read it, then run it with the release tag and a new destination:
 
 ```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.1/install.sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
 less install.sh
-sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/subscription-web"
+sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
 ```
 
 `--surface` selects the verified host and defaults to `web`:
@@ -37,7 +37,7 @@ sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/subscription-web"
 For a Desktop profile, prepare with `--surface desktop` and start it with the generated `desktop.sh`:
 
 ```sh
-sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/desktop-profile" --surface desktop
+sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/desktop-profile" --surface desktop
 ```
 
 The Desktop surface is refused unless the installed application matches the verified host pair exactly; it is never worked around. Desktop's runtime resolver supplies the host peers from the application's own tree, so a Desktop profile deliberately does not contain a standalone runtime copy and does not build one. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for what the Desktop profile does and does not isolate, and for the owner-operated sign-in steps.
@@ -51,6 +51,8 @@ The command performs three visible steps and never pipes a download into a shell
 Pinning is explicit: `--tag` selects a released tag, and every artifact is verified before it is used. `curl -fsSL` without a pipe writes the asset to disk so it can be inspected; nothing is executed before the checksum matches. If an artifact is missing from `SHA256SUMS`, or its digest differs, the installer refuses and creates nothing. The bundle is unpacked only after its own members have been checked for absolute paths and parent traversal.
 
 Downloads run over `https` only. GitHub answers a release-asset request with one redirect to its asset host, so the installer follows redirects hop by hop and validates every hop against a fixed two-host allowlist (`github.com` and `release-assets.githubusercontent.com`). A redirect anywhere else is refused before the response body is read, and the digest check applies to whatever was finally downloaded.
+
+When you override `DSH_INSTALL_SOURCE` with a `file://` mirror, that directory must hold **both** the installer bundle and the plugin package, along with `SHA256SUMS`. Supplying only the plugin package fails with `ENOENT` for the bundle.
 
 Preparation needs network access once, to fetch the pinned Harness `0.2.0-rc.2` runtime from the npm registry. Every install runs with lifecycle scripts disabled (`--ignore-scripts`), and the resolved Harness and security-fixed leaf versions are asserted after resolution. The verified plugin package is then installed from the local file with `--offline`.
 
@@ -74,10 +76,12 @@ For both install paths the parent directory must exist and the destination must 
 The isolated path above creates a profile of its own, so it does not carry over settings, credentials or other plugins from the profile you already use. Desktop can instead install into an existing profile, keeping all of that in place:
 
 ```sh
-sh install.sh --tag v0.0.1 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
+sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
 ```
 
 This mode is Desktop-only and refuses a Web surface, because the standalone Web launch needs a runtime that only an isolated directory owns.
+
+`--profile` needs `v0.0.2` or later. The `v0.0.1` installer bundle predates the script this mode runs, so it fails rather than falling back.
 
 It differs from the isolated path in ways worth knowing before you run it:
 

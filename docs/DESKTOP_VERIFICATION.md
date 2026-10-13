@@ -13,7 +13,7 @@ Two preparation paths produce the same Desktop profile: a one-command install fr
 From a published release, download and read `install.sh`, then select the Desktop surface:
 
 ```sh
-sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/desktop-profile" --surface desktop
+sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/desktop-profile" --surface desktop
 ```
 
 From a reviewed checkout, with the standalone Node 22.23.3 used for preparation:
