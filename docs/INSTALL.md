@@ -19,11 +19,10 @@ The plugin uses a dedicated plaintext OAuth store; no Codex installation or toke
 
 ## Install from a published release
 
-Download the published `install.sh` release asset and read it. One installer serves both modes: `--profile` adds the bridge to a Desktop profile you already use, and `--directory` prepares a new isolated profile. Exactly one of the two is required.
+Download the published `install.sh` release asset and read it before running it. One installer serves both modes: `--profile` adds the bridge to a Desktop profile you already use, and `--directory` prepares a new isolated profile. Exactly one of the two is required.
 
 ```sh
 curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
-less install.sh
 ```
 
 ### Into an existing Desktop profile

@@ -13,20 +13,16 @@ A minimal DeepSeek Harness provider that connects directly to the Codex subscrip
 
 ## Install and sign in
 
-Download the installer, read it, then run it. Nothing is executed before the checksum matches, and no download is piped into a shell.
+Download the installer, then run it. Nothing is executed before the checksum matches, and no download is piped into a shell: the file is written to disk first, so you can read it before it runs.
 
-```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
-less install.sh
-```
-
-Both commands below name the same tag on purpose. Downloading `install.sh` from `releases/latest` would pair a newer installer with an older `--tag`, so pin both together and replace `v0.0.2` with the release you reviewed.
+Both examples below name the same tag on purpose. Downloading `install.sh` from `releases/latest` would pair a newer installer with an older `--tag`, so pin both together and replace `v0.0.2` with the release you reviewed.
 
 ### Into the Desktop profile you already use
 
 This adds the bridge to your Desktop profile and keeps the settings, credentials and other plugins already there. Restart the application afterwards.
 
 ```sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
 sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
 ```
 
@@ -37,6 +33,7 @@ It modifies a profile you are using, so it backs up `package.json` and the lockf
 Use this instead when you want the bridge kept apart from your normal profile. Nothing outside the new directory is touched, and the destination's parent must already exist.
 
 ```sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
 mkdir -p artifacts
 sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
 sh artifacts/subscription-web/start.sh
