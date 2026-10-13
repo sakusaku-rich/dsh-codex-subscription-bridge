@@ -52,6 +52,10 @@ The lesson is recorded deliberately: a transport that is only ever exercised thr
 
 Real release-asset reachability is now verified: the `v0.0.1` assets were downloaded unauthenticated after the repository became public, both digests matched the published `SHA256SUMS`, and profiles were prepared from those downloads for the Web and Desktop surfaces.
 
+The `v0.0.2` release added the existing-profile mode, and that path was exercised by the owner against their own Desktop profile over `https`, from the published `install.sh` with no local source override. The bridge reached a working state: sign-in succeeded and a model produced a real response. The install left the profile's other plugin (`dsh-theme-studio`) and its `cordis.patch.yml` provider configuration intact, and the backup directory reproduced the profile's original `package.json` hash exactly, so the run was reversible. No credentials, device codes, token values or response content are recorded here.
+
+Two operational problems surfaced while preparing that run, both in the preparation rather than the installer. The published `install.sh` needs both the installer bundle and the plugin package present in the download source, and fetching only the plugin package fails with `ENOENT` for the bundle; and the `--profile` mode does not exist in the `v0.0.1` bundle, so it requires `v0.0.2` or later. Both are noted in the installation guide rather than left to be rediscovered.
+
 ## Runtime and platform evidence
 
 Local verification used macOS 26.6.2 / Apple Silicon and official Node 22.23.3 (Undici 6.28.1, OpenSSL 3.5.8). The macOS arm64 Node archive SHA-256 was checked: `23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53`. The public adapter and auth CLI refuse older/unverified Node versions and unsupported OSes before credential access. Intel macOS remains unverified; other OSes are unsupported by the initial platform contract.
