@@ -19,11 +19,41 @@ The plugin uses a dedicated plaintext OAuth store; no Codex installation or toke
 
 ## Install from a published release
 
-Download the published `install.sh` release asset, read it, then run it with the release tag and a new destination:
+Download the published `install.sh` release asset and read it. One installer serves both modes: `--profile` adds the bridge to a Desktop profile you already use, and `--directory` prepares a new isolated profile. Exactly one of the two is required.
 
 ```sh
 curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
 less install.sh
+```
+
+### Into an existing Desktop profile
+
+Install into a Desktop profile you already use:
+
+```sh
+sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
+```
+
+`--profile` needs `v0.0.2` or later. The `v0.0.1` installer bundle predates the script this mode runs, so it fails rather than falling back. It is Desktop-only and refuses a Web surface, because the standalone Web launch needs a runtime that only an isolated directory owns.
+
+It differs from the isolated path in ways worth knowing before you run it:
+
+- **It modifies a profile you are using.** The bridge is added to that profile's dependency and bundle lists. Existing plugins and `cordis.patch.yml` are left untouched.
+- **The application's own pnpm is used.** The profile is a pnpm project, so the pnpm bundled with the installed Desktop is resolved and version-checked. The system `pnpm` is never consulted, so a different major cannot rewrite the lockfile in an incompatible format.
+- **`package.json` and the lockfile are backed up first.** The copy is written to `.bridge-backup-<timestamp>/` inside the profile, and the run prints that path. If the install fails, those files are restored automatically and the run says so.
+- **An install is refused when the bridge is already listed**, rather than repointing an existing entry.
+- **There is no `manifest.json` for this mode.** The isolated path records the release tag and verified digest there; a shared profile keeps the application's own layout, so the same record is written to the backup directory as `installed.json`.
+
+Restart the application to load the bridge. To undo the install, copy `package.json` and `pnpm-lock.yaml` from the backup directory back over the profile and run the same pnpm install again.
+
+Because this mode changes a working environment, it is the less reversible of the two paths. The backup makes a failed install self-correcting, and an undo exact, but the isolated install remains the safer choice when you do not specifically need the existing profile's settings and plugins.
+
+### Into a new isolated profile
+
+With the same `install.sh`, prepare a new profile in a directory that does not exist yet:
+
+```sh
+mkdir -p artifacts
 sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
 ```
 
@@ -70,30 +100,6 @@ A release carries four assets. The installer bundle is separate from the publish
 `npm run prepare:release -- --tag v<version> --directory <new absolute directory>` builds and checksums these assets. It refuses a tag that does not match `package.json`, refuses to include development tooling in the published package, and refuses an existing output directory.
 
 For both install paths the parent directory must exist and the destination must not. The sections below on what preparation creates, how to start and sign in, how to update, and how to remove apply to both paths.
-
-## Install into an existing profile
-
-The isolated path above creates a profile of its own, so it does not carry over settings, credentials or other plugins from the profile you already use. Desktop can instead install into an existing profile, keeping all of that in place:
-
-```sh
-sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
-```
-
-This mode is Desktop-only and refuses a Web surface, because the standalone Web launch needs a runtime that only an isolated directory owns.
-
-`--profile` needs `v0.0.2` or later. The `v0.0.1` installer bundle predates the script this mode runs, so it fails rather than falling back.
-
-It differs from the isolated path in ways worth knowing before you run it:
-
-- **It modifies a profile you are using.** The bridge is added to that profile's dependency and bundle lists. Existing plugins and `cordis.patch.yml` are left untouched.
-- **The application's own pnpm is used.** The profile is a pnpm project, so the pnpm bundled with the installed Desktop is resolved and version-checked. The system `pnpm` is never consulted, so a different major cannot rewrite the lockfile in an incompatible format.
-- **`package.json` and the lockfile are backed up first.** The copy is written to `.bridge-backup-<timestamp>/` inside the profile, and the run prints that path. If the install fails, those files are restored automatically and the run says so.
-- **An install is refused when the bridge is already listed**, rather than repointing an existing entry.
-- **There is no `manifest.json` for this mode.** The isolated path records the release tag and verified digest there; a shared profile keeps the application's own layout, so the same record is written to the backup directory as `installed.json`.
-
-Restart the application to load the bridge. To undo the install, copy `package.json` and `pnpm-lock.yaml` from the backup directory back over the profile and run the same pnpm install again.
-
-Because this mode changes a working environment, it is the less reversible of the two paths. Prefer the isolated install unless you specifically need the existing profile's settings and plugins.
 
 ## Prepare an isolated profile from a source checkout
 
