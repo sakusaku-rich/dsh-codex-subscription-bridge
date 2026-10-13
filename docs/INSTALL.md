@@ -22,9 +22,9 @@ The plugin uses a dedicated plaintext OAuth store; no Codex installation or toke
 Download the published `install.sh` release asset, read it, then run it with the release tag and a new destination:
 
 ```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.1.0/install.sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.1/install.sh
 less install.sh
-sh install.sh --tag v0.1.0 --directory "$PWD/artifacts/subscription-web"
+sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/subscription-web"
 ```
 
 `--surface` selects the verified host and defaults to `web`:
@@ -37,7 +37,7 @@ sh install.sh --tag v0.1.0 --directory "$PWD/artifacts/subscription-web"
 For a Desktop profile, prepare with `--surface desktop` and start it with the generated `desktop.sh`:
 
 ```sh
-sh install.sh --tag v0.1.0 --directory "$PWD/artifacts/desktop-profile" --surface desktop
+sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/desktop-profile" --surface desktop
 ```
 
 The Desktop surface is refused unless the installed application matches the verified host pair exactly; it is never worked around. Desktop's runtime resolver supplies the host peers from the application's own tree, so a Desktop profile deliberately does not contain a standalone runtime copy and does not build one. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for what the Desktop profile does and does not isolate, and for the owner-operated sign-in steps.
@@ -91,7 +91,15 @@ The profile depends on the pinned runtime and the Node executable used during se
 sh artifacts/subscription-web/start.sh
 ```
 
-Open Settings → ChatGPT subscription → Log in, then click the displayed one-time sign-in code to copy it and paste it on the linked OpenAI page. The panel updates after approval. The generated auth helper remains optional for developer/recovery diagnosis; doctor does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
+Open Settings → ChatGPT subscription → Log in. The panel shows a temporary one-time sign-in code that you can click to copy, and a fixed `https://auth.openai.com/codex/device` link; paste or enter the code on that page and approve it in your browser. Harness polls for completion and updates the panel, then model observers refresh.
+
+The code is not an access token and disappears after cancellation, completion, or failure. Do not share it, and do not put it in logs or an issue. **Cancel login** stops a pending login, **Refresh status** reads only local state, and **Log out** removes only this plugin's local grant after confirmation without revoking provider sessions.
+
+The generated auth helper remains optional for developer/recovery diagnosis; doctor does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
+
+The helper exposes `login`, `status`, `doctor`, and `logout`. From a source checkout it is `node src/auth-cli.js <command>`; the packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness — a Desktop profile uses its generated `auth.sh`, which passes `DSH_HOME` explicitly. `doctor` does not contact OpenAI, and `logout` removes only this plugin's local login: it does not revoke tokens server-side or change Codex's login. For diagnosis and recovery see [the troubleshooting guide](TROUBLESHOOTING.md).
+
+Credentials are stored in `~/.dsh-codex-subscription-bridge/auth.json` with a 0700 directory and 0600 file; a dedicated Desktop launch with `DSH_HOME` stores the grant under `$DSH_HOME/.dsh-codex-subscription-bridge/auth.json` instead. This is plaintext storage protected by filesystem permissions, not a keyring. Never upload, paste, commit, or copy that file into an issue.
 
 The Web server binds only to 127.0.0.1 and picks an available port. Open the local bootstrap URL printed in your terminal. Treat its login token as private and do not expose the listener remotely. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation. What the provider sends and enforces, including option handling and error labels, is described in [the provider behavior summary](../README.md#what-the-provider-sends-and-enforces) and [the architecture and limits](ARCHITECTURE.md). Sending a prompt consumes subscription allowance.
 

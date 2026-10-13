@@ -9,17 +9,27 @@ A minimal DeepSeek Harness provider that connects directly to the Codex subscrip
 - A ChatGPT subscription with Codex backend access, and device-code sign-in enabled for the account or workspace.
 - macOS on Apple Silicon with Node 22.23.3, pinned by `.node-version` and `.nvmrc`, for the standalone CLI/SDK/Web provider; Linux, Windows, Intel macOS, and other runtimes are rejected before authentication.
 - DeepSeek Harness Desktop 0.2.0-rc.2 is additionally supported only with its exact Electron 44.0.0 / Node 24.18.1 host pair. See [the support matrix](docs/INSTALL.md#support-and-prerequisites).
-- An isolated Harness profile prepared from either a reviewed full commit SHA or a released, integrity-verified artifact. A Desktop profile additionally requires the verified Desktop host pair. No release has been tagged yet, so the one-command release install cannot run until the first release exists. Normal-profile installation is not supported.
+- An isolated Harness profile prepared from a released, integrity-verified artifact, or from a reviewed full commit SHA for development. A Desktop profile additionally requires the verified Desktop host pair. Normal-profile installation is not supported.
 
 ## Install and sign in
 
-1. Follow [the installation guide](docs/INSTALL.md) to prepare the isolated profile and start it. That guide covers the one-command release install for both the Web and Desktop surfaces, the source-checkout install used for development and recovery, updates without mutating a running installation, and removal. Desktop preparation and its sign-in steps are described in [the Desktop guide](docs/DESKTOP_VERIFICATION.md).
-2. In Harness, open **Settings → ChatGPT subscription** and click **Log in**. The panel shows a temporary one-time sign-in code that you can click to copy, and a fixed `https://auth.openai.com/codex/device` link; paste or enter the code on that page and approve it in your browser. Harness polls for completion and updates the panel, then model observers refresh. The code is not an access token and disappears after cancellation, completion, or failure; do not share it or put it in logs. **Cancel login** stops a pending login, **Refresh status** reads only local state, and **Log out** removes only this plugin's local grant after confirmation without revoking provider sessions.
-3. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation.
+Download the installer, read it, then run it against a new directory. The destination's parent must already exist, and nothing is executed before the checksum matches.
 
-`node src/auth-cli.js login`, `status`, `doctor`, and `logout` from the checkout remain an optional developer/recovery path; the packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness (Desktop uses its generated `auth.sh`). `doctor` does not contact OpenAI, and `logout` removes only this plugin's local login — it does not revoke tokens server-side or change Codex's login. For diagnosis and recovery see [the troubleshooting guide](docs/TROUBLESHOOTING.md).
+```sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.1/install.sh
+less install.sh
+mkdir -p artifacts
+sh install.sh --tag v0.0.1 --directory "$PWD/artifacts/subscription-web"
+sh artifacts/subscription-web/start.sh
+```
 
-Credentials are stored in `~/.dsh-codex-subscription-bridge/auth.json` with a 0700 directory and 0600 file; a dedicated Desktop launch with `DSH_HOME` stores the grant under `$DSH_HOME/.dsh-codex-subscription-bridge/auth.json` instead. This is plaintext storage protected by filesystem permissions, not a keyring. Never upload, paste, commit, or copy that file into an issue.
+Both commands name the same tag on purpose. Downloading `install.sh` from `releases/latest` would pair a newer installer with an older `--tag`, so pin both together and replace `v0.0.1` with the release you reviewed.
+
+For a Desktop profile, which uses the installed DeepSeek Harness Desktop and its own Electron host, add `--surface desktop` and start the generated `desktop.sh` instead.
+
+Then, in Harness, open **Settings → ChatGPT subscription**, click **Log in**, and approve the displayed one-time code on the linked OpenAI page. Select `Codex (ChatGPT subscription)` and an advertised model, then start a conversation.
+
+[The installation guide](docs/INSTALL.md) covers the support matrix, what each surface prepares and launches, the sign-in panel's controls, credential storage, updates without mutating a running installation, and removal. Desktop preparation and its sign-in steps are described in [the Desktop guide](docs/DESKTOP_VERIFICATION.md).
 
 ## Harness configuration
 
