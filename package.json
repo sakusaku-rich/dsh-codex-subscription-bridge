@@ -1,6 +1,6 @@
 {
   "name": "dsh-codex-subscription-bridge",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "A direct DeepSeek Harness provider for dedicated ChatGPT subscription OAuth",

@@ -45,7 +45,7 @@ Pull requests that fix a reported problem directly are welcome. Reports are conf
 | Version | Supported |
 | --- | --- |
 | `0.0.x` prototype on `main` | yes |
-| Older or published releases | none exist |
+| Older releases | none exist |
 
 ## Scope
 
