@@ -59,7 +59,9 @@ await mkdir(join(staging, 'src'), { recursive: true, mode: 0o700 });
 for (const [source, destination] of [
   ['install.sh', join(staging, 'install.sh')],
   ['scripts/prepare-release-profile.mjs', join(staging, 'scripts/prepare-release-profile.mjs')],
+  ['scripts/install-into-profile.mjs', join(staging, 'scripts/install-into-profile.mjs')],
   ['scripts/lib/release.mjs', join(staging, 'scripts/lib/release.mjs')],
+  ['scripts/lib/find-pnpm.mjs', join(staging, 'scripts/lib/find-pnpm.mjs')],
   ['src/runtime.js', join(staging, 'src/runtime.js')],
   ['src/errors.js', join(staging, 'src/errors.js')],
 ]) await copyFile(join(repo, source), destination);
@@ -91,7 +93,9 @@ function releaseNotes(tag, pluginAsset) {
     `This archive is the release asset that \`install.sh\` downloads. It contains:\n\n` +
     `- \`install.sh\` — the reviewed one-command installer.\n` +
     `- \`scripts/prepare-release-profile.mjs\` — prepares the isolated profile.\n` +
+    `- \`scripts/install-into-profile.mjs\` — installs into an existing profile.\n` +
     `- \`scripts/lib/release.mjs\` — the checksum and release-name guards.\n` +
+    `- \`scripts/lib/find-pnpm.mjs\` — locates the pnpm bundled with Desktop.\n` +
     `- \`${pluginAsset}\` — the published plugin package, the artifact that is installed.\n\n` +
     `Verify the bundle against the release \`SHA256SUMS\` before unpacking it. See\n` +
     `docs/INSTALL.md in the ${tag} source tree for the full procedure.\n`;

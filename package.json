@@ -1,6 +1,6 @@
 {
   "name": "dsh-codex-subscription-bridge",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "description": "A direct DeepSeek Harness provider for dedicated ChatGPT subscription OAuth",
@@ -58,6 +58,7 @@
     "prepare:profile": "node scripts/prepare-profile.mjs",
     "prepare:release": "node scripts/build-release-asset.mjs",
     "test:install": "node --test test/integration/prepare-profile.test.mjs",
+    "test:profile-install": "node --test test/integration/profile-install.test.mjs",
     "test:release-install": "node --test test/integration/release-install.test.mjs test/integration/release-download.test.mjs",
     "test:desktop": "node scripts/verify-desktop.mjs",
     "prepare:desktop": "node scripts/prepare-desktop.mjs",
