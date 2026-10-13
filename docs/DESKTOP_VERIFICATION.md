@@ -29,7 +29,7 @@ The new directory must not exist. Both paths verify the installed application at
 
 The prepared directory records package integrity and Desktop build; the release path records the release tag and verified digest instead of a commit. Both surfaces list the web application bundle, because the Desktop host reads `ctx.connection` and `ctx.webServer` while booting, before any profile is served. `desktop.sh` runs the normal GUI. No login or GUI is automatically started by preparation.
 
-`auth.sh` runs the installed Electron in Node mode for optional developer/recovery diagnosis. Note the limit found during release-path verification: because it loads the plugin directly rather than through the application's profile boot, the host peers resolved from Desktop's ASAR tree are not visible to it, so `auth.sh doctor` fails with a module-resolution error even though the profile itself is correct. The application loads the profile through its own resolver, which is the path verified below. Use the in-app panel for real diagnosis, and treat `auth.sh` as unusable for a Desktop profile until this is addressed.
+`auth.sh` runs the installed Electron in Node mode for optional developer/recovery diagnosis. It does not work for a Desktop profile: it loads the plugin directly rather than through the application's profile boot, so the host peers the plugin imports are resolved only by Node's ordinary directory walk. When the profile happens to sit under a tree that also contains those peers the helper appears to work, but that is incidental; anywhere else it fails with `ERR_MODULE_NOT_FOUND` for `@deepseek-ai/dsh-llm`. This affects the existing source Desktop installer too, so it predates the release path. Use the in-app panel for real diagnosis. The application loads the profile through its own resolver, which is the path verified below.
 
 ## Owner-operated real-account check
 
@@ -40,9 +40,9 @@ The prepared directory records package integrity and Desktop build; the release 
 5. Record the reviewed commit, model and pass/fail result. Share only fixed error labels; never share codes, auth files, bootstrap URLs or raw logs/bodies.
 6. Use **Log out** in the same settings section to remove the local login when finished. Quit Desktop before filesystem recovery/removal.
 
-The generated `auth.sh` is not the normal sign-in flow, which is the in-app panel described in [the README](../README.md); see the module-resolution limit above before relying on it for a Desktop profile.
+The generated `auth.sh` is not the normal sign-in flow, which is the in-app panel described in [the README](../README.md).
 
-With the helper's explicit DSH_HOME, credentials are located at `<directory>/harness/.dsh-codex-subscription-bridge/auth.json`. Desktop's login-shell HOME merge cannot redirect this store. A bare standalone auth CLI uses its own HOME-based location instead, so always use the generated helper for this profile.
+With the helper's explicit DSH_HOME, credentials are located at `<directory>/harness/.dsh-codex-subscription-bridge/auth.json`. Desktop's login-shell HOME merge cannot redirect this store, which is why the helper passes DSH_HOME explicitly; a bare standalone auth CLI uses its own HOME-based location instead. Since the helper does not currently run for a Desktop profile, the in-app panel is the supported path, and this location is what to inspect when locating the dedicated store.
 
 The separate Harness home isolates this profile, sessions and dedicated login. Electron OS preferences, logs, single-instance handling and updater state are not claimed to be isolated. This is not an OS sandbox. Desktop may perform its ordinary anonymous policy/update checks. The agent has not launched the full GUI or authenticated against real services during automated verification.
 
