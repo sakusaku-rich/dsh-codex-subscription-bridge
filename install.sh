@@ -118,20 +118,48 @@ case "$SOURCE" in
 esac
 
 # The downloader is written next to the downloads so the whole transfer path is
-# inspectable. It refuses redirects, so a moved asset cannot change origin, and
-# it handles the offline file:// mirror used by the synthetic install checks.
+# inspectable. It handles the offline file:// mirror used by the synthetic
+# install checks, and it follows GitHub's release redirects under an allowlist
+# rather than refusing every redirect, which would download nothing.
 cat > "$WORK/fetch.mjs" <<'FETCH'
 import { writeFile, copyFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 const [url, destination] = process.argv.slice(2);
+// GitHub serves a release asset with one 302 to its asset host, so a blanket
+// redirect refusal cannot download anything. Instead the transfer is followed
+// one hop at a time and every hop is checked against a fixed allowlist, so a
+// moved asset cannot silently change origin and no third origin is contacted.
+const ALLOWED = new Set(['github.com', 'release-assets.githubusercontent.com']);
+const MAX_REDIRECTS = 3;
+const MAX_BYTES = 64 * 1024 * 1024;
 if (url.startsWith('file://')) {
   await copyFile(fileURLToPath(url), destination);
 } else {
-  const response = await fetch(url, { redirect: 'error' });
-  if (!response.ok) { console.error(`install.sh: download failed with HTTP ${response.status}`); process.exit(1); }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > 64 * 1024 * 1024) { console.error('install.sh: download was empty or oversized'); process.exit(1); }
-  await writeFile(destination, bytes, { mode: 0o600 });
+  let target = url;
+  for (let hop = 0; ; hop += 1) {
+    const parsed = new URL(target);
+    if (parsed.protocol !== 'https:' || !ALLOWED.has(parsed.host)) {
+      console.error(`install.sh: refusing to download from ${parsed.protocol}//${parsed.host}`);
+      process.exit(1);
+    }
+    const response = await fetch(target, { redirect: 'manual' });
+    if (response.status >= 300 && response.status < 400) {
+      if (hop >= MAX_REDIRECTS) { console.error('install.sh: too many redirects'); process.exit(1); }
+      const location = response.headers.get('location');
+      if (location === null) { console.error('install.sh: a redirect carried no location'); process.exit(1); }
+      // The next hop is re-validated against the same allowlist, so the chain
+      // stays on the reviewed hosts even if GitHub changes its routing.
+      target = new URL(location, target).toString();
+      continue;
+    }
+    if (!response.ok) { console.error(`install.sh: download failed with HTTP ${response.status}`); process.exit(1); }
+    const declared = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_BYTES) { console.error('install.sh: the download is oversized'); process.exit(1); }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > MAX_BYTES) { console.error('install.sh: download was empty or oversized'); process.exit(1); }
+    await writeFile(destination, bytes, { mode: 0o600 });
+    break;
+  }
 }
 FETCH
 
