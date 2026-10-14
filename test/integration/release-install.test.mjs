@@ -111,8 +111,11 @@ test('release installer prepares a signed-out Desktop profile from the released 
     // own peers. Omitting it fails host startup before any profile is served.
     const bundles = JSON.parse(await readFile(join(target, 'harness/profiles/desktop/package.json'), 'utf8')).dsh.profile.bundles;
     assert.deepEqual(bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-codex-subscription-bridge']);
-    // The standalone launchers belong to the Web surface only.
+    // The standalone launcher and the auth helper belong to the Web surface.
+    // The helper is omitted here because it launches the plugin outside the
+    // application, where the host peers it imports cannot be resolved.
     await assert.rejects(access(join(target, 'start.sh')), { code: 'ENOENT' });
+    await assert.rejects(access(join(target, 'auth.sh')), { code: 'ENOENT' });
     await assert.rejects(access(join(target, 'runtime')), { code: 'ENOENT' });
     // Desktop's resolver supplies the host peers from its ASAR tree, so the
     // profile must not shadow them with a standalone copy.

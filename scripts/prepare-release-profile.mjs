@@ -128,13 +128,17 @@ const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const launchEnv = desktop === undefined ? env : { ...env, PATH: '/usr/bin:/bin' };
 const environment = Object.entries(launchEnv).map(([key, value]) => `${key}=${quote(value)}`).join(' ');
 const authPath = quote(join(profile, `node_modules/${PLUGIN_NAME}/src/auth-cli.js`));
+// The Web surface gets an auth helper because it runs the plugin from its own
+// runtime. The Desktop surface does not: the plugin imports host peers that only
+// the application's profile boot resolves, so a helper launched outside the
+// application cannot load it, and sign-in, status and logout are in the settings
+// panel instead.
 if (desktop === undefined) {
   const node = quote(process.execPath);
   await writeFile(join(root, 'auth.sh'), `#!/bin/sh\nexec env -i ${environment} ${node} ${authPath} "$@"\n`, { mode: 0o700 });
   await writeFile(join(root, 'start.sh'), `#!/bin/sh\ncd ${quote(join(root, 'workspace'))} || exit 1\nexec env -i ${environment} ${node} ${quote(join(runtimeModules, '@deepseek-ai/dsh/lib/bin.js'))} --profile subscription-web --host 127.0.0.1 --port 0 --no-open\n`, { mode: 0o700 });
 } else {
   const executable = quote(desktop.executable);
-  await writeFile(join(root, 'auth.sh'), `#!/bin/sh\nexec env -i ${environment} ELECTRON_RUN_AS_NODE=1 ${executable} ${authPath} "$@"\n`, { mode: 0o700 });
   await writeFile(join(root, 'desktop.sh'), `#!/bin/sh\ncd ${quote(join(root, 'workspace'))} || exit 1\nexec env -i ${environment} ${executable}\n`, { mode: 0o700 });
 }
 
@@ -152,9 +156,9 @@ await writeFile(join(root, 'manifest.json'), JSON.stringify({
   node: process.versions.node, harness: HARNESS_VERSION, workingTreeMayContainChanges: false, ...host,
 }, null, 2));
 const start = desktop === undefined
-  ? `Start: sh ${quote(join(root, 'start.sh'))}\nAfter starting Web, sign in inside Settings -> ChatGPT subscription -> Log in.`
+  ? `Start: sh ${quote(join(root, 'start.sh'))}\nAfter starting Web, sign in inside Settings -> ChatGPT subscription -> Log in.\nDiagnose: sh ${quote(join(root, 'auth.sh'))} doctor`
   : `Close all existing Desktop instances, then start: sh ${quote(join(root, 'desktop.sh'))}\nSign in inside Settings -> ChatGPT subscription -> Log in.`;
-console.log(`Prepared an isolated ${desktop === undefined ? 'Web' : 'Desktop'} profile at ${root} from release ${release}.\n${start}\nDiagnose: sh ${quote(join(root, 'auth.sh'))} doctor\nThe auth helper remains optional for recovery.`);
+console.log(`Prepared an isolated ${desktop === undefined ? 'Web' : 'Desktop'} profile at ${root} from release ${release}.\n${start}`);
 
 /**
  * Facts about the installed DeepSeek Harness Desktop, verified before use. The

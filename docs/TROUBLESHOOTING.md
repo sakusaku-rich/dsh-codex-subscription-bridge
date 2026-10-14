@@ -1,10 +1,12 @@
 # Local diagnosis and recovery
 
-Use the same launcher HOME for auth commands and Harness, and the same launcher DSH_HOME for Desktop. For a generated isolated profile, always use its `auth.sh`; a bare command in another shell may inspect a different store. Diagnose with:
+Use the same launcher HOME for auth commands and Harness, and the same launcher DSH_HOME for Desktop. For a generated isolated Web profile, always use its `auth.sh`; a bare command in another shell may inspect a different store. Diagnose with:
 
 ```sh
 sh artifacts/subscription-web/auth.sh doctor
 ```
+
+A Desktop profile has no such helper, because the plugin imports host peers that only the application resolves. Its store state is visible through the settings panel instead, and its credentials live under the profile's `harness` directory as described in [the Desktop guide](DESKTOP_VERIFICATION.md).
 
 The result contains only fixed local state/action labels, never credentials, account identifiers, raw responses or a claim of server-side validity. It does not refresh tokens, create a missing store, or acquire/remove a lock. Diagnosis is an advisory snapshot: another process can change the state immediately afterward. Repeat diagnosis after stopping store users before recovery.
 
