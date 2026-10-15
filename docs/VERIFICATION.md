@@ -26,6 +26,10 @@ Compaction is requested on every turn whose selected model has a usable disclose
 
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 111 tests, including 20 compaction-specific tests and the existing tarball installation/composition check. `git diff --check` also passed. Full Desktop/UI, real-service and long-running host-summary interaction were not exercised for this change, and the opt-in disable-and-insert profile composition was not mounted in a running Harness — only its module contract against the pinned host engine was checked.
 
+## Model capability advertisement (2026-10-16)
+
+The adapter advertises the subscription route's `low` and `high` reasoning levels from `resolveModel`; the host renders its effort selector only from that declaration. `test/compaction.test.mjs` asserts through the pinned runtime that `resolveModelInfo` returns exactly those two ids and no default, and `test/direct.test.mjs` asserts both declared ids reach the wire as the route's `low`/`high` effort while an undeclared id stays `INPUT_UNSUPPORTED`. Before this change no levels were declared, so the host offered no effort choice for this provider. The selector itself was not exercised in a browser session.
+
 ## Covered controls
 
 - Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release, including retry when a losing acquirer releases the lock after EEXIST but before its metadata check.

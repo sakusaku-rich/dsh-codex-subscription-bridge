@@ -64,7 +64,7 @@ To let Codex own condensation instead of Harness, an opt-in profile composition 
 
 ## What the provider sends and enforces
 
-- Bounded history and validated opaque compaction checkpoints are sent with `store: false`; no conversation IDs are resumed or chained. Reasoning effort maps to `low` or `high`.
+- Bounded history and validated opaque compaction checkpoints are sent with `store: false`; no conversation IDs are resumed or chained. Each model advertises the route's `Low` and `High` reasoning levels, so Harness offers the effort selector; no default is declared, so an unselected request keeps the subscription route's own.
 - Harness tool definitions are validated and forwarded as strict function tools, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
 - User message images are sent as `input_image` data URLs. Oversized requests fail with `IMAGE_OFFLOAD_REQUIRED` so the Harness host can offload its oldest images and retry, and image blocks in other roles are rejected.
 - `temperature` (finite, 0–2) is validated and forwarded; `maxTokens` (safe integer, 1–1,000,000) is accepted as an advisory budget but deliberately not forwarded; `stop` sequences are rejected with a fixed `UNSUPPORTED_OPTION` error.
