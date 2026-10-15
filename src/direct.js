@@ -94,7 +94,16 @@ export class DirectBridge {
       for (const entry of result.models) {
         object(entry); const id = string(entry.slug); if (ids.has(id)) throw new BridgeError('PROTOCOL_INVALID'); ids.add(id);
         if (!['list', 'hide'].includes(entry.visibility)) throw new BridgeError('PROTOCOL_INVALID');
-        if (entry.visibility === 'list') models.push({ id, name: string(entry.display_name), provider: PROVIDER, inputModalities: ['text', 'image'] });
+        if (entry.visibility === 'list') {
+          const model = { id, name: string(entry.display_name), provider: PROVIDER, inputModalities: ['text', 'image'] };
+          // The disclosed per-model window is the combined request and response
+          // context the host needs for compaction pressure; absence stays optional.
+          if (entry.context_window !== undefined) {
+            if (!Number.isSafeInteger(entry.context_window) || entry.context_window <= 0) throw new BridgeError('PROTOCOL_INVALID');
+            model.contextWindow = entry.context_window;
+          }
+          models.push(model);
+        }
       }
       this.cache = { identity, models, expires: Date.now() + this.cacheMs }; return models;
     } catch (error) { throw classified(error, 'MODEL_CATALOG'); }
