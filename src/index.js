@@ -20,7 +20,10 @@ class SubscriptionAdapter extends LlmAdapter {
   async resolveModel(provider, model, signal) {
     if (provider !== PROVIDER) throw new BridgeError('INPUT_UNSUPPORTED');
     try { const models = await this.bridge.listModels(signal); const found = models.find(entry => entry.id === model);
-      if (!found) throw new BridgeError('MODEL_UNAVAILABLE'); return found; }
+      if (!found) throw new BridgeError('MODEL_UNAVAILABLE');
+      // The exact-route context is the adapter-declared window the host's
+      // compaction requires; an undisclosed window stays omitted.
+      return found.contextWindow === undefined ? found : { ...found, context: { contextWindow: found.contextWindow } }; }
     catch (error) { const safe = failure(error); throw new HarnessError(safe.message, safe.code); }
   }
   async *stream(options) {

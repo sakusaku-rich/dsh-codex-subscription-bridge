@@ -79,6 +79,16 @@ test('catalog caches metadata, rechecks auth, shares concurrent calls and exclud
   auth.token = async () => { throw new BridgeError('AUTH_REQUIRED'); };
   await assert.rejects(bridge.listModels(), { code: 'AUTH_REQUIRED' }); await bridge.close();
 });
+test('catalog projects the disclosed context window and rejects malformed window values', async () => {
+  const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async () => json({ models: [{ ...model, slug: 'windowed', context_window: 272000 }] })));
+  assert.deepEqual(await bridge.listModels(), [{ id: 'windowed', name: 'Test', provider: 'codex-subscription', inputModalities: ['text', 'image'], contextWindow: 272000 }]);
+  const absent = new DirectBridge({ token: async () => jwt() }, new Http(async () => json({ models: [model] })));
+  assert.equal('contextWindow' in (await absent.listModels())[0], false);
+  for (const value of [0, -1, 1.5, '272000', 2 ** 53]) {
+    const bad = new DirectBridge({ token: async () => jwt() }, new Http(async () => json({ models: [{ ...model, context_window: value }] })));
+    await assert.rejects(bad.listModels(), { code: 'PROTOCOL_INVALID' });
+  }
+});
 test('stream forwards tools and reasoning effort, stays unpersisted, and normalizes deltas', async () => {
   const calls = []; const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
     calls.push({ url, options }); return url.includes('/models?') ? json({ models: [model] }) : sse(delta, { ...delta, type: 'response.output_text.done', text: 'Hello!' }, completed);

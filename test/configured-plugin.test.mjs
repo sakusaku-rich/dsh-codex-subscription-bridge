@@ -15,9 +15,10 @@ import {AuthStore,authDirectory} from ${JSON.stringify(new URL('../src/auth.js',
 import {Http} from ${JSON.stringify(new URL('../src/http.js', import.meta.url).href)};
 const token='x.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic'}})).toString('base64url')+'.x';
 const store=new AuthStore(authDirectory(process.env));await store.transaction(()=>store.write({access_token:token,refresh_token:'synthetic'}));
-Http.prototype.open=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list'}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'text/event-stream'}});
+Http.prototype.open=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list',context_window:272000}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'text/event-stream'}});
 const ctx=new Context();const service=ctx.plugin(LlmRuntime);const fiber=ctx.plugin(plugin);await new Promise(resolve=>setImmediate(resolve));
 assert.equal((await ctx.llm.listModels('codex-subscription'))[0].id,'synthetic-model');
+const info=await ctx.llm.resolveModelInfo('codex-subscription','synthetic-model');assert.deepEqual(info.context,{contextWindow:272000});
 const chunks=[];for await(const chunk of ctx.llm.stream({provider:'codex-subscription',model:'synthetic-model',messages:[{role:'user',content:[{type:'text',text:'Synthetic prompt'}]}]}))chunks.push(chunk);
 assert.equal(chunks.at(-1).reason.kind,'stop');assert.equal(chunks.find(chunk=>chunk.type==='text-delta').text,'Synthetic response');
 await store.logout();await assert.rejects(ctx.llm.listModels('codex-subscription'),{code:'AUTH_REQUIRED'});
