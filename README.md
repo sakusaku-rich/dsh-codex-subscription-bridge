@@ -49,18 +49,20 @@ In Harness, open **Settings → ChatGPT subscription**, click **Log in**, and ap
 
 ## Harness configuration
 
-Use the bundle only in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md); the Desktop host loads it in [its separate verification profile](docs/DESKTOP_VERIFICATION.md). The adapter has no configuration keys:
+Use the bundle only in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md); the Desktop host loads it in [its separate verification profile](docs/DESKTOP_VERIFICATION.md). The adapter accepts the optional boolean `cloudCompaction` (default `false`):
 
 ```yaml
 - id: llm-codex-subscription
   config: {}
 ```
 
-Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or `.env` credential locations are accepted. Models are fetched live from your visible subscription catalog; seeing a model listed does not establish entitlement to a successful request.
+Unknown configuration keys and non-boolean `cloudCompaction` values fail with `CONFIG_INVALID`, and no tokens, endpoints, or `.env` credential locations are accepted. Models are fetched live from your visible subscription catalog; seeing a model listed does not establish entitlement to a successful request.
+
+Set `cloudCompaction: true` to opt into encrypted server-side compaction while retaining Harness local summaries. Subscription compatibility is not yet verified with a real account; see [compaction design, research and limits](docs/COMPACTION.md).
 
 ## What the provider sends and enforces
 
-- Only bounded text history is sent, with `store: false`; no conversation IDs are resumed or chained. Reasoning effort maps to `low` or `high`.
+- Bounded history and, when enabled, validated opaque compaction checkpoints are sent with `store: false`; no conversation IDs are resumed or chained. Reasoning effort maps to `low` or `high`.
 - Harness tool definitions are validated and forwarded as strict function tools, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
 - User message images are sent as `input_image` data URLs. Oversized requests fail with `IMAGE_OFFLOAD_REQUIRED` so the Harness host can offload its oldest images and retry, and image blocks in other roles are rejected.
 - `temperature` (finite, 0–2) is validated and forwarded; `maxTokens` (safe integer, 1–1,000,000) is accepted as an advisory budget but deliberately not forwarded; `stop` sequences are rejected with a fixed `UNSUPPORTED_OPTION` error.

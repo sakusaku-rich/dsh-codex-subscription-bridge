@@ -6,7 +6,7 @@ Use English for repository content: source code, comments, documentation, tests,
 
 ## Scope
 
-Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations with validated tool passthrough and user image input, and cancellation.
+Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations with validated tool passthrough and user image input, cancellation, and opt-in server-side compaction with Harness local summarization retained.
 
 ## Credential and transport handling
 
@@ -17,8 +17,8 @@ Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 - Use fixed HTTPS destinations, reject redirects, and return safe fixed errors.
 - Serialize refresh/login/logout and enforce private file ownership/modes.
 - Bound network operations and text/protocol sizes; cancel paused readers.
-- Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, and user image blocks.
-- Do not resume server IDs or persist server conversations.
+- Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, user image blocks, and validated bounded opaque compaction windows.
+- Do not resume server IDs or persist server-resident conversations. Bounded opaque compaction windows may be stored only in Harness replay metadata under the controls in docs/COMPACTION.md.
 
 ## Git workflow
 

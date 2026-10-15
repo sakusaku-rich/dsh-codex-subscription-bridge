@@ -20,6 +20,12 @@ The `test:desktop` lane requires the pinned `verification/desktop` Electron pack
 
 The root suite uses the small pinned Cordis/LLM peer dependency tree. The separate installation and profile checks require the full locked Harness 0.2.0-rc.2 runtime. All automated authentication and service fixtures are synthetic and disposable. Tests never import existing Codex credentials or send real model requests.
 
+## Server-side compaction implementation (2026-10-16)
+
+The opt-in implementation is covered by `test/compaction.test.mjs` using synthetic credentials, in-memory Responses fixtures, the pinned Harness runtime and its block assembler. It verifies encrypted window replay, tool continuation, persistence round trips, stale/changed state refusal, wire budgets, cancellation, missing output tails, covered images and a one-time retry for explicit unsupported compaction parameters. [The compaction research and limitations](COMPACTION.md) distinguish these checks from prior host-summary evidence. No real-account compaction request was made for this implementation.
+
+On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 107 tests, including 16 compaction-specific tests and the existing tarball installation/composition check. `git diff --check` also passed. Full Desktop/UI, real-service and long-running host-summary interaction were not exercised for this change.
+
 ## Covered controls
 
 - Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release, including retry when a losing acquirer releases the lock after EEXIST but before its metadata check.

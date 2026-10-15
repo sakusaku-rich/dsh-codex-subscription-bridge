@@ -2,7 +2,7 @@
 
 ## Decision
 
-The provider uses a direct subscription connection. The dedicated device-code OAuth login owns its own token lifecycle; Codex credentials are not imported. Initial features are model selection, text conversations, Harness tool passthrough, user message image input, streaming, and cancellation.
+The provider uses a direct subscription connection. The dedicated device-code OAuth login owns its own token lifecycle; Codex credentials are not imported. Initial features are model selection, text conversations, Harness tool passthrough, user message image input, streaming, cancellation, and opt-in server-side compaction.
 
 The dedicated login implements OAuth, refresh, and store locking rather than requiring a Codex process for ordinary turns. Importing existing refresh tokens creates a shared rotation family, even when copies live in different files; dedicated login avoids that coupling.
 
@@ -13,6 +13,10 @@ Only `https://auth.openai.com` OAuth/device endpoints and `https://chatgpt.com/b
 Model catalog compatibility queries use `99.0.0` then `0.0.0` on an empty catalog. These are not claims about an installed CLI version. This provider does not supplement live catalogs with synthetic newer slugs, offline defaults, or large-context aliases. Do not claim all ChatGPT models are available. Each visible entry additionally projects the backend-disclosed `context_window` as the model's `contextWindow` when it is a positive safe integer; a malformed value fails closed and an absent value stays omitted, so host context accounting uses only the backend's own disclosure.
 
 Text is converted to Responses input. System/developer instructions are separated, and `store` is false. Harness tool definitions are validated (names, sizes, JSON object parameters) and forwarded as `function` tools with `strict: false`; the bridge never executes tools. Assistant tool calls are forwarded as `function_call` items and tool results as `function_call_output` items keyed by `call_id`. Image blocks in user messages are read through the attachment service and sent as `input_image` base64 data URLs. Non-image file attachments never reach the bridge: the Harness runtime projects file blocks to text before every adapter dispatch, so the bridge has no file-attachment handling. Reasoning blocks in replayed history are dropped, following the Harness host convention, and developer-role tool registry blocks are skipped defensively. SSE accepts bounded text, reasoning/lifecycle metadata, and completed `function_call` items; non-function execution items, refusals, malformed messages, failed/incomplete responses, and EOF without completion fail closed. Completed message items also reconcile text when terminal output is null, without duplicating earlier completion events. A completed `function_call` item is reconciled idempotently against streamed tool calls: matching name and arguments replay is accepted, anything else fails with a fixed protocol error.
+
+## Optional server-side compaction
+
+With `cloudCompaction: true`, validated encrypted compaction items and their subsequent output window are persisted as Harness replay metadata and substituted for their exact covered input prefix. Ordinary text and tool events still go to the host. DSH local summaries and token accounting remain unchanged. Existing fail-closed output rules apply to all other item types. Requests keep `store: false` and never resume a response ID. The default remains disabled pending real service verification. See [the implementation contract, extended retained-history bounds, fallback conditions and research](COMPACTION.md).
 
 ## Authentication lifecycle
 
