@@ -3,8 +3,9 @@
 ## Decision and research
 
 The bridge implements inline server-side compaction on its existing fixed
-subscription Responses endpoint. It keeps Harness's ordinary history and local
-summary policy intact. This is not a replacement for Harness compaction.
+subscription Responses endpoint. Harness local summarization stays in place by
+default; an opt-in profile composition replaces it for this provider alone, so
+Codex can own condensation without changing the stock installation.
 
 The baseline `ea7abda40362be71080d36b527283304159b2958` did not send
 `context_management`, rejected compaction output items, and did not emit replay
@@ -28,10 +29,13 @@ Harness 0.2.0-rc.2 has the necessary
 [replay envelope](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/packages/llm/llm/src/assembler.ts),
 but its [token meter](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/packages/llm/token-meter/src/index.ts)
 can prefer the full history estimate over a smaller provider usage report.
-Therefore cloud checkpoints and local summaries can both run. This implementation
-does not patch the meter, suppress hooks, change another provider, or inflate the
-model's disclosed window. Eliminating duplicate summarization safely requires
-additional host recovery work, such as bounded chunked summarization.
+Therefore cloud checkpoints and local summaries can both run by default: the
+meter prices the retained local surface, so the host still reaches its own
+threshold even when the wire request is compacted. This implementation does not
+patch the meter, change another provider, or inflate the model's disclosed window.
+The opt-in backend below replaces the host's automatic condensation for its own
+routes only; eliminating duplicate summarization in the default composition would
+need host recovery work, such as bounded chunked summarization.
 
 ## Enablement and request shape
 
@@ -48,6 +52,27 @@ not guarantee that every input fits. There is no tokenizer-based size guarantee.
 Without a usable disclosed window, ordinary bounded requests continue without
 cloud compaction. No user-supplied threshold, destination, credentials, API-key
 route, `previous_response_id`, or standalone compact endpoint is introduced.
+
+## Replacing local condensation (opt-in)
+
+A profile can replace the stock `compaction-basic` row with the module this
+package exports as `dsh-codex-subscription-bridge/compaction`. The replacement
+extends the host engine and returns without condensing whenever the durable
+routed request belongs to `codex-subscription`; every other provider is delegated
+to the stock implementation unchanged, so the composition is route-scoped in
+behavior even though the row is profile-wide. [The installation guide](INSTALL.md)
+records the two patch entries, the post-mount checks and the failure modes.
+
+This is deliberately not the default bundle behavior. The module subclasses a
+host-internal class, which is a compatibility dependency the bridge otherwise
+avoids: if that package disappears the replacement fails to load and no backend
+is mounted, and if the reconciled method changes shape the override silently
+degrades to the stock behavior instead of breaking. Operators who mount it accept
+that coupling; the default installation keeps the stock backend and the duplicate
+summarization described above.
+
+While the replacement is mounted, no local summary bounds the transcript, so the
+refusal and wire-budget behavior below is the only remaining recovery path.
 
 ## State and validation
 
@@ -87,6 +112,12 @@ images are not read or resent; uncovered images use the existing attachment and
 offload budgets.
 
 If no valid checkpoint exists, the original full-history limits are reapplied.
+The newest persisted checkpoint is inspected on its own, and a refusal is named
+in the host log (`SHAPE`, `METADATA`, `EXPIRED`, `SCOPE`, `PREFIX`, `CONTENT`,
+`DIGEST` or `INVALID`) so a model switch, expiry or edited history stays
+distinguishable without logging opaque state. When a refusal leaves the full local
+history past the wire bounds, the turn fails with `COMPACTION_UNAVAILABLE` and
+asks for a new conversation rather than reporting the generic shape error.
 An HTTP 400/422 with a bounded structured error naming `context_management` and
 `unsupported_parameter` or `unknown_parameter` permits exactly one retry with
 ordinary, fully validated history and without the compaction parameter. There is no
@@ -108,12 +139,18 @@ assembler, JSON persistence/replay, repeated turns, post-compaction tool results
 history/account/model/instruction/tool invalidation, age checks, malformed and
 oversized items, terminal contradictions, missing tail items, cancellation,
 covered images, wire budgets, and the narrowly scoped parameter-rejection retry.
-The packaged module is included in the normal tarball composition checks.
+`test/compaction-backend.test.mjs` pins the host engine class and checks that the
+opt-in backend skips only this provider, delegates every other route, survives a
+missing route or session, and names each refusal label. The packaged module is
+included in the normal tarball composition checks.
 
 No real authentication, subscription calls, normal-profile installs or changes
 to host compaction policy are part of this work. Real checkpoint issuance/reuse,
 backend rejection shapes, supported models, latency, quota impact and long-run
-interaction with normal host thresholds remain unverified.
+interaction with normal host thresholds remain unverified. The opt-in profile
+composition itself was exercised only at the module boundary against the pinned
+`@deepseek-ai/dsh-compaction-basic`; the disable-and-insert patch was not mounted
+in a running Harness.
 
 After separate authorization, use an isolated profile and dedicated login for a
 bounded service experiment: verify issuance then reuse, cancellation, a local

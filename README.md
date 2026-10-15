@@ -60,6 +60,8 @@ Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or 
 
 Server-side compaction is always requested when the selected model discloses a usable context window, while Harness local summaries stay enabled. Subscription compatibility is not yet verified with a real account; if the service rejects the parameter explicitly, the request is retried exactly once with bounded full history. See [compaction design, research and limits](docs/COMPACTION.md).
 
+To let Codex own condensation instead of Harness, an opt-in profile composition replaces the stock compaction backend with the one this package ships; every other provider keeps the stock behavior. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records the two patch entries, the checks and the coupling that comes with it.
+
 ## What the provider sends and enforces
 
 - Bounded history and validated opaque compaction checkpoints are sent with `store: false`; no conversation IDs are resumed or chained. Reasoning effort maps to `low` or `high`.

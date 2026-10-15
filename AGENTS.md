@@ -6,7 +6,7 @@ Use English for repository content: source code, comments, documentation, tests,
 
 ## Scope
 
-Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations with validated tool passthrough and user image input, cancellation, and always-on server-side compaction with Harness local summarization retained.
+Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations with validated tool passthrough and user image input, cancellation, always-on server-side compaction, and an opt-in compaction backend that lets Codex own condensation for this provider while every other provider keeps the stock backend.
 
 ## Credential and transport handling
 

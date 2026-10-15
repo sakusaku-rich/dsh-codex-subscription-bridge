@@ -100,6 +100,34 @@ A release carries four assets. The installer bundle is separate from the publish
 
 For both install paths the parent directory must exist and the destination must not. The sections below on what preparation creates, how to start and sign in, how to update, and how to remove apply to both paths.
 
+## Consolidate on server-side compaction (opt-in)
+
+By default Harness condenses history locally while the bridge also requests Codex server-side compaction, so both can summarize. To let Codex own condensation for this provider, replace the stock compaction backend with the one this package ships.
+
+Add both entries to the profile's `cordis.patch.yml` (for example `~/.dsh/profiles/desktop/cordis.patch.yml`), then restart Harness:
+
+```yaml
+- id: compaction-basic
+  disabled: true
+- id: codex-subscription-compaction
+  name: dsh-codex-subscription-bridge/compaction
+```
+
+The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose routes then rely on the encrypted server-side window. `compaction-basic` is applied by the `@deepseek-ai/dsh-base` bundle, so the profile patch can disable it by id; this package's own bundle is not changed and the default installation keeps local summarization.
+
+Before relying on it, confirm all three behaviors after the restart:
+
+- A conversation on a subscription model raises no new `compaction/start` event.
+- A conversation on any other provider still condenses as before.
+- `/compact` still works (the replacement provides the same `compaction` service); disabling compaction entirely is not the intent.
+
+Know the failure modes before enabling it:
+
+- **It depends on a host-internal class.** The module subclasses `@deepseek-ai/dsh-compaction-basic`, which the Harness bundle provides. If a harness upgrade removes or renames that package, the row fails to load and **no compaction backend is mounted at all** (local condensation and `/compact` stop for every provider). Remove the two entries to restore the stock backend.
+- **A harness upgrade can also soften it.** If the reconciled method changes shape, the override stops applying and the replacement behaves exactly like the stock engine: nothing breaks, but server-side consolidation no longer happens.
+- **Nothing bounds the local transcript.** The encrypted window is opaque and belongs to one account, model, instructions, tools and input prefix; switching models, resuming the same conversation after 24 hours, or editing history refuses it. The bridge then resends the bounded local history; if that exceeds its 256 KiB text, 2 MiB tool-history or 1024-item wire bounds, the turn fails with `COMPACTION_UNAVAILABLE` and asks for a new conversation. See [the compaction contract](COMPACTION.md).
+- **The context indicator keeps growing.** Harness prices the retained local surface, not the compacted request, so usage display does not reflect the server-side window.
+
 ## Prepare an isolated profile from a source checkout
 
 From the reviewed checkout, with the required Node active:

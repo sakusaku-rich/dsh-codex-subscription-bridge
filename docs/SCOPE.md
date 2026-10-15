@@ -2,7 +2,7 @@
 
 Use a dedicated ChatGPT OAuth login to connect Harness directly to the Codex subscription backend. No Codex process or token import is required.
 
-Expose live visible models, stream bounded text history with forwarded Harness tool definitions and executed tool-call history, accept user message image blocks as `input_image` data URLs, support cancellation, and produce credential-safe errors. Server-side compaction carries bounded encrypted windows through Harness replay metadata while retaining host local summaries; see [compaction design and research](COMPACTION.md).
+Expose live visible models, stream bounded text history with forwarded Harness tool definitions and executed tool-call history, accept user message image blocks as `input_image` data URLs, support cancellation, and produce credential-safe errors. Server-side compaction carries bounded encrypted windows through Harness replay metadata, and an opt-in profile composition can replace local condensation for this provider while other providers keep the stock backend; see [compaction design and research](COMPACTION.md).
 
 Initial exclusions: browser PKCE fallback, existing token import, keyring, credential pools, API keys, custom endpoints, tool execution by the bridge, stop-sequence overrides, search and quota UI. Non-image file attachments need no bridge handling (see the input mapping in [direct connection architecture](ARCHITECTURE.md)).
 
