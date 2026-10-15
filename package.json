@@ -27,12 +27,15 @@
   "exports": {
     ".": "./src/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./compaction": "./src/compaction-engine.js",
     "./client": "./client.js"
   },
   "files": [
     "src/index.js",
     "src/direct.js",
     "src/compaction.js",
+    "src/compaction-owner.js",
+    "src/compaction-engine.js",
     "src/sse.js",
     "src/auth.js",
     "src/auth-cli.js",
@@ -67,10 +70,17 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-compaction-basic": "0.2.0-rc.2",
     "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-compaction-basic": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-compaction-basic": "0.2.0-rc.2",
     "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
   },
   "dsh": {
