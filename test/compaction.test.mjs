@@ -272,6 +272,11 @@ test('public adapter carries checkpoints through the pinned Harness runtime', as
     service = ctx.plugin(LlmRuntime);
     fiber = ctx.plugin(plugin);
     await new Promise(resolve => setImmediate(resolve));
+    // The declared levels are what makes the host's effort selector available,
+    // and no default is declared so an unselected request keeps the route's own.
+    const info = await ctx.llm.resolveModelInfo('codex-subscription', 'synthetic');
+    assert.deepEqual(info.reasoning.efforts.map(effort => effort.id), ['low', 'high']);
+    assert.equal(info.reasoning.defaultEffort, undefined);
     const first = await run(ctx.llm, options([user('Start')]));
     await run(ctx.llm, options([user('Start'), first.message, user('Next')]));
     assert.equal(payloads[1].input[0].type, 'compaction');

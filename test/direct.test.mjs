@@ -101,6 +101,8 @@ test('stream forwards tools and reasoning effort, stays unpersisted, and normali
   await assert.rejects(collect(bridge.stream(input({ reasoningEffort: 'bogus' }))), { code: 'INPUT_UNSUPPORTED' });
   assert.equal((await bridge.listModels()).find(entry => entry.id === 'test-model').inputModalities.join(','), 'text,image');
   assert.equal(calls.at(-1).options.headers['ChatGPT-Account-ID'], 'synthetic-account');
+  await collect(bridge.stream(input({ reasoningEffort: 'low' })));
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body).reasoning, { effort: 'low' });
   await bridge.close();
 });
 test('native tool calls stream as blocks, pair with history outputs, and replay idempotently', async () => {

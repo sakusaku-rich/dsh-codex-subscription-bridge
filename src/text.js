@@ -21,9 +21,23 @@ export const IMAGE_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp
 const ATTACHMENT_ID = /^sha256:[0-9a-f]{64}$/;
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
 
+/**
+ * Adapter-declared reasoning levels, in display order.
+ *
+ * The host offers exactly these ids in its model selector and rejects any other
+ * requested effort before dispatch, so the declaration has to match the route's
+ * own range. No default is declared: an unselected request keeps the
+ * subscription route's default instead of materializing one here.
+ */
+export const REASONING_EFFORTS = Object.freeze([
+  Object.freeze({ id: 'low', name: 'Low', description: 'Faster responses with lighter reasoning.' }),
+  Object.freeze({ id: 'high', name: 'High', description: 'Deeper reasoning for harder tasks.' }),
+]);
+
 function reasoningEffort(value) {
   // The subscription route accepts low/high only; map the host scale onto
-  // that range instead of rejecting the whole request.
+  // that range instead of rejecting the whole request. The alias arms stay for
+  // callers that bypass the declared selector.
   if (value === undefined) return undefined;
   if (value === 'off' || value === 'low') return { effort: 'low' };
   if (value === 'high' || value === 'max') return { effort: 'high' };

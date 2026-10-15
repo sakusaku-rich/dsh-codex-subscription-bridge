@@ -1,6 +1,6 @@
 import { assertNodeVersion, assertPlatform } from './runtime.js';
 import { HarnessError, LlmAdapter, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm';
-import { PROVIDER } from './text.js';
+import { PROVIDER, REASONING_EFFORTS } from './text.js';
 import { DirectBridge } from './direct.js';
 import { AuthStore, authDirectory } from './auth.js';
 import { authenticationEnvironment } from './environment.js';
@@ -22,8 +22,11 @@ class SubscriptionAdapter extends LlmAdapter {
     try { const models = await this.bridge.listModels(signal); const found = models.find(entry => entry.id === model);
       if (!found) throw new BridgeError('MODEL_UNAVAILABLE');
       // The exact-route context is the adapter-declared window the host's
-      // compaction requires; an undisclosed window stays omitted.
-      return found.contextWindow === undefined ? found : { ...found, context: { contextWindow: found.contextWindow } }; }
+      // compaction requires; an undisclosed window stays omitted. The declared
+      // reasoning levels are what makes the host's effort selector available.
+      return { ...found,
+        ...(found.contextWindow === undefined ? {} : { context: { contextWindow: found.contextWindow } }),
+        reasoning: { efforts: REASONING_EFFORTS } }; }
     catch (error) { const safe = failure(error); throw new HarnessError(safe.message, safe.code); }
   }
   async *stream(options) {
