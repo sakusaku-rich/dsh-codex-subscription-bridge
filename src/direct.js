@@ -32,10 +32,10 @@ function responseUsage(value, diagnostic) {
   return usage;
 }
 export class DirectBridge {
-  constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000, cloudCompaction = false } = {}, context = {}) {
+  constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000 } = {}, context = {}) {
     this.auth = auth; this.http = http; this.cacheMs = cacheMs; this.turnTimeoutMs = turnTimeoutMs;
     this.active = new Set(); this.owners = new WeakMap(); this.pending = new Set(); this.closed = false; this.shutdownTimeoutMs = shutdownTimeoutMs;
-    this.context = context; this.cloudCompaction = cloudCompaction;
+    this.context = context;
     // Mirror the DeepSeek adapter's shared access resolver: image placeholders,
     // request serialization, and pricing all resolve through one function that
     // stays undefined while no attachment service is mounted.
@@ -128,7 +128,10 @@ export class DirectBridge {
     // Project offloaded image occurrences into text placeholders before
     // validation, matching the DeepSeek adapter's projection order.
     const messages = projectOffloadedImages(options.messages, ref => offloadedImageText(ref, this.imageAccess(ref)));
-    const originalPlan = validateInput({ ...options, messages }, this.cloudCompaction); string(options.model);
+    // Server-side compaction is always requested. Retained limits admit a
+    // transcript whose covered prefix a checkpoint may replace; the wire window
+    // is still validated below under the ordinary limits.
+    const originalPlan = validateInput({ ...options, messages }, true); string(options.model);
     let plan = originalPlan;
     const capture = new CompactionCapture(); let scope, compactThreshold;
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
@@ -143,10 +146,9 @@ export class DirectBridge {
       }
       return blocks.get(key);
     };
-    const cloudCompaction = this.cloudCompaction;
     function* reconcile(item) {
       object(item);
-      if (!['message', 'reasoning', 'function_call', ...(cloudCompaction ? ['compaction'] : [])].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+      if (!['message', 'reasoning', 'function_call', 'compaction'].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
       if (item.type === 'reasoning' || item.type === 'compaction') return;
       if (item.type === 'function_call') {
         if (item.status !== undefined && item.status !== 'completed') throw new BridgeError('PROTOCOL_INVALID', 'SSE_TOOL_CALL');
@@ -195,12 +197,12 @@ export class DirectBridge {
       const models = await this.catalog(controller.signal, true);
       if (!models.some(model => model.id === options.model)) throw new BridgeError('MODEL_UNAVAILABLE');
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
-      if (this.cloudCompaction) {
-        scope = compactionScope(compactionAccount(token), options.model, originalPlan);
-        compactThreshold = threshold(models.find(model => model.id === options.model)?.contextWindow);
-        const checkpoint = compactThreshold === undefined ? undefined : selectCheckpoint(messages, originalPlan, scope);
-        plan = checkpoint ? compactPlan(originalPlan, checkpoint) : validateInput({ ...options, messages });
-      }
+      scope = compactionScope(compactionAccount(token), options.model, originalPlan);
+      compactThreshold = threshold(models.find(model => model.id === options.model)?.contextWindow);
+      const checkpoint = compactThreshold === undefined ? undefined : selectCheckpoint(messages, originalPlan, scope);
+      // A selected checkpoint replaces only its exact covered prefix. Otherwise
+      // the retained transcript is revalidated under the ordinary wire limits.
+      plan = checkpoint ? compactPlan(originalPlan, checkpoint) : validateInput({ ...options, messages });
       const openTurn = async () => {
         phase = 'IMAGE_PREPARE';
         const versions = await this.prepareImages(plan, controller);
@@ -266,16 +268,16 @@ export class DirectBridge {
           if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
         } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
           phase = 'SSE_OUTPUT_ITEM';
-          if (!['message', 'reasoning', 'function_call', ...(cloudCompaction ? ['compaction'] : [])].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+          if (!['message', 'reasoning', 'function_call', 'compaction'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
           if (event.type === 'response.output_item.done') {
-            if (cloudCompaction) capture.observe(event);
+            capture.observe(event);
             yield* reconcile(event.item);
           }
         } else if (event.type === 'response.completed') {
           phase = 'SSE_TERMINAL';
           if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
           if (event.response.output !== undefined && event.response.output !== null) {
-            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', ...(cloudCompaction ? ['compaction'] : [])].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', 'compaction'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
           }
           for (const item of event.response.output ?? []) yield* reconcile(item);
           for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }

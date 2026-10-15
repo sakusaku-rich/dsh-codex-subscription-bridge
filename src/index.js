@@ -9,7 +9,7 @@ import { installAuthUi } from './auth-ui.js';
 export const name = 'dsh-codex-subscription-bridge';
 export const inject = ['llm'];
 class SubscriptionAdapter extends LlmAdapter {
-  constructor(environment, context = {}, config = {}) { super(); this.bridge = new DirectBridge(new AuthStore(authDirectory(environment)), undefined, config, context); }
+  constructor(environment, context = {}) { super(); this.bridge = new DirectBridge(new AuthStore(authDirectory(environment)), undefined, {}, context); }
   providerInfo() { return { id: PROVIDER, name: 'Codex (ChatGPT subscription)' }; }
   providerRetryPolicy() { return { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 }; }
   async listModels(provider) {
@@ -34,14 +34,13 @@ class SubscriptionAdapter extends LlmAdapter {
 }
 export function apply(ctx, config = {}) {
   assertNodeVersion(); assertPlatform();
-  if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => key !== 'cloudCompaction') ||
-      (config.cloudCompaction !== undefined && typeof config.cloudCompaction !== 'boolean')) throw new BridgeError('CONFIG_INVALID');
+  if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).length) throw new BridgeError('CONFIG_INVALID');
   const adapter = new SubscriptionAdapter(authenticationEnvironment(ctx), {
     // Mirror the DeepSeek adapter's host wiring so image placeholders, request
     // serialization, and pricing resolve attachments through one resolver.
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(attachments, hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath), ref),
-  }, config);
+  });
   ctx.effect(() => { const unregister = ctx.llm.registerAdapter([PROVIDER], adapter);
     let active = true;
     installAuthUi(ctx, adapter.bridge.auth, () => {

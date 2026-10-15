@@ -29,7 +29,7 @@ function fixture(responses, settings = {}) {
     const next = responses.shift();
     assert.ok(next, 'unexpected request');
     return next instanceof Response ? next : sse(next);
-  }), { cloudCompaction: true, ...settings });
+  }), settings);
   return { bridge, payloads, account: value => { account = value; } };
 }
 async function run(bridge, request) {
@@ -125,13 +125,14 @@ test('malformed, oversized, contradictory and incomplete streams never publish a
   }
 });
 
-test('disabled mode keeps the original protocol and emits no compaction parameter', async () => {
-  const f = fixture([[complete([reply('Plain')])], [complete([compact, reply('No')])]], { cloudCompaction: false });
+test('compaction is always requested without configuration and a plain response publishes no checkpoint', async () => {
+  const f = fixture([[complete([reply('Plain')])], [complete([reply('Again')])]]);
   try {
     const first = await run(f.bridge, options([user('Start')]));
+    assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 32768 }]);
     assert.equal(first.message.source.replayState, undefined);
-    assert.equal(f.payloads[0].context_management, undefined);
-    await assert.rejects(run(f.bridge, options([user('Start')])), { code: 'PROTOCOL_INVALID' });
+    await run(f.bridge, options([user('Start')]));
+    assert.equal(f.payloads[1].context_management[0].type, 'compaction');
   } finally { await f.bridge.close(); }
 });
 
@@ -227,7 +228,7 @@ test('covered image attachments are not read or resent', async () => {
   } finally { await f.bridge.close(); }
 });
 
-test('undisclosed model capacity does not enable compaction and small windows use a bounded threshold', async () => {
+test('undisclosed model capacity omits compaction and small windows use a bounded threshold', async () => {
   for (const [modelWindow, expected] of [[null, undefined], [1024, undefined], [4096, 2048]]) {
     const f = fixture([[complete([reply('Plain')])]], { modelWindow });
     try {
@@ -251,7 +252,7 @@ test('retained transcript limits and parallel conversations remain independent',
   } finally { await f.bridge.close(); }
 });
 
-test('public configured adapter carries checkpoints through the pinned Harness runtime', async () => {
+test('public adapter carries checkpoints through the pinned Harness runtime', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-compaction-public-'));
   const store = new AuthStore(authDirectory({ HOME: root }));
   const originalOpen = Http.prototype.open;
@@ -267,7 +268,7 @@ test('public configured adapter carries checkpoints through the pinned Harness r
     };
     ctx.provide('launchEnvironment', { getFrom: key => ['HOME', 'DSH_HOME'].includes(key) ? { value: root } : undefined });
     service = ctx.plugin(LlmRuntime);
-    fiber = ctx.plugin(plugin, { cloudCompaction: true });
+    fiber = ctx.plugin(plugin);
     await new Promise(resolve => setImmediate(resolve));
     const first = await run(ctx.llm, options([user('Start')]));
     await run(ctx.llm, options([user('Start'), first.message, user('Next')]));
@@ -277,7 +278,8 @@ test('public configured adapter carries checkpoints through the pinned Harness r
     await fiber?.dispose(); await service?.dispose(); Http.prototype.open = originalOpen;
     await rm(root, { recursive: true, force: true });
   }
-  for (const config of [{ cloudCompaction: 'true' }, { cloudCompaction: null }, { cloudCompaction: true, endpoint: 'https://example.invalid' }]) {
+  // Compaction is always requested, so the adapter accepts no configuration keys.
+  for (const config of [{ cloudCompaction: true }, { cloudCompaction: false }, { endpoint: 'https://example.invalid' }]) {
     assert.throws(() => plugin.apply({}, config), { code: 'CONFIG_INVALID' });
   }
 });
