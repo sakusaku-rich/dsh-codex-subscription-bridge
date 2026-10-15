@@ -28,7 +28,9 @@ On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks
 
 ## Model capability advertisement (2026-10-16)
 
-The adapter advertises the subscription route's `low` and `high` reasoning levels from `resolveModel`; the host renders its effort selector only from that declaration. `test/compaction.test.mjs` asserts through the pinned runtime that `resolveModelInfo` returns exactly those two ids and no default, and `test/direct.test.mjs` asserts both declared ids reach the wire as the route's `low`/`high` effort while an undeclared id stays `INPUT_UNSUPPORTED`. Before this change no levels were declared, so the host offered no effort choice for this provider. The selector itself was not exercised in a browser session.
+The adapter declares each model's reasoning levels from the catalog's own `supported_reasoning_levels` disclosure, plus `default_reasoning_level` when it names a declared level; the host renders its effort selector only from that declaration. `test/text.test.mjs` covers the projection: disclosure order, description passthrough, the oversized-note drop, and omission for absent, oversized, duplicate, or malformed disclosure. `test/compaction.test.mjs` asserts through the pinned runtime that `resolveModelInfo` returns the disclosed ids and default, and `test/direct.test.mjs` asserts a disclosed id reaches the wire verbatim while an id the model does not disclose stays `INPUT_UNSUPPORTED`. Before this work no levels were declared at all, so the host offered no effort choice for this provider. A hardcoded two-level declaration was replaced after the live Codex catalog (`~/.codex/models_cache.json`, client version 0.162.0) showed six levels for the current models; the selector itself was not exercised in a browser session, and the subscription route's own catalog response was not observed directly.
+
+On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 112 tests. `git diff --check` also passed.
 
 ## Covered controls
 
