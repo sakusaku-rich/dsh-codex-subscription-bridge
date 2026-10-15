@@ -22,26 +22,52 @@ const ATTACHMENT_ID = /^sha256:[0-9a-f]{64}$/;
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
 
 /**
- * Adapter-declared reasoning levels, in display order.
+ * One disclosed reasoning level: a bounded id plus an optional bounded note.
  *
- * The host offers exactly these ids in its model selector and rejects any other
- * requested effort before dispatch, so the declaration has to match the route's
- * own range. No default is declared: an unselected request keeps the
- * subscription route's default instead of materializing one here.
+ * The subscription catalog lists each model's own levels, so the adapter
+ * declares what the backend discloses instead of a fixed host scale.
  */
-export const REASONING_EFFORTS = Object.freeze([
-  Object.freeze({ id: 'low', name: 'Low', description: 'Faster responses with lighter reasoning.' }),
-  Object.freeze({ id: 'high', name: 'High', description: 'Deeper reasoning for harder tasks.' }),
-]);
+export const REASONING_LEVEL_LIMIT = 16;
+export const REASONING_LEVEL_ID = /^[a-z][a-z0-9_-]{0,31}$/;
+const REASONING_DESCRIPTION_LIMIT = 512;
+/** Display names for the levels Codex currently discloses; others are title-cased. */
+const REASONING_LEVEL_NAMES = Object.freeze({
+  minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High',
+  xhigh: 'Extra high', max: 'Max', ultra: 'Ultra',
+});
+
+/**
+ * Project one catalog entry's `supported_reasoning_levels` into declared efforts.
+ *
+ * Absent, oversized or malformed disclosure stays omitted rather than
+ * advertising an id the route may not accept, so the host simply offers no
+ * effort selector for that model.
+ * @param value - the entry's `supported_reasoning_levels` field.
+ * @returns detached efforts in disclosure order, or `undefined` when unusable.
+ */
+export function reasoningLevels(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > REASONING_LEVEL_LIMIT) return undefined;
+  const seen = new Set();
+  const levels = [];
+  for (const item of value) {
+    const id = item?.effort;
+    if (typeof id !== 'string' || !REASONING_LEVEL_ID.test(id) || seen.has(id)) return undefined;
+    seen.add(id);
+    const description = typeof item.description === 'string' && item.description.length <= REASONING_DESCRIPTION_LIMIT
+      ? item.description : undefined;
+    levels.push({ id, name: REASONING_LEVEL_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1),
+      ...(description === undefined ? {} : { description }) });
+  }
+  return levels;
+}
 
 function reasoningEffort(value) {
-  // The subscription route accepts low/high only; map the host scale onto
-  // that range instead of rejecting the whole request. The alias arms stay for
-  // callers that bypass the declared selector.
+  // The host offers only levels this adapter declared from the backend's own
+  // disclosure, and dispatch rechecks the choice against it, so the id travels
+  // verbatim after a bounded local shape check.
   if (value === undefined) return undefined;
-  if (value === 'off' || value === 'low') return { effort: 'low' };
-  if (value === 'high' || value === 'max') return { effort: 'high' };
-  throw new BridgeError('INPUT_UNSUPPORTED');
+  if (typeof value !== 'string' || !REASONING_LEVEL_ID.test(value)) throw new BridgeError('INPUT_UNSUPPORTED');
+  return { effort: value };
 }
 
 function requestTemperature(value) {

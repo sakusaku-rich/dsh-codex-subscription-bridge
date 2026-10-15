@@ -3,7 +3,7 @@ export {events} from './sse.js';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { BridgeError, classified, object, string } from './errors.js';
-import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT } from './text.js';
+import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, reasoningLevels } from './text.js';
 import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, estimateVisionTokens, imageDataUrl, requestImageTarget } from './image.js';
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
 import { Http, BASE, classifyStatusError, readJson } from './http.js';
@@ -103,6 +103,16 @@ export class DirectBridge {
             if (!Number.isSafeInteger(entry.context_window) || entry.context_window <= 0) throw new BridgeError('PROTOCOL_INVALID');
             model.contextWindow = entry.context_window;
           }
+          // The backend also discloses this model's reasoning levels and, when
+          // it names one, the default it would apply. Both stay optional so an
+          // undisclosed model simply offers no effort selector.
+          const levels = reasoningLevels(entry.supported_reasoning_levels);
+          if (levels !== undefined) {
+            model.reasoningLevels = levels;
+            if (typeof entry.default_reasoning_level === 'string' && levels.some(level => level.id === entry.default_reasoning_level)) {
+              model.defaultReasoningLevel = entry.default_reasoning_level;
+            }
+          }
           models.push(model);
         }
       }
@@ -195,10 +205,16 @@ export class DirectBridge {
     }
     try {
       const models = await this.catalog(controller.signal, true);
-      if (!models.some(model => model.id === options.model)) throw new BridgeError('MODEL_UNAVAILABLE');
+      const selected = models.find(model => model.id === options.model);
+      if (selected === undefined) throw new BridgeError('MODEL_UNAVAILABLE');
+      // The host selects only declared levels, but a direct caller can name any
+      // bounded id; a choice the model does not disclose fails closed here.
+      if (plan.reasoning !== undefined && !(selected.reasoningLevels ?? []).some(level => level.id === plan.reasoning.effort)) {
+        throw new BridgeError('INPUT_UNSUPPORTED');
+      }
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
       scope = compactionScope(compactionAccount(token), options.model, originalPlan);
-      compactThreshold = threshold(models.find(model => model.id === options.model)?.contextWindow);
+      compactThreshold = threshold(selected.contextWindow);
       const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope);
       // A refusal is the model-switch, expiry and edited-history boundary: the
       // opaque state cannot carry over, so the host log names it before the

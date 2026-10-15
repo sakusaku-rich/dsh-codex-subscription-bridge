@@ -91,13 +91,16 @@ test('catalog projects the disclosed context window and rejects malformed window
 });
 test('stream forwards tools and reasoning effort, stays unpersisted, and normalizes deltas', async () => {
   const calls = []; const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
-    calls.push({ url, options }); return url.includes('/models?') ? json({ models: [model] }) : sse(delta, { ...delta, type: 'response.output_text.done', text: 'Hello!' }, completed);
+    calls.push({ url, options }); return url.includes('/models?')
+      ? json({ models: [{ ...model, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }] }] })
+      : sse(delta, { ...delta, type: 'response.output_text.done', text: 'Hello!' }, completed);
   }));
-  const chunks = await collect(bridge.stream(input({ tools: [{ name: 'shell', description: 'Run shell', parameters: { type: 'object' }, deferLoading: true }], reasoningEffort: 'max' })));
+  const chunks = await collect(bridge.stream(input({ tools: [{ name: 'shell', description: 'Run shell', parameters: { type: 'object' }, deferLoading: true }], reasoningEffort: 'medium' })));
   assert.equal(chunks.at(-1).reason.kind, 'stop'); assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello!');
   const body = JSON.parse(calls.at(-1).options.body); assert.equal(body.store, false); assert.equal(body.stream, true);
   assert.deepEqual(body.tools, [{ type: 'function', name: 'shell', description: 'Run shell', strict: false, parameters: { type: 'object' } }]);
-  assert.deepEqual(body.reasoning, { effort: 'high' });
+  // The disclosed id travels verbatim; the backend, not this bridge, owns the scale.
+  assert.deepEqual(body.reasoning, { effort: 'medium' });
   await assert.rejects(collect(bridge.stream(input({ reasoningEffort: 'bogus' }))), { code: 'INPUT_UNSUPPORTED' });
   assert.equal((await bridge.listModels()).find(entry => entry.id === 'test-model').inputModalities.join(','), 'text,image');
   assert.equal(calls.at(-1).options.headers['ChatGPT-Account-ID'], 'synthetic-account');
