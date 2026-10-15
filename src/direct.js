@@ -8,7 +8,7 @@ import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, es
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
 import { Http, BASE, classifyStatusError, readJson } from './http.js';
 import { accountHeaders, compactionAccount } from './auth.js';
-import { CompactionCapture, compactionScope, selectCheckpoint, compactPlan, threshold } from './compaction.js';
+import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, threshold } from './compaction.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
@@ -35,7 +35,7 @@ export class DirectBridge {
   constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000 } = {}, context = {}) {
     this.auth = auth; this.http = http; this.cacheMs = cacheMs; this.turnTimeoutMs = turnTimeoutMs;
     this.active = new Set(); this.owners = new WeakMap(); this.pending = new Set(); this.closed = false; this.shutdownTimeoutMs = shutdownTimeoutMs;
-    this.context = context;
+    this.context = context; this.warn = typeof context?.warn === 'function' ? context.warn : () => {};
     // Mirror the DeepSeek adapter's shared access resolver: image placeholders,
     // request serialization, and pricing all resolve through one function that
     // stays undefined while no attachment service is mounted.
@@ -199,10 +199,23 @@ export class DirectBridge {
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
       scope = compactionScope(compactionAccount(token), options.model, originalPlan);
       compactThreshold = threshold(models.find(model => model.id === options.model)?.contextWindow);
-      const checkpoint = compactThreshold === undefined ? undefined : selectCheckpoint(messages, originalPlan, scope);
+      const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope);
+      // A refusal is the model-switch, expiry and edited-history boundary: the
+      // opaque state cannot carry over, so the host log names it before the
+      // bounded local history is resent on its own.
+      if (checkpoint.refusal !== undefined) this.warn(`The encrypted subscription compaction state was refused (${checkpoint.refusal}); resending the bounded local history.`);
       // A selected checkpoint replaces only its exact covered prefix. Otherwise
       // the retained transcript is revalidated under the ordinary wire limits.
-      plan = checkpoint ? compactPlan(originalPlan, checkpoint) : validateInput({ ...options, messages });
+      if (checkpoint.items !== undefined) plan = compactPlan(originalPlan, checkpoint);
+      else {
+        try { plan = validateInput({ ...options, messages }); }
+        catch (error) {
+          // Without a reusable checkpoint the full local transcript is the only
+          // remaining input; name that boundary instead of the generic shape failure.
+          if (checkpoint.refusal !== undefined && error instanceof BridgeError && error.code === 'INPUT_UNSUPPORTED') throw new BridgeError('COMPACTION_UNAVAILABLE', 'COMPACTION');
+          throw error;
+        }
+      }
       const openTurn = async () => {
         phase = 'IMAGE_PREPARE';
         const versions = await this.prepareImages(plan, controller);

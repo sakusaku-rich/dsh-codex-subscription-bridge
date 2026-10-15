@@ -20,7 +20,7 @@ const options = messages => ({ provider: 'codex-subscription', model: 'synthetic
 const token = account => `x.${Buffer.from(JSON.stringify({ exp: 4000000000, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
 const sse = values => new Response(values.map(value => `data: ${JSON.stringify(value)}\n\n`).join(''));
 const complete = output => ({ type: 'response.completed', response: { status: 'completed', output } });
-function fixture(responses, settings = {}) {
+function fixture(responses, settings = {}, warnings = []) {
   const payloads = []; let account = 'synthetic-account';
   const bridge = new DirectBridge({ token: async () => token(account) }, new Http(async (url, request) => {
     if (url.includes('/models?')) return Response.json({ models: [{ slug: 'synthetic', display_name: 'Synthetic', visibility: 'list',
@@ -29,8 +29,8 @@ function fixture(responses, settings = {}) {
     const next = responses.shift();
     assert.ok(next, 'unexpected request');
     return next instanceof Response ? next : sse(next);
-  }), settings);
-  return { bridge, payloads, account: value => { account = value; } };
+  }), settings, { warn: message => warnings.push(message) });
+  return { bridge, payloads, warnings, account: value => { account = value; } };
 }
 async function run(bridge, request) {
   const chunks = [];
@@ -103,8 +103,10 @@ test('covered history may exceed text wire budget but fallback and uncovered tai
     assert.equal(f.payloads[1].input[0].type, 'compaction');
     await assert.rejects(run(f.bridge, options([start, first.message, user('y'.repeat(TEXT_LIMIT))])), { code: 'INPUT_UNSUPPORTED' });
     f.account('other');
-    await assert.rejects(run(f.bridge, request), { code: 'INPUT_UNSUPPORTED' });
+    // A refused checkpoint is the consolidation boundary, not a generic shape error.
+    await assert.rejects(run(f.bridge, request), { code: 'COMPACTION_UNAVAILABLE' });
     assert.equal(f.payloads.length, 2);
+    assert.deepEqual(f.warnings, ['The encrypted subscription compaction state was refused (SCOPE); resending the bounded local history.']);
   } finally { await f.bridge.close(); }
 });
 

@@ -66,22 +66,37 @@ export function compactionScope(account, model, plan) {
   return digest([account, model, plan.tools ?? [], plan.input.filter(value => value.type === 'message' && value.role === 'developer')]);
 }
 
-/** No server IDs are resumed. A checkpoint replaces only its exact covered prefix. */
-export function selectCheckpoint(messages, plan, scope, now = Date.now()) {
+/**
+ * Inspect the newest persisted checkpoint for reuse.
+ *
+ * Returns the reusable window, or `{ refusal }` naming why the newest candidate
+ * was rejected, or `{}` when no message carries a checkpoint. The refusal label
+ * is this module's own closed vocabulary, so it is safe to log.
+ */
+export function inspectCheckpoint(messages, plan, scope, now = Date.now()) {
   for (let index = messages.length - 1; index >= 0; index--) {
     const candidate = messages[index].source?.replayState?.response?.[CHECKPOINT_KEY];
     if (!candidate) continue;
     try {
       const span = plan.spans[index];
-      if (messages[index].role !== 'assistant' || candidate.version !== 1 || candidate.scope !== scope ||
-          !Number.isSafeInteger(candidate.createdAt) || candidate.createdAt > now || now - candidate.createdAt > CHECKPOINT_MAX_AGE ||
-          candidate.prefix !== digest(plan.input.slice(0, span.start)) || candidate.content !== contentDigest(messages[index].content)) return undefined;
+      if (messages[index].role !== 'assistant') return { refusal: 'SHAPE' };
+      if (candidate.version !== 1 || !Number.isSafeInteger(candidate.createdAt) || candidate.createdAt > now) return { refusal: 'METADATA' };
+      if (now - candidate.createdAt > CHECKPOINT_MAX_AGE) return { refusal: 'EXPIRED' };
+      if (candidate.scope !== scope) return { refusal: 'SCOPE' };
+      if (candidate.prefix !== digest(plan.input.slice(0, span.start))) return { refusal: 'PREFIX' };
+      if (candidate.content !== contentDigest(messages[index].content)) return { refusal: 'CONTENT' };
       const items = windowItems(candidate.items);
-      if (candidate.digest !== digest(items)) return undefined;
+      if (candidate.digest !== digest(items)) return { refusal: 'DIGEST' };
       return { items, end: span.end, imageEnd: span.imageEnd };
-    } catch { return undefined; /* Invalid persisted metadata never authorizes trimming history. */ }
+    } catch { return { refusal: 'INVALID' }; /* Invalid persisted metadata never authorizes trimming history. */ }
   }
-  return undefined;
+  return {};
+}
+
+/** No server IDs are resumed. A checkpoint replaces only its exact covered prefix. */
+export function selectCheckpoint(messages, plan, scope, now = Date.now()) {
+  const found = inspectCheckpoint(messages, plan, scope, now);
+  return found.items === undefined ? undefined : found;
 }
 
 export function threshold(contextWindow) {

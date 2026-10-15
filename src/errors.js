@@ -13,6 +13,7 @@ const messages = Object.freeze({
   NODE_VERSION_UNSUPPORTED: 'Use Node.js 22 >=22.23.3 or the supported Electron 44.0.0 Desktop host.',
   CONFIG_INVALID: 'The bridge configuration is invalid.',
   INPUT_UNSUPPORTED: 'The conversation does not match the bounded request shape this subscription route accepts.',
+  COMPACTION_UNAVAILABLE: 'The encrypted server-side compaction state cannot be reused, and the full conversation is too large to send. Start a new conversation.',
   UNSUPPORTED_CONTENT: 'The conversation contains content this subscription route cannot carry.',
   IMAGE_OFFLOAD_REQUIRED: 'The conversation images exceed the subscription route request image budget. The oldest conversation images must be offloaded before retrying.',
   MODEL_UNAVAILABLE: 'The selected subscription model is unavailable.',

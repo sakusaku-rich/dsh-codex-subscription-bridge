@@ -40,6 +40,9 @@ export function apply(ctx, config = {}) {
     // serialization, and pricing resolve attachments through one resolver.
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(attachments, hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath), ref),
+    // Diagnose a refused compaction checkpoint in the host log without ever
+    // exposing opaque state or request content.
+    warn: message => ctx.logger?.warn?.(message),
   });
   ctx.effect(() => { const unregister = ctx.llm.registerAdapter([PROVIDER], adapter);
     let active = true;
