@@ -32,6 +32,7 @@
   "files": [
     "src/index.js",
     "src/direct.js",
+    "src/compaction.js",
     "src/sse.js",
     "src/auth.js",
     "src/auth-cli.js",

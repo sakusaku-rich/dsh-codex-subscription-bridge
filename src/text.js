@@ -110,7 +110,7 @@ function serializeToolCall(block, calls, pendingCalls, toolBytesRef) {
       typeof block.name !== 'string' || block.name.length === 0 || Buffer.byteLength(block.name) > TOOL_NAME_LIMIT ||
       typeof block.arguments !== 'string' || calls.has(block.id)) throw new BridgeError('INPUT_UNSUPPORTED');
   toolBytesRef.value += Buffer.byteLength(block.arguments);
-  if (toolBytesRef.value > TOOL_BYTES_LIMIT) throw new BridgeError('LIMIT_EXCEEDED');
+  if (toolBytesRef.value > toolBytesRef.limit) throw new BridgeError('LIMIT_EXCEEDED');
   pendingCalls.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: block.arguments });
 }
 
@@ -127,7 +127,7 @@ function serializeToolResult(message, calls, results, toolBytesRef) {
   }
   const output = text.join('\n');
   toolBytesRef.value += Buffer.byteLength(output);
-  if (toolBytesRef.value > TOOL_BYTES_LIMIT) throw new BridgeError('LIMIT_EXCEEDED');
+  if (toolBytesRef.value > toolBytesRef.limit) throw new BridgeError('LIMIT_EXCEEDED');
   results.add(callId);
   return { type: 'function_call_output', call_id: callId, output };
 }
@@ -135,13 +135,17 @@ function serializeToolResult(message, calls, results, toolBytesRef) {
 /**
 * Validate one request and derive the Responses wire items for it.
 * @param options - Harness generate options for this provider.
+* @param retained - Apply larger bounded transcript limits before checkpoint selection.
+*   The caller must still validate the selected wire window or the ordinary fallback.
 * @returns a plan: `input` wire items with image placeholders, `tools` wire
 *   declarations, `reasoning` effort mapping, a validated `temperature` when
 *   the request carries one, and per-attachment image entries
 *   with their durable references, request targets, and original blocks.
 */
-export function validateInput(options) {
-  if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > MESSAGE_LIMIT || !options.messages.length) {
+export function validateInput(options, retained = false) {
+  const textLimit = retained ? 4 * 1024 * 1024 : TEXT_LIMIT;
+  const messageLimit = retained ? 4096 : MESSAGE_LIMIT;
+  if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > messageLimit || !options.messages.length) {
     throw new BridgeError('INPUT_UNSUPPORTED');
   }
   // Generation overrides: temperature is forwarded, a turn token budget is
@@ -154,7 +158,8 @@ export function validateInput(options) {
   const tools = serializeTools(options.tools);
   validateToolHistory(options.toolHistory);
   let bytes = 0;
-  const toolBytesRef = { value: 0 };
+  const toolBytesRef = { value: 0, limit: retained ? 16 * 1024 * 1024 : TOOL_BYTES_LIMIT };
+  const spans = [];
   const input = [];
   const images = new Map();
   const imageBlocks = [];
@@ -163,15 +168,18 @@ export function validateInput(options) {
   if (options.system !== undefined) {
     if (typeof options.system !== 'string') throw new BridgeError('INPUT_UNSUPPORTED');
     bytes += Buffer.byteLength(options.system);
-    if (bytes > TEXT_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED');
+    if (bytes > textLimit) throw new BridgeError('INPUT_UNSUPPORTED');
     input.push({ type: 'message', role: 'developer', content: [{ type: 'input_text', text: options.system }] });
   }
   for (const message of options.messages) {
+    const span = { start: input.length, end: input.length, imageEnd: imageBlocks.length };
+    spans.push(span);
     if (!message || !Array.isArray(message.content) ||
         !['system', 'developer', 'user', 'assistant', 'tool'].includes(message.role)) throw new BridgeError('INPUT_UNSUPPORTED');
     if (message.role === 'tool') {
       const item = serializeToolResult(message, calls, results, toolBytesRef);
       input.push(item);
+      span.end = input.length;
       continue;
     }
     const content = [];
@@ -182,7 +190,7 @@ export function validateInput(options) {
       if (block.type === 'text') {
         if (typeof block.text !== 'string') throw new BridgeError('INPUT_UNSUPPORTED');
         bytes += Buffer.byteLength(block.text);
-        if (bytes > TEXT_LIMIT || total() >= BLOCK_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED');
+        if (bytes > textLimit || total() >= BLOCK_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED');
         content.push({ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: block.text });
       } else if (block.type === 'image') {
         if (message.role !== 'user') throw new BridgeError('UNSUPPORTED_CONTENT', 'IMAGE_PREPARE');
@@ -209,9 +217,11 @@ export function validateInput(options) {
     for (const item of pendingCalls) calls.add(item.call_id);
     if (content.length) input.push({ type: 'message', role: message.role === 'system' || message.role === 'developer' ? 'developer' : message.role, content });
     input.push(...pendingCalls);
+    span.end = input.length;
+    span.imageEnd = imageBlocks.length;
   }
   for (const callId of calls) if (!results.has(callId)) throw new BridgeError('INPUT_UNSUPPORTED');
   const last = input.at(-1);
   if (!last || !((last.type === 'message' && last.role === 'user') || last.type === 'function_call_output')) throw new BridgeError('INPUT_UNSUPPORTED');
-  return { input, tools, reasoning, temperature, images, imageBlocks };
+  return { input, tools, reasoning, temperature, images, imageBlocks, spans };
 }

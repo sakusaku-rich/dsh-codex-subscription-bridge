@@ -6,8 +6,9 @@ import { BridgeError, classified, object, string } from './errors.js';
 import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT } from './text.js';
 import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, estimateVisionTokens, imageDataUrl, requestImageTarget } from './image.js';
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
-import { Http, BASE, classifyStatusError } from './http.js';
-import { accountHeaders } from './auth.js';
+import { Http, BASE, classifyStatusError, readJson } from './http.js';
+import { accountHeaders, compactionAccount } from './auth.js';
+import { CompactionCapture, compactionScope, selectCheckpoint, compactPlan, threshold } from './compaction.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
@@ -31,10 +32,10 @@ function responseUsage(value, diagnostic) {
   return usage;
 }
 export class DirectBridge {
-  constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000 } = {}, context = {}) {
+  constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000, cloudCompaction = false } = {}, context = {}) {
     this.auth = auth; this.http = http; this.cacheMs = cacheMs; this.turnTimeoutMs = turnTimeoutMs;
     this.active = new Set(); this.owners = new WeakMap(); this.pending = new Set(); this.closed = false; this.shutdownTimeoutMs = shutdownTimeoutMs;
-    this.context = context;
+    this.context = context; this.cloudCompaction = cloudCompaction;
     // Mirror the DeepSeek adapter's shared access resolver: image placeholders,
     // request serialization, and pricing all resolve through one function that
     // stays undefined while no attachment service is mounted.
@@ -127,7 +128,9 @@ export class DirectBridge {
     // Project offloaded image occurrences into text placeholders before
     // validation, matching the DeepSeek adapter's projection order.
     const messages = projectOffloadedImages(options.messages, ref => offloadedImageText(ref, this.imageAccess(ref)));
-    const plan = validateInput({ ...options, messages }); string(options.model);
+    const originalPlan = validateInput({ ...options, messages }, this.cloudCompaction); string(options.model);
+    let plan = originalPlan;
+    const capture = new CompactionCapture(); let scope, compactThreshold;
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
     let phase = 'MODEL_CATALOG';
     const blocks = new Map(); let outputBytes = 0, toolBytes = 0, complete = false, toolCalls = false;
@@ -140,10 +143,11 @@ export class DirectBridge {
       }
       return blocks.get(key);
     };
+    const cloudCompaction = this.cloudCompaction;
     function* reconcile(item) {
       object(item);
-      if (!['message', 'reasoning', 'function_call'].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-      if (item.type === 'reasoning') return;
+      if (!['message', 'reasoning', 'function_call', ...(cloudCompaction ? ['compaction'] : [])].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+      if (item.type === 'reasoning' || item.type === 'compaction') return;
       if (item.type === 'function_call') {
         if (item.status !== undefined && item.status !== 'completed') throw new BridgeError('PROTOCOL_INVALID', 'SSE_TOOL_CALL');
         const callId = item.call_id;
@@ -191,26 +195,52 @@ export class DirectBridge {
       const models = await this.catalog(controller.signal, true);
       if (!models.some(model => model.id === options.model)) throw new BridgeError('MODEL_UNAVAILABLE');
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
-      phase = 'IMAGE_PREPARE';
-      const versions = await this.prepareImages(plan, controller);
-      const input = versions.size ? plan.input.map(item => item.type !== 'message' ? item : { ...item, content: item.content.map(part => {
-        if (part.type !== 'input_image') return part;
-        const image = versions.get(part.attachmentId);
-        return { type: 'input_image', image_url: imageDataUrl(image.mediaType, Buffer.from(image.data).toString('base64')) };
-      }) }) : plan.input;
-      const instructions = input.filter(item => item.type === 'message' && item.role === 'developer').map(item => item.content.map(block => block.text).join('\n')).join('\n');
-      phase = 'HTTP_REQUEST';
-      response = await this.own(async () => {
-        const result = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify({ model: options.model, instructions, input: input.filter(item => !(item.type === 'message' && item.role === 'developer')),
-          store: false, stream: true, ...(plan.temperature === undefined ? {} : { temperature: plan.temperature }),
-          ...(plan.tools === undefined ? {} : { tools: plan.tools }), ...(plan.reasoning === undefined ? {} : { reasoning: plan.reasoning }) }) }, controller.signal);
-        const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}), controller);
-        controller.signal.addEventListener('abort', cancel, { once: true });
-        controller.removeBodyAbort = () => controller.signal.removeEventListener('abort', cancel);
-        if (controller.signal.aborted) await cancel();
-        return result;
-      }, controller.signal);
+      if (this.cloudCompaction) {
+        scope = compactionScope(compactionAccount(token), options.model, originalPlan);
+        compactThreshold = threshold(models.find(model => model.id === options.model)?.contextWindow);
+        const checkpoint = compactThreshold === undefined ? undefined : selectCheckpoint(messages, originalPlan, scope);
+        plan = checkpoint ? compactPlan(originalPlan, checkpoint) : validateInput({ ...options, messages });
+      }
+      const openTurn = async () => {
+        phase = 'IMAGE_PREPARE';
+        const versions = await this.prepareImages(plan, controller);
+        const input = versions.size ? plan.input.map(item => item.type !== 'message' ? item : { ...item, content: item.content.map(part => {
+          if (part.type !== 'input_image') return part;
+          const image = versions.get(part.attachmentId);
+          return { type: 'input_image', image_url: imageDataUrl(image.mediaType, Buffer.from(image.data).toString('base64')) };
+        }) }) : plan.input;
+        const instructions = input.filter(item => item.type === 'message' && item.role === 'developer').map(item => item.content.map(block => block.text).join('\n')).join('\n');
+        phase = 'HTTP_REQUEST';
+        return await this.own(async () => {
+          const result = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          body: JSON.stringify({ model: options.model, instructions, input: input.filter(item => !(item.type === 'message' && item.role === 'developer')),
+            store: false, stream: true, ...(compactThreshold === undefined ? {} : { context_management: [{ type: 'compaction', compact_threshold: compactThreshold }] }), ...(plan.temperature === undefined ? {} : { temperature: plan.temperature }),
+            ...(plan.tools === undefined ? {} : { tools: plan.tools }), ...(plan.reasoning === undefined ? {} : { reasoning: plan.reasoning }) }) }, controller.signal);
+          const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}), controller);
+          controller.signal.addEventListener('abort', cancel, { once: true });
+          controller.removeBodyAbort = () => controller.signal.removeEventListener('abort', cancel);
+          if (controller.signal.aborted) await cancel();
+          return result;
+        }, controller.signal);
+      };
+      response = await openTurn();
+      // Only an explicit parameter rejection authorizes one bounded full-history retry.
+      // Never retry partial streams, quota/auth failures, or arbitrary upstream errors.
+      if (compactThreshold !== undefined && [400, 422].includes(response.status)) {
+        let rejected = false;
+        try {
+          const body = await this.own(() => readJson(response, 16 * 1024, controller.signal), controller.signal);
+          rejected = body?.error?.param === 'context_management' &&
+            ['unsupported_parameter', 'unknown_parameter'].includes(body.error.code);
+        } catch { if (controller.signal.aborted) throw new BridgeError('ABORTED'); }
+        if (rejected) {
+          controller.removeBodyAbort?.();
+          await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
+          plan = validateInput({ ...options, messages });
+          compactThreshold = undefined;
+          response = await openTurn();
+        }
+      }
       if (!response.ok) throw await classifyStatusError(response.status, response, controller.signal);
       // The subscription backend can send valid SSE without an SSE MIME header.
       // Trust the bounded frame/event parser and terminal state, not Content-Type.
@@ -236,20 +266,26 @@ export class DirectBridge {
           if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
         } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
           phase = 'SSE_OUTPUT_ITEM';
-          if (!['message', 'reasoning', 'function_call'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-          if (event.type === 'response.output_item.done') yield* reconcile(event.item);
+          if (!['message', 'reasoning', 'function_call', ...(cloudCompaction ? ['compaction'] : [])].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+          if (event.type === 'response.output_item.done') {
+            if (cloudCompaction) capture.observe(event);
+            yield* reconcile(event.item);
+          }
         } else if (event.type === 'response.completed') {
           phase = 'SSE_TERMINAL';
           if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
           if (event.response.output !== undefined && event.response.output !== null) {
-            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', ...(cloudCompaction ? ['compaction'] : [])].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
           }
           for (const item of event.response.output ?? []) yield* reconcile(item);
           for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
           complete = true;
           if (event.response.usage !== undefined && event.response.usage !== null) { if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'usage', usage: responseUsage(event.response.usage, 'SSE_TERMINAL') }; }
           if (controller.signal.aborted) throw new BridgeError('ABORTED');
-          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' } }; return;
+          const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan,
+            [...blocks.values()].map(block => block.type === 'tool-call'
+              ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text }));
+          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
         } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
         else if (!['response.created', 'response.in_progress', 'response.content_part.added', 'response.content_part.done',
           'response.reasoning_summary_part.added', 'response.reasoning_summary_part.done', 'response.reasoning_summary_text.delta',
