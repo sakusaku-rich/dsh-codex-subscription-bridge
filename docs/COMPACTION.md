@@ -2,7 +2,7 @@
 
 ## Decision and research
 
-The bridge implements opt-in inline server-side compaction on its existing fixed
+The bridge implements inline server-side compaction on its existing fixed
 subscription Responses endpoint. It keeps Harness's ordinary history and local
 summary policy intact. This is not a replacement for Harness compaction.
 
@@ -33,19 +33,15 @@ does not patch the meter, suppress hooks, change another provider, or inflate th
 model's disclosed window. Eliminating duplicate summarization safely requires
 additional host recovery work, such as bounded chunked summarization.
 
-## Enablement
+## Enablement and request shape
 
-The default remains disabled because subscription service behavior has not been
-verified. The only optional configuration key is a boolean:
+Server-side compaction is always requested; the adapter has no configuration
+keys. Route compatibility cannot be checked locally, so the request is issued
+unconditionally and an explicit unsupported-parameter rejection falls back once
+to the original bounded request (see below).
 
-```yaml
-- id: llm-codex-subscription
-  config:
-    cloudCompaction: true
-```
-
-With the option enabled and a disclosed context window of at least 2048 tokens,
-the request includes `context_management: [{ type: 'compaction',
+With a disclosed context window of at least 2048 tokens, the request includes
+`context_management: [{ type: 'compaction',
 compact_threshold: min(32768, floor(contextWindow / 2)) }]`. The conservative
 32768-token ceiling leaves room under the independent text byte budget; it does
 not guarantee that every input fits. There is no tokenizer-based size guarantee.
@@ -82,16 +78,18 @@ route, `previous_response_id`, or standalone compact endpoint is introduced.
 
 Checkpoint wire items are capped at 512 KiB and 128 items. Existing SSE frame,
 aggregate response, timeout, admission and cancellation bounds still apply.
-When enabled, retained history validation allows at most 4096 messages, 4 MiB of
-text and 16 MiB of tool call/result text. The actual compacted wire request still
-has the original 256 KiB text, 2 MiB tool-history and 1024-item bounds, plus the
-separate checkpoint budget. Covered images are not read or resent; uncovered
-images use the existing attachment and offload budgets.
+The retained-history first pass allows at most 4096 messages, 4 MiB of text and
+16 MiB of tool call/result text, so a checkpoint can replace an oversized covered
+prefix. The actual compacted wire request still has the original 256 KiB text,
+2 MiB tool-history and 1024-item bounds, plus the separate checkpoint budget, and
+the ordinary limits are reapplied whenever no checkpoint is selected. Covered
+images are not read or resent; uncovered images use the existing attachment and
+offload budgets.
 
 If no valid checkpoint exists, the original full-history limits are reapplied.
 An HTTP 400/422 with a bounded structured error naming `context_management` and
 `unsupported_parameter` or `unknown_parameter` permits exactly one retry with
-ordinary, fully validated history and without the compaction option. There is no
+ordinary, fully validated history and without the compaction parameter. There is no
 retry after partial output, arbitrary 400 errors, quota/authentication failures,
 network ambiguity or stream failure. An unrecognized checkpoint rejection is a
 safe fixed failure, not an automatic retry with potentially oversized history.
@@ -105,7 +103,7 @@ checkpoint-independent recovery remains an explicitly unresolved limitation.
 
 ## Verification and remaining work
 
-Synthetic tests cover public configured Harness dispatch, its actual block
+Synthetic tests cover public Harness runtime dispatch, its actual block
 assembler, JSON persistence/replay, repeated turns, post-compaction tool results,
 history/account/model/instruction/tool invalidation, age checks, malformed and
 oversized items, terminal contradictions, missing tail items, cancellation,
@@ -121,5 +119,7 @@ After separate authorization, use an isolated profile and dedicated login for a
 bounded service experiment: verify issuance then reuse, cancellation, a local
 summary and model switch, with a fixed request/token budget and a stop condition.
 Record only sanitized counters and size measurements, never opaque checkpoints,
-credentials, account identifiers or raw authenticated responses. Production
-enablement should follow that evidence rather than synthetic success alone.
+credentials, account identifiers or raw authenticated responses. Because the
+compaction request is now always issued, that evidence should also decide whether
+reliance on the always-on default is justified, rather than synthetic success
+alone.
