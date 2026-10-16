@@ -63,7 +63,13 @@ The opt-in was then delivered the way the pinned Harness allows: `presets/codex-
 
 The first application attempt after installing the artifact showed the row in the Plugins page as disabled with no usable switch. `dsh-client-ui-plugin-manager` locks a row's switch whenever the Host reports `readOnlyReason` or no live entry (`const locked = row.readOnlyReason !== void 0 || row.entryId === void 0`), and `setPluginEnabled` refuses the same rows, so a bundle-declared row that ships disabled cannot be enabled from that page: the enable step is the id-keyed profile-patch override, which the composition dump then showed as `disabled: false` with all 19 children and the bridge engine. The installation guide leads with that entry and records the locked switch, and the switch's own tooltip names the Host's reason, which distinguishes a general limit from a row-specific one.
 
-Unverified for this delivery: the behavior of the enabled preset on a real account — no session has yet run with `preset-codex-subscription` selected, so the three post-mount checks in the installation guide remain to be observed.
+The enabled preset was then exercised on the real account, with a threshold low enough to make both decisions observable. The installed verification copy — not the shipped artifact — carried `thresholdRatio: 0.002` / `retainRatio: 0.0001` in that preset's engine child, which puts the trigger at 544 tokens for the 272,000-token Codex window and 2,097 for a 1,048,576-token OpenRouter window. Session logs record the selected composition (`agentPreset: codex-subscription`), so the runs identify themselves:
+
+- A 6,444-token session on `codex-subscription` raised **no** `compaction/*` event, although it was twelve times past its trigger: the preset-scoped engine received that route and declined.
+- An 8,678-token session on `openrouter` under the same preset raised 18 `compaction/start`, 14 `compaction/summary`, 18 `compaction/end` and 7 `compaction/prune` events, which is the stock engine running through the delegation.
+- `/compact` still condensed under the new preset, as it is inherited rather than overridden.
+
+The count in the second run is an artifact of the test threshold: at ratio 0.002 the retained tail cannot fall below the trigger, so the stock engine retries within its bound, exactly as the earlier instrumented campaign recorded. It also multiplies auxiliary summarization — that run issued about fourteen summarize calls against OpenRouter — which is why the shipped artifact keeps the stock 0.8/0.16 ratios and the temporary value was reverted afterwards. The three post-mount checks in the installation guide are therefore observed, with automatic pressure as the only path that needed an artificial trigger to surface.
 
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 120 tests. `git diff --check` also passed.
 

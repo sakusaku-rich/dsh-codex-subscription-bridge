@@ -181,8 +181,12 @@ compaction, backend rejection shapes, supported models, latency, quota impact an
 long-run interaction with normal host thresholds remain unverified. The opt-in
 backend is checked at the module boundary against the pinned
 `@deepseek-ai/dsh-compaction-basic`, and its preset row is checked for shape,
-composition and drift; the enabled preset has not yet been exercised in a running
-Harness on a real account.
+composition and drift. The enabled preset has since been exercised on a real
+account with an artificially low trigger: a subscription route past its threshold
+raised no local compaction, the same preset on another provider ran the stock
+engine, and `/compact` still condensed. Automatic pressure at the shipped ratios
+(~217,600 tokens for the 272,000-token Codex window) is unobserved, because no
+session has reached it.
 
 After separate authorization, use an isolated profile and dedicated login for a
 bounded service experiment: verify issuance then reuse, cancellation, a local
