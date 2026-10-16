@@ -16,8 +16,11 @@ describes inline `context_management`, encrypted output items, and stateless
 input-array chaining with `store: false`. That public API documentation is not a
 guarantee of subscription-route availability. The
 [reference plugin v2.5.9](https://github.com/WSL043/dsh-codex-subscription/blob/v2.5.9/src/subscription-compaction.js)
-uses this mechanism on `/backend-api/codex/responses`; this bridge's service
-compatibility remains unverified with a real account.
+uses this mechanism on `/backend-api/codex/responses`. A real subscription
+session has since confirmed both halves: the route issued an encrypted compaction
+item once the request passed the 32,768-token threshold, and the next request
+that echoed it back was priced at 11,787 input tokens instead of the 38,612 the
+same transcript had just cost. See [the verification record](VERIFICATION.md).
 
 [Reference issue #152](https://github.com/WSL043/dsh-codex-subscription/issues/152)
 was closed without eliminating duplicate summaries. Its maintainer reported that
@@ -152,13 +155,14 @@ opt-in backend skips only this provider, delegates every other route, survives a
 missing route or session, and names each refusal label. The packaged module is
 included in the normal tarball composition checks.
 
-No real authentication, subscription calls, normal-profile installs or changes
-to host compaction policy are part of this work. Real checkpoint issuance/reuse,
-backend rejection shapes, supported models, latency, quota impact and long-run
-interaction with normal host thresholds remain unverified. The opt-in profile
-composition itself was exercised only at the module boundary against the pinned
-`@deepseek-ai/dsh-compaction-basic`; the disable-and-insert patch was not mounted
-in a running Harness.
+Automated tests make no real authentication or subscription calls. A manually
+driven Desktop session confirmed real checkpoint issuance and reuse on a
+dedicated login; checkpoint expiry, model switches, cancellation during
+compaction, backend rejection shapes, supported models, latency, quota impact and
+long-run interaction with normal host thresholds remain unverified. The opt-in
+profile composition itself was exercised only at the module boundary against the
+pinned `@deepseek-ai/dsh-compaction-basic`; the disable-and-insert patch was not
+mounted in a running Harness.
 
 After separate authorization, use an isolated profile and dedicated login for a
 bounded service experiment: verify issuance then reuse, cancellation, a local
