@@ -58,28 +58,37 @@ route, `previous_response_id`, or standalone compact endpoint is introduced.
 
 ## Replacing local condensation (opt-in)
 
-A profile can replace the stock `compaction-basic` row with the module this
-package exports as `dsh-codex-subscription-bridge/compaction`. The replacement
-extends the host engine and returns without condensing whenever the durable
-routed request belongs to `codex-subscription`; every other provider is delegated
-to the stock implementation unchanged, so the composition is route-scoped in
-behavior even though the row is profile-wide. [The installation guide](INSTALL.md)
-records the patch shape, the post-mount checks and the failure modes.
+A profile can let this package's engine own condensation by enabling the agent
+preset it ships, `preset-codex-subscription`. The engine extends the host's stock
+engine and returns without condensing whenever the durable routed request belongs
+to `codex-subscription`; every other provider is delegated to the stock
+implementation unchanged, so the composition is route-scoped in behavior even
+though the preset is selected per session. [The installation guide](INSTALL.md)
+records the enable step, the post-mount checks and the failure modes.
 
-The pinned Harness does not let this composition take effect. Its
+The pinned Harness fixes where that engine has to live. Its
 `@deepseek-ai/dsh-web-app` bundle disables the top-level `compaction-basic` and
 `command-compact` rows and declares the backend inside each agent preset instead,
-in an isolated `compaction` group, and a profile patch cannot reach an entry
-nested in a preset's `plugins` list. The module and its tests stay, but shipping
-the opt-in needs a preset-level definition whose `plugins` list is version-coupled
-to the Harness release. [The verification record](VERIFICATION.md) has the
-evidence, including the `insert:` syntax a new profile row requires.
+in an isolated `compaction` group; a profile patch can override an existing row
+by id but cannot add one without an `insert:` list, and it cannot address an entry
+nested in a preset's `plugins` list at all. A preset is a complete declaration, so
+`presets/codex-subscription.patch.yml` restates the shipped standard composition
+with that one child's engine replaced. [The verification record](VERIFICATION.md)
+has the composition evidence and the `insert:` detail.
 
-This is deliberately not the default bundle behavior. The module subclasses a
+That row is inserted **disabled**: installing the package must not add a selectable
+preset to every profile, and a profile enables it from the Plugins page, which
+writes an id-keyed override into the profile patch. `scripts/sync-preset.mjs`
+derives the copy from the pinned Harness, so a Harness bump shows up as a small
+reviewable diff instead of an edit to a hand-maintained file; the profile
+verification path runs its `--check` mode, because a release that reshapes the
+`compaction` group would otherwise let double summarization return silently.
+
+This is deliberately not enabled by default. The module subclasses a
 host-internal class, which is a compatibility dependency the bridge otherwise
-avoids: if that package disappears the replacement fails to load and no backend
-is mounted, and if the reconciled method changes shape the override silently
-degrades to the stock behavior instead of breaking. Operators who mount it accept
+avoids: if that package disappears the preset fails its activation audit and stops
+composing, and if the reconciled method changes shape the override silently
+degrades to the stock behavior instead of breaking. Operators who enable it accept
 that coupling; the default installation keeps the stock backend and the duplicate
 summarization described above.
 
@@ -169,9 +178,10 @@ driven Desktop session confirmed real checkpoint issuance and reuse on a
 dedicated login; checkpoint expiry, model switches, cancellation during
 compaction, backend rejection shapes, supported models, latency, quota impact and
 long-run interaction with normal host thresholds remain unverified. The opt-in
-profile composition itself was exercised only at the module boundary against the
-pinned `@deepseek-ai/dsh-compaction-basic`; the disable-and-insert patch was not
-mounted in a running Harness.
+backend is checked at the module boundary against the pinned
+`@deepseek-ai/dsh-compaction-basic`, and its preset row is checked for shape,
+composition and drift; the enabled preset has not yet been exercised in a running
+Harness on a real account.
 
 After separate authorization, use an isolated profile and dedicated login for a
 bounded service experiment: verify issuance then reuse, cancellation, a local
