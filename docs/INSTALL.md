@@ -106,17 +106,16 @@ By default Harness condenses history locally while the bridge also requests Code
 
 The pinned Harness keeps the compaction backend *inside every agent preset* (`preset-standard`, `preset-ptc`, `preset-minimal`, `preset-cordis` and the registry default), each as an isolated `compaction` group, and disables the top-level `compaction-basic` and `command-compact` rows. A preset is a complete declaration, so the only way to replace one child is to restate the whole composition: this package ships `presets/codex-subscription.patch.yml`, a mirror of the shipped standard preset whose `compaction` group runs `dsh-codex-subscription-bridge/compaction` instead. See [the composition evidence](VERIFICATION.md#preset-owned-compaction-2026-10-16).
 
-**The preset is inserted disabled, so installing this package changes nothing.** Enable it once:
-
-1. Open the Plugins page and enable the `preset-codex-subscription` row (module `@deepseek-ai/dsh-agent-preset`), then restart Harness.
-2. Optionally set it as the new-task default in **Settings → Agent presets**; otherwise select "Codex subscription" in the preset chip when starting a session.
-
-Enabling it from the page writes the same override you can add by hand, and either form works because the profile patch is applied after every bundle:
+**The preset is inserted disabled, so installing this package changes nothing.** Enable it by adding one entry to the profile's `cordis.patch.yml` (for example `~/.dsh/profiles/desktop/cordis.patch.yml`), then restart Harness:
 
 ```yaml
 - id: preset-codex-subscription
   disabled: false
 ```
+
+The Plugins page lists the row, but its switch is locked for a row the Host can only address through the profile patch (hovering the switch states the Host's reason), so this entry is the enable step rather than a toggle. The profile patch is applied after every bundle, which is why an override this small reaches a row a bundle declares.
+
+Then optionally set it as the new-task default in **Settings → Agent presets**; otherwise select "Codex subscription" in the preset chip when starting a session.
 
 The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose routes then rely on the encrypted server-side window. Every other preset keeps the stock engine, so other providers are unaffected.
 

@@ -77,8 +77,9 @@ with that one child's engine replaced. [The verification record](VERIFICATION.md
 has the composition evidence and the `insert:` detail.
 
 That row is inserted **disabled**: installing the package must not add a selectable
-preset to every profile, and a profile enables it from the Plugins page, which
-writes an id-keyed override into the profile patch. `scripts/sync-preset.mjs`
+preset to every profile, and a profile enables it with an id-keyed override in the
+profile patch. The Plugins page lists the row but locks its switch, because the
+Host unlocks only rows it can address through that patch. `scripts/sync-preset.mjs`
 derives the copy from the pinned Harness, so a Harness bump shows up as a small
 reviewable diff instead of an edit to a hand-maintained file; the profile
 verification path runs its `--check` mode, because a release that reshapes the
