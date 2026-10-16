@@ -40,6 +40,16 @@ A newly created Desktop session failed with `SSE_EVENT_UNSUPPORTED` after the su
 
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 113 tests. `git diff --check` also passed.
 
+## Live server-side compaction (2026-10-16)
+
+A long Desktop session on `gpt-6-luna` (13 turns, `reasoningEffort: low`) reached 33,915 input tokens, above the 32,768-token `compact_threshold`, and the subscription route returned a compaction item. The turn then failed with `PROTOCOL_INVALID [COMPACTION]`; a temporary closed-label diagnostic build identified the stage as `INDEX_MISSING`, meaning a streamed completed item had no counterpart in `response.completed.response.output`. The live route therefore trims that array, so the previous positional cross-check was unsound.
+
+Two behaviors changed in response, both recorded in [the compaction contract](COMPACTION.md): the streamed completed items are now authoritative for the output order (a terminal compaction item that exists and disagrees still withholds the window), and an unprovable window is withheld and logged from a bridge-owned label vocabulary instead of failing a turn whose answer was already delivered. `test/compaction.test.mjs` covers the observed shape end to end — a streamed compaction item and message with a trimmed terminal array now publish a checkpoint that the next turn reuses — plus the labelled refusal path and the hard-failure cases that still reject.
+
+This is the first evidence that the subscription route accepts `context_management` and issues encrypted compaction items; the reuse round trip above is synthetic. Whether the issued checkpoint is accepted back on the wire, and how it behaves across a real long session, remains unverified.
+
+On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 115 tests. `git diff --check` also passed.
+
 ## Covered controls
 
 - Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release, including retry when a losing acquirer releases the lock after EEXIST but before its metadata check.

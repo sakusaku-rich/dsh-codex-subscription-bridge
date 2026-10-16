@@ -81,9 +81,17 @@ refusal and wire-budget behavior below is the only remaining recovery path.
 - The latest compaction item and subsequent allowlisted output items form the
   next wire window. Subsequent text, reasoning metadata and function calls are
   retained; tools are never executed by this bridge.
-- Streamed completed items and terminal output must agree. When complete output
-  ordering or representation of the visible blocks is missing, no checkpoint is
-  published; full history remains available instead of losing a response tail.
+- The streamed completed items are the authoritative output order. The live
+  route omits items from `response.completed.response.output` — observed as a
+  missing index once a real compaction was issued — so positional agreement with
+  that array is not required. A terminal compaction item that exists and
+  disagrees with the streamed one is still treated as a contradiction.
+- An unprovable window is never published, and never fails the turn: the answer
+  has already been delivered by then, so the first refusal label is logged and
+  the bounded local history is resent instead. Refusals name their own stage
+  (`ITEM_*`, `MSG_*`, `SUM_*`, `WINDOW_*`, `INDEX_GAP`, `NO_ORDER`,
+  `OBSERVE_DUPLICATE`, `COMPACTION_MISMATCH`, `CONTENT_MISMATCH`) from a
+  bridge-owned vocabulary, so no response value reaches the log.
 - Harness stores the bounded opaque window in the assistant message's
   `source.replayState.response.subscriptionCompactionV1`. The normal transcript
   stays intact. No separate bridge checkpoint file or process-global cache exists.
