@@ -104,16 +104,19 @@ For both install paths the parent directory must exist and the destination must 
 
 By default Harness condenses history locally while the bridge also requests Codex server-side compaction, so both can summarize. To let Codex own condensation for this provider, replace the stock compaction backend with the one this package ships.
 
-Add both entries to the profile's `cordis.patch.yml` (for example `~/.dsh/profiles/desktop/cordis.patch.yml`), then restart Harness:
+**This composition does not take effect on the pinned Harness (`@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app` 0.2.0-rc.2).** Those bundles disable the top-level `compaction-basic` and `command-compact` rows, and declare the compaction backend *inside every agent preset* instead (`preset-standard`, `preset-ptc`, `preset-minimal`, `preset-cordis`, and the preset registry default), each as an isolated `compaction` group. The profile patch can neither add a row without an `insert:` list nor reach an entry nested in a preset's `plugins` list, so a top-level replacement row provides a service no session consumes. See [the composition evidence](VERIFICATION.md#preset-owned-compaction-2026-10-16).
+
+The intended patch shape is below. A plain `- id: …` entry is an *override* of an existing row, so the new row needs the `insert:` list; without it the loader reports `patch: entry "codex-subscription-compaction" not found` and mounts nothing.
 
 ```yaml
-- id: compaction-basic
-  disabled: true
-- id: codex-subscription-compaction
-  name: dsh-codex-subscription-bridge/compaction
+- insert:
+    - id: codex-subscription-compaction
+      name: dsh-codex-subscription-bridge/compaction
 ```
 
-The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose routes then rely on the encrypted server-side window. `compaction-basic` is applied by the `@deepseek-ai/dsh-base` bundle, so the profile patch can disable it by id; this package's own bundle is not changed and the default installation keeps local summarization.
+Re-enabling this opt-in needs a preset-level definition: a `preset-*` row whose `plugins` list mirrors the stock preset with the `compaction` group's engine replaced by this module. That list is version-coupled to the Harness release, which is why it is not shipped here. The rest of this section describes the behavior that composition has once it is expressed at the preset level.
+
+The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose routes then rely on the encrypted server-side window. This package's own bundle is not changed and the default installation keeps local summarization.
 
 Before relying on it, confirm all three behaviors after the restart:
 
@@ -123,7 +126,7 @@ Before relying on it, confirm all three behaviors after the restart:
 
 Know the failure modes before enabling it:
 
-- **It depends on a host-internal class.** The module subclasses `@deepseek-ai/dsh-compaction-basic`, which the Harness bundle provides. If a harness upgrade removes or renames that package, the row fails to load and **no compaction backend is mounted at all** (local condensation and `/compact` stop for every provider). Remove the two entries to restore the stock backend.
+- **It depends on a host-internal class.** The module subclasses `@deepseek-ai/dsh-compaction-basic`, which the Harness bundle provides. If a harness upgrade removes or renames that package, the row fails to load and **no compaction backend is mounted at all** (local condensation and `/compact` stop for every provider). Remove the composition to restore the stock backend. The pinned bundles hoist that class into every preset, so the failure mode now needs a preset-level composition to appear at all.
 - **A harness upgrade can also soften it.** If the reconciled method changes shape, the override stops applying and the replacement behaves exactly like the stock engine: nothing breaks, but server-side consolidation no longer happens.
 - **Nothing bounds the local transcript.** The encrypted window is opaque and belongs to one account, model, instructions, tools and input prefix; switching models, resuming the same conversation after 24 hours, or editing history refuses it. The bridge then resends the bounded local history; if that exceeds its 256 KiB text, 2 MiB tool-history or 1024-item wire bounds, the turn fails with `COMPACTION_UNAVAILABLE` and asks for a new conversation. See [the compaction contract](COMPACTION.md).
 - **The context indicator keeps growing.** Harness prices the retained local surface, not the compacted request, so usage display does not reflect the server-side window.

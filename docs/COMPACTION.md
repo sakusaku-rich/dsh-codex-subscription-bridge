@@ -64,7 +64,16 @@ extends the host engine and returns without condensing whenever the durable
 routed request belongs to `codex-subscription`; every other provider is delegated
 to the stock implementation unchanged, so the composition is route-scoped in
 behavior even though the row is profile-wide. [The installation guide](INSTALL.md)
-records the two patch entries, the post-mount checks and the failure modes.
+records the patch shape, the post-mount checks and the failure modes.
+
+The pinned Harness does not let this composition take effect. Its
+`@deepseek-ai/dsh-web-app` bundle disables the top-level `compaction-basic` and
+`command-compact` rows and declares the backend inside each agent preset instead,
+in an isolated `compaction` group, and a profile patch cannot reach an entry
+nested in a preset's `plugins` list. The module and its tests stay, but shipping
+the opt-in needs a preset-level definition whose `plugins` list is version-coupled
+to the Harness release. [The verification record](VERIFICATION.md) has the
+evidence, including the `insert:` syntax a new profile row requires.
 
 This is deliberately not the default bundle behavior. The module subclasses a
 host-internal class, which is a compatibility dependency the bridge otherwise

@@ -48,6 +48,17 @@ Two behaviors changed in response, both recorded in [the compaction contract](CO
 
 This is the first evidence that the subscription route accepts `context_management` and issues encrypted compaction items. After the fix, the same session continued and confirmed the reuse half against the live service: the checkpoint was published on the turn priced at 38,612 input tokens (a compaction item plus one function call, 27,276 encrypted bytes), and the following three requests were priced at 11,787, 17,971 and 24,691 input tokens while the local transcript only grew. The drop is attributable to the checkpoint replacing its covered prefix — the route accepted the encrypted state it had issued. Checkpoint expiry, model switches, cancellation during compaction, quota impact and behaviour at the next threshold crossing remain unverified.
 
+## Preset-owned compaction (2026-10-16)
+
+The opt-in backend was mounted in a running Desktop profile and produced no observable change: `compaction-basic` was listed as present, `/compact` worked, and automatic condensation never fired for either a `codex-subscription` or an `openrouter` conversation even with `thresholdRatio` lowered to 0.002 and `retainRatio` to 0.0001, which put the threshold at 544 and 2,097 tokens against conversations priced at 5,000-40,000 input tokens.
+
+Composing the same profile through the pinned CLI (`dsh --profile <copy> --dump-config`) explained it. Two facts came out of that dump:
+
+- A plain `- id: …` patch entry is an *override* of an existing row, so the new row never loaded: the loader reported `patch: entry "codex-subscription-compaction" not found`. The bridge's own `cordis.patch.yml` already used the correct form, `- insert: [ … ]`; the opt-in snippet in the documentation did not.
+- `@deepseek-ai/dsh-web-app` 0.2.0-rc.2 disables the top-level `compaction-basic` and `command-compact` rows — its patch explains that the token meter stays on the host plane while the backend "moves" — and declares the backend inside every agent preset (`preset-standard`, `preset-ptc`, `preset-minimal`, `preset-cordis` and the preset registry default) as a `compaction` group with `isolate: { compaction: true, toolResultPruner: true }`. A profile patch cannot address an entry nested in a preset's `plugins` list, so even a correctly inserted top-level row would provide a service no session consumes.
+
+The opt-in entries were therefore removed from the owner's profile, which left the composition stock and warning-free; the observed absence of automatic condensation is the stock behavior, since each preset's `compaction-basic` keeps the default 0.8/0.16 ratios (~217,600 tokens for the 272,000-token Codex window). Shipping the opt-in needs a preset-level definition, whose `plugins` list is version-coupled to the Harness release; that is a separate decision from this feature. The duplicate condensation this opt-in targets is real: an earlier session on this profile raised 18 `compaction/prune` events on a `codex-subscription/gpt-6.1-sol` route.
+
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 115 tests. `git diff --check` also passed.
 
 ## Covered controls
