@@ -12,6 +12,17 @@ import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, thr
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
+/**
+ * Stream events that announce route state without carrying response content.
+ *
+ * `response.metadata` was observed on the subscription route after a completed
+ * text finish; the buffered text, tool calls and usage all reconciled normally,
+ * so failing the turn on it discarded a usable answer. Each entry here is a
+ * reviewed notification: it is ignored deliberately, and an event that is not
+ * in this set still fails the turn.
+ */
+const NOTIFICATIONS = new Set(['response.metadata', 'response.queued']);
+
 function headers(token) {
   return { Authorization: `Bearer ${token}`, ...accountHeaders(token),
     'User-Agent': `${name}/${version}`, originator: 'dsh-codex-subscription-bridge' };
@@ -318,10 +329,18 @@ export class DirectBridge {
               ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text }));
           yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
         } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
+        // Notifications carry no response content, so an unrecognized one is
+        // ignored rather than failing a turn whose text and tool calls are
+        // already complete. Listed explicitly, so widening this set stays a
+        // deliberate change instead of an accident of the response shape.
+        else if (NOTIFICATIONS.has(event.type)) { /* no content to reconcile */ }
         else if (!['response.created', 'response.in_progress', 'response.content_part.added', 'response.content_part.done',
           'response.reasoning_summary_part.added', 'response.reasoning_summary_part.done', 'response.reasoning_summary_text.delta',
           'response.reasoning_summary_text.done', 'response.reasoning_text.delta', 'response.reasoning_text.done',
-          'response.function_call_arguments.delta', 'response.function_call_arguments.done'].includes(event.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED');
+          'response.function_call_arguments.delta', 'response.function_call_arguments.done'].includes(event.type)) {
+          throw new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED',
+            { hint: 'The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.' });
+        }
       }
       if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
     } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }
