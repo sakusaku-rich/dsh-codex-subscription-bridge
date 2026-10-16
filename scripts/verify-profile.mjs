@@ -19,6 +19,9 @@ for (const [name, version] of [['cordis', '4.0.4'], ['dsh-llm', '0.2.0-rc.2']]) 
 for (const [name, version] of [['@modelcontextprotocol/client', '2.2.0'], ['@modelcontextprotocol/core', '2.2.0'], ['fflate', '0.8.3']]) {
   assert.equal(JSON.parse(await readFile(join(modules, name, 'package.json'), 'utf8')).version, version, 'Use the locked security-fixed verification runtime.');
 }
+// The opt-in preset mirrors the pinned Harness composition, and this runtime is
+// the one place that copy can be proven current before a profile is composed.
+execFileSync(process.execPath, [resolve('scripts', 'sync-preset.mjs'), '--check'], { cwd: process.cwd(), stdio: 'inherit' });
 const root = await mkdtemp(join(tmpdir(), 'dsh-packaged-profile-'));
 const env = { HOME: join(root, 'home'), DSH_HOME: join(root, 'harness'),
   XDG_CONFIG_HOME: join(root, 'xdg'), XDG_CACHE_HOME: join(root, 'cache'), LANG: 'C.UTF-8',

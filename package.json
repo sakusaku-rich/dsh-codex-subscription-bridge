@@ -46,6 +46,7 @@
     "src/errors.js",
     "src/environment.js",
     "cordis.patch.yml",
+    "presets",
     "README.md",
     "SECURITY.md",
     "docs",
@@ -58,6 +59,8 @@
     "check": "node scripts/check.mjs",
     "test": "node --test test/*.test.mjs",
     "verify": "npm run check && npm test",
+    "preset:sync": "node scripts/sync-preset.mjs",
+    "preset:check": "node scripts/sync-preset.mjs --check",
     "test:profile": "node scripts/verify-profile.mjs",
     "prepare:profile": "node scripts/prepare-profile.mjs",
     "prepare:release": "node scripts/build-release-asset.mjs",
@@ -85,7 +88,10 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/codex-subscription.patch.yml"
+      ]
     },
     "client": {
       "inject": [
