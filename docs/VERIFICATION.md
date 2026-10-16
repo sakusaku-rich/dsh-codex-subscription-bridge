@@ -32,6 +32,14 @@ The adapter declares each model's reasoning levels from the catalog's own `suppo
 
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 112 tests. `git diff --check` also passed.
 
+## Content-free stream notifications (2026-10-16)
+
+A newly created Desktop session failed with `SSE_EVENT_UNSUPPORTED` after the subscription route had already streamed a complete answer on `gpt-6.1-sol`. A temporary diagnostic build (since removed) reported, for the offending event, a 17-character type with a `response.` prefix, four own fields, and no `delta`, `text`, `item` or `response` field; the type matched `response.metadata`. Because that event carries no response content, the turn was failed for a notification that could not affect the answer.
+
+`response.metadata` and `response.queued` are now listed explicitly as ignored notifications, and `test/direct.test.mjs` asserts that a notification before or after the completed text still yields the `stop` finish with the full text, while an unlisted event still fails with `SSE_EVENT_UNSUPPORTED` plus the fixed cause hint. The diagnostic build, which reported only locally derived tokens and never an upstream string value, was validated against the existing no-upstream-text invariant before removal. The exact enumeration of all notifications the live route may send remains unverified; only `response.metadata` was directly observed.
+
+On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 113 tests. `git diff --check` also passed.
+
 ## Covered controls
 
 - Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release, including retry when a losing acquirer releases the lock after EEXIST but before its metadata check.
