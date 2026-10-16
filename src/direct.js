@@ -327,6 +327,9 @@ export class DirectBridge {
           const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan,
             [...blocks.values()].map(block => block.type === 'tool-call'
               ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text }));
+          // A refused checkpoint costs the next turn its replay window, not this
+          // turn's answer, so it is logged rather than raised.
+          if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
           yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
         } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
         // Notifications carry no response content, so an unrecognized one is

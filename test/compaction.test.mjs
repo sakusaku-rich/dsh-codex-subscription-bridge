@@ -110,20 +110,59 @@ test('covered history may exceed text wire budget but fallback and uncovered tai
   } finally { await f.bridge.close(); }
 });
 
-test('malformed, oversized, contradictory and incomplete streams never publish a checkpoint', async () => {
+test('malformed or contradictory checkpoint state withholds the window but keeps the answer', async () => {
   for (const events of [
     [complete([{ ...compact, encrypted_content: '' }, reply('No')])],
     [complete([{ ...compact, encrypted_content: 'x'.repeat(512 * 1024 + 1) }, reply('No')])],
     [{ type: 'response.output_item.done', output_index: 0, item: compact }, complete([{ ...compact, encrypted_content: 'different' }, reply('No')])],
-    [{ type: 'response.output_item.done', output_index: 0, item: compact }],
-    [{ type: 'response.output_item.done', output_index: 0, item: compact }, { type: 'response.failed' }],
-    [complete([compact, { type: 'web_search_call' }])],
   ]) {
     const f = fixture([events]); const chunks = [];
     try {
-      await assert.rejects(async () => { for await (const chunk of f.bridge.stream(options([user('Start')]))) chunks.push(chunk); });
+      for await (const chunk of f.bridge.stream(options([user('Start')]))) chunks.push(chunk);
+      // Replay metadata is optional: an unprovable window never costs the turn.
+      assert.equal(chunks.at(-1).reason.kind, 'stop');
       assert.ok(chunks.every(chunk => !chunk.replayState));
+      assert.equal(f.warnings.length, 1);
+      assert.ok(f.warnings[0].startsWith('The subscription compaction checkpoint was not published ('));
     } finally { await f.bridge.close(); }
+  }
+});
+
+test('a streamed window the terminal array omits still publishes and reuses a checkpoint', async () => {
+  // Observed on the live route: the compaction item and the message arrive as
+  // streamed completed items, while response.completed.response.output omits
+  // the compaction item. The streamed order is the one that must be kept.
+  const textDelta = { type: 'response.output_text.delta', item_id: 'msg-1', content_index: 0, delta: 'Hello' };
+  const textDone = { ...textDelta, type: 'response.output_text.done', text: 'Hello' };
+  const streamed = [
+    { type: 'response.output_item.added', output_index: 0, item: compact },
+    textDelta,
+    textDone,
+    { type: 'response.output_item.done', output_index: 0, item: compact },
+    { type: 'response.output_item.added', output_index: 1, item: reply('Hello') },
+    { type: 'response.output_item.done', output_index: 1, item: reply('Hello') },
+    complete([reply('Hello')]),
+  ];
+  const f = fixture([streamed, [complete([reply('Next')])]]);
+  try {
+    const first = await run(f.bridge, options([user('Start')]));
+    const saved = JSON.parse(JSON.stringify(first.message));
+    assert.ok(saved.source.replayState.response[CHECKPOINT_KEY]);
+    await run(f.bridge, options([user('Start'), saved, user('Next')]));
+    assert.equal(f.payloads[1].input[0].type, 'compaction');
+    assert.deepEqual(f.warnings, []);
+  } finally { await f.bridge.close(); }
+});
+
+test('an incomplete or unsupported terminal state still fails the turn', async () => {
+  for (const [events, code] of [
+    [[{ type: 'response.output_item.done', output_index: 0, item: compact }], 'PROTOCOL_INVALID'],
+    [[{ type: 'response.output_item.done', output_index: 0, item: compact }, { type: 'response.failed' }], 'UPSTREAM_FAILED'],
+    [[complete([compact, { type: 'web_search_call' }])], 'PROTOCOL_INVALID'],
+  ]) {
+    const f = fixture([events]);
+    try { await assert.rejects(run(f.bridge, options([user('Start')])), { code }); }
+    finally { await f.bridge.close(); }
   }
 });
 
