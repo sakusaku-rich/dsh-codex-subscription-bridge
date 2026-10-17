@@ -8,7 +8,7 @@ The provider registers as `codex-subscription` and accepts no configuration: any
 
 ## Request flow
 
-A turn resolves the selected model through the live catalog, which is cached in memory for 60 seconds, scoped by credential fingerprint and revalidated on each lookup and each turn; it then takes the dedicated token and validates the Harness input into Responses items. When the model discloses a usable context window and a proven replay window covers part of that history, the window replaces the prefix it covers and the request carries `context_management`; otherwise the bounded full history is sent. The request goes to `POST https://chatgpt.com/backend-api/codex/responses` with `store: false`, and the SSE response is validated incrementally: completed message and `function_call` items reconcile against streamed ones, and a published window is captured as replay metadata before the turn settles.
+A turn projects offloaded images, validates the Harness input into Responses items under retained limits, resolves the selected model through the live catalog — cached in memory for 60 seconds, scoped by credential fingerprint and revalidated on each lookup and each turn — and takes the dedicated token. When the model discloses a usable context window and a proven replay window covers part of that history, the window replaces the prefix it covers, the plan is revalidated under the ordinary wire limits, and the request carries `context_management`; otherwise the bounded full history is sent. The request goes to `POST https://chatgpt.com/backend-api/codex/responses` with `store: false`, and the SSE response is validated incrementally: completed message and `function_call` items reconcile against streamed ones, and a published window is captured as replay metadata before the turn settles.
 
 ## Decision
 
@@ -46,11 +46,9 @@ The initial login path is device code only. Reasoning effort is validated to a b
 
 Real-account evidence and its limits are recorded in [verification](VERIFICATION.md). Direct connection is not evidence of official third-party service support or absence of vulnerabilities.
 
-
 ## Safe diagnostics
 
 Errors retain their existing fixed codes and append only allowlisted stage labels such as `[SSE_FRAME]`, `[SSE_EVENT_UNSUPPORTED]`, `[SSE_TERMINAL]`, or `[AUTH_REFRESH_UNCERTAIN]`. Unknown labels, upstream messages, event names, credentials and identifiers are never copied into diagnostics. Failure payloads are reconstructed from the allowlists even if an Error message was mutated. Empty string text deltas are valid no-op text updates; non-string and oversized deltas remain invalid.
-
 
 ## Transport dependencies
 
