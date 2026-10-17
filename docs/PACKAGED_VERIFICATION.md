@@ -33,5 +33,3 @@ The owned verification runtime overrides:
 After these overrides, npm audit reported zero known vulnerabilities and the packaged profile checks passed again. This result applies to the locked test runtime, not an existing installation. It does not establish MCP OAuth behavior or Office archive handling compatibility; neither feature is used in the test.
 
 The MCP advisory also requires issuer-aware credential persistence for affected existing OAuth state and providers. A version update alone is not a universal migration remedy. No MCP OAuth state was created or migrated in this verification. Review the advisory before applying any fix to an existing deployment.
-
-These verification runs performed no pull request, issue, package publication, or normal-profile installation.

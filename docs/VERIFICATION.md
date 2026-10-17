@@ -9,12 +9,25 @@ npm ci --ignore-scripts
 npm ci --ignore-scripts --prefix verification/runtime
 npm run verify
 npm run test:install
+npm run test:auth-ui
 npm run test:release-install
 DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
 DSH_DESKTOP_EXECUTABLE="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" npm run test:desktop
 npm audit --audit-level=low
 npm audit --audit-level=low --prefix verification/runtime
 ```
+
+`npm run test:profile` also runs `npm run preset:check`, so preset drift fails that lane. Which check isolates what:
+
+| Symptom | Check |
+| --- | --- |
+| A compaction refusal or `COMPACTION_UNAVAILABLE` | `node --test test/compaction.test.mjs` |
+| `preset:check` drift | `npm run preset:sync`, then review the diff |
+| A profile or packaged CLI/SDK composition failure | `npm run test:profile` (needs the pinned runtime) |
+| A release asset, checksum or download failure | `npm run test:release-install` |
+| A settings-panel or Connection-carrier failure | `npm run test:auth-ui` |
+| A Desktop host-pair or ASAR-resolver failure | `npm run test:desktop` with `DSH_DESKTOP_EXECUTABLE` set |
+| An adapter protocol or transport failure | `npm run verify` (root suite) |
 
 The `test:desktop` lane requires the pinned `verification/desktop` Electron package (or an explicit executable) and runs the root suite on the Desktop host. On the machine used for this record that lane fails inside `test/package.test.mjs`, which invokes `npm pack` as a child process; the same failure reproduces on the base commit before the release path was added, so it predates this work and is recorded rather than attributed to it. The Desktop release surface is covered independently by `test:release-install`, which drives the installed application's own resolver.
 

@@ -60,7 +60,7 @@ Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or 
 
 ## Compaction
 
-Harness condenses history locally, and the bridge also asks the subscription route to condense server-side, replaying the encrypted window it returns on later turns. This is confirmed on a real account, including a model switch that refused the older window, resent the bounded history and issued a new one. [Compaction design, research and limits](docs/COMPACTION.md) records what a window covers, which refusals count as contradictions, and the wire bounds that force a new conversation.
+Harness condenses history locally, and the bridge also asks the subscription route to condense server-side, replaying the encrypted window it returns on later turns. A turn whose response published a window is marked "Server-side compaction" in that turn's work details, with the model and the window's item count. This is confirmed on a real account, including a model switch that refused the older window, resent the bounded history and issued a new one. [Compaction design, research and limits](docs/COMPACTION.md) records what a window covers, which refusals count as contradictions, and the wire bounds that force a new conversation.
 
 To let Codex own condensation for this provider's routes instead, enable the agent preset this package ships. It is inserted disabled, so installing the package changes nothing until you add this to the profile's `cordis.patch.yml` and restart Harness:
 
@@ -79,9 +79,8 @@ Before enabling it, know that:
 
 ## What the provider sends and enforces
 
-- A turn whose response published a server-side checkpoint is marked "Server-side compaction" in the chat (inside that turn's work details) with the model and the replayed window's item count; the marker is read from the assistant message's client-visible replay metadata, so it needs no extra event and disappears with the checkpoint.
-- Bounded history and validated opaque compaction checkpoints are sent with `store: false`; no conversation IDs are resumed or chained. Each model advertises the reasoning levels the backend discloses for it (for example `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) together with any disclosed default, so Harness offers the effort selector; the chosen id is forwarded verbatim.
-- Harness tool definitions are strictly validated and forwarded as `function` tools with `strict: false`, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
+- Requests are sent with `store: false`, and no server conversation IDs are resumed or chained. Each model advertises the reasoning levels the backend discloses for it (for example `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) together with any disclosed default, so Harness offers the effort selector; the chosen id is forwarded verbatim.
+- Harness tool definitions are validated and forwarded, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
 - User message images are sent as `input_image` data URLs. Oversized requests fail with `IMAGE_OFFLOAD_REQUIRED` so the Harness host can offload its oldest images and retry, and image blocks in other roles are rejected.
 - `temperature` (finite, 0–2) is validated and forwarded; `maxTokens` (safe integer, 1–1,000,000) is accepted as an advisory budget but deliberately not forwarded; `stop` sequences are rejected with a fixed `UNSUPPORTED_OPTION` error.
 - HTTP 429 responses are classified by the backend: a recognized plan usage limit becomes terminal `QUOTA`, optionally with a "Try again in about N minutes." hint, while any other 429 stays transient `RATE_LIMIT`.

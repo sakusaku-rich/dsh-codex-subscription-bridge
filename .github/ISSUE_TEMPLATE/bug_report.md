@@ -27,6 +27,7 @@ What you expected to happen instead.
 
 - OS and version:
 - Node version (`node --version`):
+- Bridge version or release tag (for example `v0.0.3`, or the commit you built from):
 - Harness version:
 - Installation surface (CLI/SDK, Web profile, Desktop):
 
