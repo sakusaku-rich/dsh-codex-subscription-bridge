@@ -4,13 +4,13 @@
 
 Two installation paths prepare the same isolated, signed-out profile: a one-command install from a published release, and the source-checkout install used for development and recovery. Both are experimental prototype surfaces. A source checkout is built from a reviewed full commit SHA; a release install consumes a released, integrity-verified artifact. Do not install from a moving branch head.
 
-The one-command path below installs a published release; `v0.0.3` is current. Use the source-checkout path when you need a commit that no release carries yet.
+The one-command path below installs a published release; replace `v0.0.3` in the examples with the release you reviewed. Use the source-checkout path when you need a commit that no release carries yet.
 
 | Surface / OS | Status |
 | --- | --- |
 | macOS CLI/SDK provider (text, tool passthrough, images) | Synthetic packaged integration verified |
 | macOS Web profile | Setup/startup verified; full real conversation pending |
-| macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified; UI/service pending |
+| macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified, and owner-operated real GUI, sign-in and service use verified |
 | Linux / Windows / other OS | Not supported; rejected before authentication |
 
 The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified. Use Node 22.23.3, the verified baseline (Undici 6.28.1, OpenSSL 3.5.8): the root and verification-runtime manifests, their lockfiles, `.node-version` and `.nvmrc` all pin it, and the public adapter and authentication CLI reject older or unverified runtimes. Installing does not migrate a global Node installation or an existing account store. [Official release](https://nodejs.org/en/blog/release/v22.23.3). The supported standalone Node major is 22. Desktop uses its tested Electron host; the exact Node/Electron pair is required. Do not modify the Desktop binary. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for its separate verification profile.
