@@ -21,7 +21,7 @@ The result contains only fixed local state/action labels, never credentials, acc
 
 ## Lock recovery
 
-A login can legitimately hold the lock while waiting for browser approval. Close or cancel that command normally. If an owner crashed, `login`, `status` and `logout` may each return AUTH_BUSY after 30 seconds. `doctor` never takes the lock, so it still reports `lock: present_owner_unknown`. No PID/lease proof or automatic lock takeover exists.
+A login can legitimately hold the lock while waiting for browser approval. Close or cancel that command normally, and in the settings panel cancel a pending login before discarding its tab: the tab that started it owns the one-time code, and other tabs see only that a login is active. If an owner crashed, `login`, `status` and `logout` may each return AUTH_BUSY after 30 seconds. `doctor` never takes the lock, so it still reports `lock: present_owner_unknown`. No PID/lease proof or automatic lock takeover exists.
 
 Only after stopping **all** CLI/Web/auth processes using this store and confirming none remain, review the exact profile path. For the isolated guide's profile:
 

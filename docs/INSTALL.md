@@ -13,7 +13,7 @@ The one-command path below installs a published release; `v0.0.3` is current. Us
 | macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified; UI/service pending |
 | Linux / Windows / other OS | Not supported; rejected before authentication |
 
-The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified. Use Node 22.23.3 (the checkout includes `.node-version` and `.nvmrc`). The supported standalone Node major is 22. Desktop uses its tested Electron host; the exact Node/Electron pair is required. Do not modify the Desktop binary. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for its separate verification profile.
+The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified. Use Node 22.23.3, the verified baseline (Undici 6.28.1, OpenSSL 3.5.8): the root and verification-runtime manifests, their lockfiles, `.node-version` and `.nvmrc` all pin it, and the public adapter and authentication CLI reject older or unverified runtimes. Installing does not migrate a global Node installation or an existing account store. [Official release](https://nodejs.org/en/blog/release/v22.23.3). The supported standalone Node major is 22. Desktop uses its tested Electron host; the exact Node/Electron pair is required. Do not modify the Desktop binary. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for its separate verification profile.
 
 The plugin uses a dedicated plaintext OAuth store; no Codex installation or token import is required. Device-code login must be enabled by the account/workspace. Browser-PKCE fallback and keyring storage are not included. A successful model listing does not establish successful generation or entitlement to every model.
 
