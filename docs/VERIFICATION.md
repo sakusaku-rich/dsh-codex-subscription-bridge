@@ -128,7 +128,9 @@ A turn failed with `PROTOCOL_INVALID [SSE_EVENT_UNSUPPORTED]` after the route ha
 
 On the released build the failing cases reported `finish: error` while the text `"Hello"` had already been delivered, which is the reported symptom reproduced under test.
 
-**What remains unverified.** No raw live event name was captured for this report, so which specific event triggered it is not known; the change is deliberately independent of that, since no enumeration is needed. The live route's full event vocabulary is likewise unverified and is no longer claimed. The fix was confirmed against synthetic fixtures on the real host, not against a live subscription turn — the owner's real-account confirmation is the remaining step.
+**What remains unverified.** No raw live event name was captured for this report, so which specific event triggered it is not known; the change is deliberately independent of that, since no enumeration is needed. The live route's full event vocabulary is likewise unverified and is no longer claimed.
+
+**Live confirmation.** The owner installed this build into their Desktop profile, restarted the application, and confirmed that Codex-model conversations complete normally. This is the step that the first attempt failed: that build was installed the same way and the error recurred on the next real turn. The specific event that used to trigger the failure is still unidentified, and identifying it is no longer meaningful, because the fix does not depend on the route's notification vocabulary.
 
 On 2026-10-17, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 125 tests. `git diff --check` also passed.
 
