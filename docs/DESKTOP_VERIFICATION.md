@@ -58,4 +58,4 @@ DSH_DESKTOP_EXECUTABLE="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSe
 
 This checks the runtime pair, root suite, packaged CLI/SDK synthetic conversation, and a disposable profile against installed Desktop's ASAR runtime resolver. The CI alternative pins Electron 44.0.0 under `verification/desktop`, explicitly runs its checksum-verifying binary downloader, and runs the same host checks. The actual installed-ASAR lane is local only; CI does not have Harness Desktop.
 
-For updates, use a new reviewed checkout/artifact and a new directory. After a Desktop update the exact host guard may refuse startup; revalidate instead of bypassing it. Stop the profile, log out with its helper, and remove only its reviewed dedicated directory when finished. See [troubleshooting](TROUBLESHOOTING.md).
+For updates, use a new reviewed checkout/artifact and a new directory. After a Desktop update the exact host guard may refuse startup; revalidate instead of bypassing it. Stop the profile, log out in the settings panel (this surface has no helper), and remove only its reviewed dedicated directory when finished. See [troubleshooting](TROUBLESHOOTING.md).
