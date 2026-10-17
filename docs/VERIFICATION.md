@@ -87,7 +87,9 @@ Server-side compaction left no trace in the conversation, unlike local condensat
 
 `test/client-compaction-notice.test.mjs` drives the real bundle through the registries it injects into and covers the matching (checkpoint present, another adapter's replay key, missing metadata, malformed replay state, non-assistant events), the node state and view node, and the rendered row. `test/auth-ui-client.test.mjs` now supplies the `uiConversation` service the plugin declares.
 
-Unverified: the marker has not been seen in a running GUI. The client bundle is loaded from the installed package, so seeing it needs a Desktop restart on a conversation whose response publishes a new window (a reuse turn will not show it).
+The marker was then confirmed in the running GUI. On the model-switch session, `document.querySelectorAll('[data-chat-flow-kind="server-compaction"]').length` returned 2, which is exactly the two turns that published a window (the 33,546-token turn under `gpt-5.6-terra` and the 33,685-token turn under `gpt-6-luna`); the five turns that only reused or carried no window produced none.
+
+The count also exposed where it sits: the chat folds a node into the turn's work-details disclosure unless its kind is one of `TURN_PROCESS_INDEPENDENT_KINDS` (`system-prompt`, `user`, `steering`, `turn-trigger`, `turn-process`, `turn-error`, `turn-max-tokens`, `turn-tail`), and `server-compaction` is not one of them — the same treatment the chat's own `compaction` marker gets. The marker is therefore rendered but folded by default under the `standard` transcript view, and obeying that setting was kept deliberately: a marker that ignored the user's work-details choice would be the only node that does. Seeing it needs the turn's work details expanded or the transcript view set to `Detailed`/`Verbose`.
 
 ## Covered controls
 
