@@ -43,7 +43,7 @@ It differs from the isolated path in ways worth knowing before you run it:
 - **An install is refused when the bridge is already listed**, rather than repointing an existing entry.
 - **There is no `manifest.json` for this mode.** The isolated path records the release tag and verified digest there; a shared profile keeps the application's own layout, so the same record is written to the backup directory as `installed.json`.
 
-Restart the application to load the bridge. To undo the install, copy `package.json` and `pnpm-lock.yaml` from the backup directory back over the profile and run the same pnpm install again.
+Restart the application to load the bridge. To undo the install, copy `package.json` and `pnpm-lock.yaml` from the backup directory back over the profile and run the same pnpm install again, and delete the opt-in entry below from `cordis.patch.yml` if you added it: the installer never writes that file, so nothing else removes the line, and a leftover entry makes the loader report an unmatched patch entry at every start.
 
 Because this mode changes a working environment, it is the less reversible of the two paths. The backup makes a failed install self-correcting, and an undo exact, but the isolated install remains the safer choice when you do not specifically need the existing profile's settings and plugins.
 
@@ -116,6 +116,8 @@ The pinned Harness keeps the compaction backend *inside every agent preset* (`pr
 The Plugins page lists the row, but its switch is locked for a row the Host can only address through the profile patch (hovering the switch states the Host's reason), so this entry is the enable step rather than a toggle. The profile patch is applied after every bundle, which is why an override this small reaches a row a bundle declares.
 
 Then optionally set it as the new-task default in **Settings → Agent presets**; otherwise select "Codex subscription" in the preset chip when starting a session.
+
+Removing the package does not remove that entry, because the installer never writes `cordis.patch.yml`; delete the line when you uninstall, or the loader reports an unmatched patch entry on every start. An isolated profile needs no cleanup — the whole directory goes away.
 
 The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose routes then rely on the encrypted server-side window. Every other preset keeps the stock engine, so other providers are unaffected.
 
