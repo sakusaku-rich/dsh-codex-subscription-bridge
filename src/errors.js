@@ -27,17 +27,12 @@ const messages = Object.freeze({
 const diagnostics = new Set([
   'COMPACTION', 'HTTP_REQUEST', 'HTTP_JSON_BODY', 'MODEL_CATALOG', 'AUTH_REFRESH',
   'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_EVENT_TYPE',
-  'SSE_EVENT_UNSUPPORTED', 'SSE_TEXT_DELTA', 'SSE_TEXT_COMPLETION',
+  'SSE_TEXT_DELTA', 'SSE_TEXT_COMPLETION',
   'SSE_OUTPUT_ITEM', 'SSE_TOOL_CALL', 'SSE_TERMINAL', 'SSE_INCOMPLETE',
   'TOOL_INPUT', 'IMAGE_PREPARE', 'IMAGE_OFFLOAD', 'STOP', 'TEMPERATURE', 'MAX_TOKENS',
 ]);
 // Longest reset hint the classifier may derive, in minutes (one week).
 const RESET_MINUTES_LIMIT = 10080;
-// Closed set of cause labels a fixed message may append. Each one is authored
-// here, so upstream text still never reaches an error message or the UI.
-const hints = new Set([
-  'The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.',
-]);
 export class BridgeError extends Error {
   constructor(code, diagnostic, extras) {
     const safeCode = Object.hasOwn(messages, code) ? code : 'UPSTREAM_FAILED';
@@ -47,14 +42,9 @@ export class BridgeError extends Error {
     const resetMinutes = extras !== null && typeof extras === 'object' &&
       Number.isSafeInteger(extras.resetMinutes) && extras.resetMinutes >= 1 && extras.resetMinutes <= RESET_MINUTES_LIMIT
       ? extras.resetMinutes : undefined;
-    // A hint is a closed label this module owns, never upstream text, so it can
-    // name the likely cause without carrying response content into error text.
-    const hint = extras !== null && typeof extras === 'object' && hints.has(extras.hint) ? extras.hint : undefined;
     super(messages[safeCode] + (resetMinutes !== undefined
-      ? ` Try again in about ${resetMinutes} minute${resetMinutes === 1 ? '' : 's'}.` : '') + (label ? ` [${label}]` : '')
-      + (hint === undefined ? '' : ` ${hint}`));
+      ? ` Try again in about ${resetMinutes} minute${resetMinutes === 1 ? '' : 's'}.` : '') + (label ? ` [${label}]` : ''));
     this.diagnostic = label;
-    this.hint = hint;
     this.name = 'BridgeError';
     this.code = safeCode;
     // The Harness runtime reads this positive safe integer to offload the
@@ -70,7 +60,7 @@ export function classified(error, diagnostic) {
   const safe = error instanceof BridgeError ? error : undefined;
   return new BridgeError(safe ? safe.code : 'UPSTREAM_FAILED',
     safe && diagnostics.has(safe.diagnostic) ? safe.diagnostic : diagnostic,
-    safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes, hint: safe.hint } : undefined);
+    safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes } : undefined);
 }
 export const failure = (error) => {
   const safe = classified(error);
