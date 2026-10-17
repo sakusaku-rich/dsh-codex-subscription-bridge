@@ -44,7 +44,7 @@ The root suite uses the small pinned Cordis/LLM peer dependency tree. The separa
 - Fixed HTTPS origins, redirect refusal, bounded JSON, safe fixed error codes and diagnostic labels, and cancellation after response headers.
 - Live-catalog validation, hidden-model exclusion, compatibility fallback, auth-aware caching and fresh admission for each turn, and projection of the backend-disclosed `context_window` with fail-closed refusal of malformed window values.
 - Bounded text history up to the 1024-message cap with validated tool definitions and executed tool-call history, user message images as `input_image` data URLs, offload-budget refusal with `IMAGE_OFFLOAD_REQUIRED`, rejection of other-role images, and `stop` rejection. `temperature` is validated to 0–2 and forwarded; `maxTokens` is validated and accepted as an advisory budget without forwarding. Synthetic 429 responses cover usage-limit bodies with and without `resets_at`, past and clamped resets, non-usage codes, oversized and unreadable bodies, and the bounded reset hint.
-- Incremental bounded SSE framing, split UTF-8, CRLF/multiline data, empty text deltas, non-SSE MIME compatibility, completed-item and idempotent completed `function_call` reconciliation, and refusal of malformed, contradictory, non-function execution-bearing or incomplete responses.
+- Incremental bounded SSE framing, split UTF-8, CRLF/multiline data, empty text deltas, non-SSE MIME compatibility, completed-item and idempotent completed `function_call` reconciliation, and refusal of malformed, contradictory, non-function execution-bearing or incomplete responses. Events outside the consumed set are ignored, and a test asserts an unknown event carrying content-shaped fields projects no text, tool call or usage.
 - Four-operation admission including cancellation cleanup, pre-aborted refusal, paused-reader cancellation, event-loop yields, timeouts and bounded shutdown.
 - The sign-in panel in a browser with synthetic OAuth responses: panel display, one-time code and fixed link, local diagnosis, cancellation, restarted login, automatic completion after simulated approval, confirmed local logout, and rejection of unknown fields and oversized payloads, with the settings API unchanged.
 - Public adapter registration/disposal, actual npm tarball composition, MIT license inclusion, missing-auth errors, and synthetic CLI/SDK conversation.
@@ -104,6 +104,41 @@ A newly created Desktop session failed with `SSE_EVENT_UNSUPPORTED` after the su
 `response.metadata` and `response.queued` are now listed explicitly as ignored notifications, and `test/direct.test.mjs` asserts that a notification before or after the completed text still yields the `stop` finish with the full text, while an unlisted event still fails with `SSE_EVENT_UNSUPPORTED` plus the fixed cause hint. The exact enumeration of all notifications the live route may send remains unverified; only `response.metadata` was directly observed.
 
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 113 tests. `git diff --check` also passed.
+
+### Notification events fail turns (2026-10-17)
+
+A turn failed with `PROTOCOL_INVALID [SSE_EVENT_UNSUPPORTED]` after the route had already streamed a complete answer. The message said the response content was unaffected, and that was accurate: the failure discarded usable content rather than detecting corruption. This is the third occurrence of the same class, after `response.metadata` and the annotation/item-progress report below.
+
+**First attempt, and why it was insufficient.** The two-name notification list was widened to two reviewed groups — route-state names, and the progress/part events of unprojected item families, plus annotations on projected text — with regression tests. The owner installed that build into their Desktop profile, and the same error recurred on the next real turn. The approach was wrong in kind, not merely incomplete: it assumed the bridge could enumerate a live third-party stream's notification vocabulary, and each enumeration was falsified by the next event.
+
+**What settled it.** The verified Harness bundles a reference Responses client, `@earendil-works/pi-ai` (`api/openai-responses-shared.js`), extracted read-only from the installed application's `app.asar`. Its dispatch handles `response.created`, `response.output_item.added`/`.done`, `response.reasoning_summary_text.delta`, `response.reasoning_summary_part.done`, `response.reasoning_text.delta`, `response.output_text.delta`, `response.refusal.delta`, `response.function_call_arguments.delta`/`.done`, `response.custom_tool_call_input.delta`/`.done`, `response.completed`, `response.incomplete` and `response.failed` — and has **no** catch-all that fails an unknown event. Only `error` and `response.failed` throw, plus a missing-terminal check. The bridge's allowlist was therefore stricter than the host it feeds, and that strictness was the defect.
+
+**The change.** The consumed set is now closed and explicit (`response.output_text.delta`/`.done`, `response.output_item.added`/`.done`, `response.completed`), terminal failures and refusals stay fatal, and every other event is ignored. Every consumed event keeps its existing strict validation, so only those branches can project text, tool calls or usage. A new test asserts an unknown event carrying content-shaped fields (`delta`, `text`, a `function_call` item, `response.usage`) contributes no text, no tool call and no usage, which is what preserves the fail-closed property that matters: content cannot be injected through an unhandled event. The now-unreachable `SSE_EVENT_UNSUPPORTED` label and the closed cause-hint list that existed only for it were removed.
+
+**Evidence on the real Desktop host.** Both builds were installed into separate disposable profiles under `/private/tmp` with a throwaway `DSH_HOME`, booted through the installed application's own ASAR resolver on the pinned Electron 44.0.0 / Node 24.18.1 host, and driven with synthetic credentials and in-memory SSE fixtures — no real model calls, and the owner's credential store untouched. The same harness produced opposite results:
+
+| Event injected mid-stream | Released v0.0.3 | This change |
+| --- | --- | --- |
+| `response.output_text.annotation.added` | failed the turn | `stop`, text delivered |
+| `response.web_search_call.in_progress` | failed the turn | `stop`, text delivered |
+| `response.code_interpreter_call.in_progress` | failed the turn | `stop`, text delivered |
+| `response.code_interpreter_call_code.delta` | failed the turn | `stop`, text delivered |
+| `response.metadata` (control) | `stop` | `stop` |
+| unknown event, fail-closed check | rejected | rejected |
+
+On the released build the failing cases reported `finish: error` while the text `"Hello"` had already been delivered, which is the reported symptom reproduced under test.
+
+**What remains unverified.** No raw live event name was captured for this report, so which specific event triggered it is not known; the change is deliberately independent of that, since no enumeration is needed. The live route's full event vocabulary is likewise unverified and is no longer claimed. The fix was confirmed against synthetic fixtures on the real host, not against a live subscription turn — the owner's real-account confirmation is the remaining step.
+
+On 2026-10-17, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 125 tests. `git diff --check` also passed.
+
+### Unprojected item notifications, first attempt (2026-10-17)
+
+Superseded by the entry above; recorded because its failure is the lesson.
+
+A turn failed with `PROTOCOL_INVALID [SSE_EVENT_UNSUPPORTED]` after the route had already streamed a complete answer. The two-name list was replaced with two reviewed groups, and synthetic fixtures confirmed that `response.output_text.annotation.added`, `response.web_search_call.in_progress` and `response.code_interpreter_call.in_progress` had each failed the turn while `response.queued` and `response.reasoning_summary_text.delta` were already accepted. `test/direct.test.mjs` asserted the accepted shapes yielded `stop` with the full text and that four unlisted shapes still failed with `SSE_EVENT_UNSUPPORTED`.
+
+That build was installed into the owner's Desktop profile and **the same error recurred on the next real turn**, because the group list still assumed the notification vocabulary could be enumerated. The reasoning-notification variants (`response.reasoning_summary.delta`, `response.reasoning_part.added`) were not in any group. On 2026-10-17 that attempt passed 124 tests and `git diff --check`; the passing suite is exactly why it is recorded here — the tests encoded the wrong contract and could not have caught it.
 
 ### Real-account diagnostics and campaign (2026-10-16)
 

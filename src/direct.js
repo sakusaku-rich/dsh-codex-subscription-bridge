@@ -13,16 +13,33 @@ import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, thr
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
 /**
- * Stream events that announce route state without carrying response content.
+ * Stream events the bridge consumes. Everything else in the stream is a
+ * notification: it may announce route state, progress, or parts of an item
+ * this bridge does not project, and it carries nothing the bridge renders.
  *
- * `response.metadata` was observed on the subscription route after a completed
- * text finish; the buffered text, tool calls and usage all reconciled normally,
- * so failing the turn on it discarded a usable answer. Each entry here is a
- * reviewed notification: it is ignored deliberately, and an event that is not
- * in this set still fails the turn.
+ * The subscription route is a live, evolving Responses surface, and the
+ * reference implementation bundled with the verified Harness
+ * (`@earendil-works/pi-ai`, `api/openai-responses-shared.js`) dispatches this
+ * same event set and has no catch-all that fails an unknown event: only
+ * `error` and `response.failed` are fatal there. An allowlist that aborts on
+ * anything unrecognized is therefore stricter than the host it feeds, and it
+ * fails turns whose text and tool calls had already reconciled — which is what
+ * discarded usable answers twice, first on `response.metadata` and then on the
+ * annotation and item-progress notifications.
+ *
+ * The fail-closed property is preserved where it matters: every event this
+ * bridge *does* consume is still validated strictly, and an unvalidated event
+ * can never inject text or tool calls, because only the handled branches below
+ * project content. What is dropped is the claim that the bridge can enumerate
+ * a live third-party stream's notification vocabulary.
  */
-const NOTIFICATIONS = new Set(['response.metadata', 'response.queued']);
-
+const CONSUMED_EVENTS = new Set([
+  'response.output_text.delta', 'response.output_text.done',
+  'response.output_item.added', 'response.output_item.done', 'response.completed',
+]);
+// Terminal failures and refusals are fatal: they mean the route reported that
+// it could not produce the answer, which must not be reported as success.
+const TERMINAL_FAILURES = new Set(['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done']);
 function headers(token) {
   return { Authorization: `Bearer ${token}`, ...accountHeaders(token),
     'User-Agent': `${name}/${version}`, originator: 'dsh-codex-subscription-bridge' };
@@ -289,6 +306,7 @@ export class DirectBridge {
       phase = 'SSE_FRAME';
       for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller))) {
         try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
+        if (!CONSUMED_EVENTS.has(event.type) && !TERMINAL_FAILURES.has(event.type)) continue;
         if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
           phase = event.type.endsWith('.delta') ? 'SSE_TEXT_DELTA' : 'SSE_TEXT_COMPLETION';
           const block = getBlock(event.item_id, event.content_index);
@@ -331,19 +349,11 @@ export class DirectBridge {
           // turn's answer, so it is logged rather than raised.
           if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
           yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
-        } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
-        // Notifications carry no response content, so an unrecognized one is
-        // ignored rather than failing a turn whose text and tool calls are
-        // already complete. Listed explicitly, so widening this set stays a
-        // deliberate change instead of an accident of the response shape.
-        else if (NOTIFICATIONS.has(event.type)) { /* no content to reconcile */ }
-        else if (!['response.created', 'response.in_progress', 'response.content_part.added', 'response.content_part.done',
-          'response.reasoning_summary_part.added', 'response.reasoning_summary_part.done', 'response.reasoning_summary_text.delta',
-          'response.reasoning_summary_text.done', 'response.reasoning_text.delta', 'response.reasoning_text.done',
-          'response.function_call_arguments.delta', 'response.function_call_arguments.done'].includes(event.type)) {
-          throw new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED',
-            { hint: 'The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.' });
-        }
+        } else if (TERMINAL_FAILURES.has(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
+        // Any other event is a notification the bridge does not project. It is
+        // ignored rather than failing a turn whose answer was already
+        // delivered; the consumed branches above remain the only paths that
+        // can produce text or tool calls.
       }
       if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
     } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }

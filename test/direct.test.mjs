@@ -398,13 +398,12 @@ test('diagnostics use fixed allowlisted labels and discard mutable upstream mess
   assert.equal(failure(new BridgeError('QUOTA', undefined, { resetMinutes: 90 })).message.endsWith('Try again in about 90 minutes.'), true);
   assert.equal(new BridgeError('QUOTA', undefined, { resetMinutes: 0 }).message, 'The ChatGPT plan usage limit was reached.');
   assert.equal(new BridgeError('QUOTA', undefined, { resetMinutes: 20000 }).message, 'The ChatGPT plan usage limit was reached.');
-  // A cause hint is a closed label this bridge owns; upstream text never rides along.
-  const hinted = new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED', { hint: 'synthetic_secret' });
-  assert.equal(hinted.message.includes('synthetic_secret'), false);
-  assert.equal(hinted.hint, undefined);
+  // The diagnostic label allowlist is closed: an upstream-authored name is dropped.
+  const unknownLabel = new BridgeError('PROTOCOL_INVALID', 'synthetic_secret');
+  assert.equal(unknownLabel.diagnostic, undefined);
+  assert.equal(unknownLabel.message.includes('synthetic_secret'), false);
   for (const [response, label] of [
     [new Response('data: {\n\n'), 'SSE_FRAME'],
-    [sse({ type: 'synthetic_secret' }), 'SSE_EVENT_UNSUPPORTED'],
     [sse({ ...delta, delta: null }), 'SSE_TEXT_DELTA'],
     [sse({ type: 'response.completed', response: { status: 'incomplete' } }), 'SSE_TERMINAL'],
     [sse(delta), 'SSE_INCOMPLETE'],
@@ -420,6 +419,16 @@ test('a content-free notification never discards a completed answer', async () =
     [delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, { type: 'response.metadata', metadata: { synthetic: true } }, completed],
     // A preceding notification must not disturb the buffered answer either.
     [{ type: 'response.metadata' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    // Progress notifications for item families this bridge does not project,
+    // including a nested member and an annotation on the projected text block.
+    [{ type: 'response.web_search_call.in_progress', item_id: 'ws-1' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    [{ type: 'response.code_interpreter_call_code.delta', item_id: 'ci-1', delta: 'synthetic' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    [{ type: 'response.output_text.annotation.added', item_id: 'message-1', content_index: 0, annotation: { type: 'url_citation' } }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    [{ type: 'response.image_generation_call.generating', item_id: 'ig-1' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    // Reasoning notification variants the reference implementation tolerates but
+    // an enumerated allowlist missed, which failed a live turn after delivery.
+    [{ type: 'response.reasoning_summary.delta', item_id: 'r-1', delta: 'synthetic' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    [{ type: 'response.reasoning_part.added', item_id: 'r-1' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
   ]) {
     const bridge = new DirectBridge({ token: async () => jwt() },
       new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(...events)));
@@ -428,10 +437,29 @@ test('a content-free notification never discards a completed answer', async () =
     assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello');
     await bridge.close();
   }
-  // An unlisted event still fails the turn, and names the kind of cause to suspect.
+  // An unrecognized notification is ignored, not fatal: the bridge cannot
+  // enumerate a live third-party stream's notification vocabulary, and the
+  // reference implementation fails only on terminal errors.
+  for (const type of ['response.synthetic_unknown', 'response.web_search_call.synthetic_suffix', 'response.web_search_call', 'response.output_text.annotation.synthetic']) {
+    const bridge = new DirectBridge({ token: async () => jwt() },
+      new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, { type }, completed)));
+    const chunks = await collect(bridge.stream(input()));
+    assert.equal(chunks.at(-1).reason.kind, 'stop');
+    assert.equal(chunks.find(chunk => chunk.type === 'text-delta').text, 'Hello');
+    await bridge.close();
+  }
+});
+test('an unrecognized notification cannot inject text, tools or usage', async () => {
+  // The consumed branches are the only paths that project content, so an
+  // unknown event carrying content-shaped fields contributes nothing.
   const bridge = new DirectBridge({ token: async () => jwt() },
-    new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, { type: 'response.synthetic_unknown' }, completed)));
-  await assert.rejects(collect(bridge.stream(input())), error => error.code === 'PROTOCOL_INVALID' && error.diagnostic === 'SSE_EVENT_UNSUPPORTED'
-    && error.message.endsWith('The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.'));
+    new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(
+      { type: 'response.synthetic_unknown', delta: 'injected', text: 'injected', item: { type: 'function_call', call_id: 'c-1', name: 'shell', arguments: '{}' }, response: { usage: { input_tokens: 9, output_tokens: 9 } } },
+      delta, completed)));
+  const chunks = await collect(bridge.stream(input()));
+  assert.equal(chunks.find(chunk => chunk.type === 'text-delta').text, 'Hello');
+  assert.equal(chunks.some(chunk => chunk.type === 'tool-call-delta'), false);
+  assert.equal(chunks.some(chunk => chunk.type === 'usage'), false);
+  assert.equal(chunks.at(-1).reason.kind, 'stop');
   await bridge.close();
 });
