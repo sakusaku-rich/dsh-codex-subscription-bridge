@@ -13,15 +13,51 @@ import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, thr
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
 /**
- * Stream events that announce route state without carrying response content.
+ * Stream events that announce route or item progress without carrying response
+ * content this bridge projects.
  *
- * `response.metadata` was observed on the subscription route after a completed
- * text finish; the buffered text, tool calls and usage all reconciled normally,
- * so failing the turn on it discarded a usable answer. Each entry here is a
- * reviewed notification: it is ignored deliberately, and an event that is not
- * in this set still fails the turn.
+ * `response.metadata` and `response.queued` were observed on the subscription
+ * route, and the buffered text, tool calls and usage all reconciled normally,
+ * so failing the turn on them discarded a usable answer. The same holds for the
+ * progress notifications of server-side item families the bridge deliberately
+ * does not project (search, code interpreter, image generation, MCP, file
+ * search, computer use, local shell, custom tool): their `.in_progress`,
+ * `.searching`, `.completed`, `.delta` and part events describe an item this
+ * bridge never renders, so no content can be lost by ignoring them.
+ *
+ * This stays a closed, reviewed set rather than a prefix match on every
+ * unknown `response.*` name: an event that could carry projected text or tool
+ * calls must keep failing the turn, and adding a new family here stays a
+ * deliberate change.
  */
 const NOTIFICATIONS = new Set(['response.metadata', 'response.queued']);
+// Item families the bridge never projects. Their progress and part events are
+// contentless for this adapter even though the family itself is content-bearing
+// upstream, so only their non-content notification suffixes are admitted.
+const UNPROJECTED_ITEM_FAMILIES = [
+  'response.web_search_call', 'response.file_search_call', 'response.code_interpreter_call',
+  'response.image_generation_call', 'response.mcp_call', 'response.mcp_list_tools',
+  'response.local_shell_call', 'response.computer_call', 'response.custom_tool_call',
+];
+// Suffixes that only announce progress or parts for such a family. A suffix
+// outside this set (for example a bare completed item) is not admitted here,
+// because the item itself is validated by the output-item path. The suffix is
+// matched against the event's own tail, so nested members such as
+// `response.code_interpreter_call_code.delta` are admitted by the same rule.
+const UNPROJECTED_ITEM_SUFFIXES = [
+  '.in_progress', '.searching', '.interpreting', '.generating', '.completed',
+  '.delta', '.added', '.done', '.failed',
+];
+const isUnprojectedItemNotification = (type) => UNPROJECTED_ITEM_FAMILIES.some(family =>
+  (type.startsWith(`${family}.`) || type.startsWith(`${family}_`)) &&
+  UNPROJECTED_ITEM_SUFFIXES.some(suffix => type.endsWith(suffix)));
+/**
+ * Annotation notifications describe citations attached to a text block the
+ * bridge already projects. The annotation payload is not part of the projected
+ * text, so the event is ignored rather than reconciled; the block itself stays
+ * validated by the text-delta and output-item paths.
+ */
+const ANNOTATION_NOTIFICATIONS = new Set(['response.output_text.annotation.added', 'response.output_text.annotation.done']);
 
 function headers(token) {
   return { Authorization: `Bearer ${token}`, ...accountHeaders(token),
@@ -336,7 +372,7 @@ export class DirectBridge {
         // ignored rather than failing a turn whose text and tool calls are
         // already complete. Listed explicitly, so widening this set stays a
         // deliberate change instead of an accident of the response shape.
-        else if (NOTIFICATIONS.has(event.type)) { /* no content to reconcile */ }
+        else if (NOTIFICATIONS.has(event.type) || ANNOTATION_NOTIFICATIONS.has(event.type) || isUnprojectedItemNotification(event.type)) { /* no content to reconcile */ }
         else if (!['response.created', 'response.in_progress', 'response.content_part.added', 'response.content_part.done',
           'response.reasoning_summary_part.added', 'response.reasoning_summary_part.done', 'response.reasoning_summary_text.delta',
           'response.reasoning_summary_text.done', 'response.reasoning_text.delta', 'response.reasoning_text.done',

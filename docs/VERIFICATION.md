@@ -105,6 +105,18 @@ A newly created Desktop session failed with `SSE_EVENT_UNSUPPORTED` after the su
 
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 113 tests. `git diff --check` also passed.
 
+### Unprojected item notifications (2026-10-17)
+
+The gap left open by the entry above was reported against Codex models: a turn failed with `PROTOCOL_INVALID [SSE_EVENT_UNSUPPORTED]` after the route had already streamed a complete answer. The recorded hint — "the response content is unaffected" — is what the user saw, and it was accurate: the failure discarded usable content rather than detecting corruption.
+
+The two-entry list was the cause. The subscription route also emits progress and part notifications for server-side item families this bridge deliberately does not project, and any of them aborted a turn whose text and tool calls had already reconciled. The affected shapes were reproduced against the adapter with synthetic SSE fixtures before the change: `response.output_text.annotation.added`, `response.web_search_call.in_progress` and `response.code_interpreter_call.in_progress` each failed the turn, while `response.queued` and `response.reasoning_summary_text.delta` were already accepted.
+
+Two reviewed groups now replace the closed two-name list: the route-state names, and the progress/part notifications of unprojected families (web search, file search, code interpreter, image generation, MCP, local shell, computer use, custom tool), matched on the family prefix plus a bounded notification suffix so nested members such as `response.code_interpreter_call_code.delta` are covered, together with the annotation notifications that attach to an already-projected text block. `test/direct.test.mjs` asserts each accepted shape still yields the `stop` finish with the full text, and that `response.synthetic_unknown`, `response.web_search_call.synthetic_suffix`, a bare `response.web_search_call` and `response.output_text.annotation.synthetic` still fail with `SSE_EVENT_UNSUPPORTED`, so the fail-closed property is narrowed deliberately rather than dropped.
+
+What remains unverified: the complete set of notifications the live route can send. No raw live event name was captured for this report, so the accepted groups were derived from the Responses event vocabulary and the families this adapter does not project, not from a recorded stream. A future event outside both groups still fails the turn, which is the intended diagnostic behavior, and the fixed hint is what identifies it.
+
+On 2026-10-17, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 124 tests. `git diff --check` also passed.
+
 ### Real-account diagnostics and campaign (2026-10-16)
 
 The owner confirmed dedicated device login and model selection. Two separately authorized short diagnostic requests confirmed an authenticated catalog including `gpt-6.1-sol` and an HTTP 200 response with a 6992-byte SSE-framed body under a non-SSE MIME header. No credentials, account IDs, prompt text or response text were printed or saved. The exact media type was not retained.

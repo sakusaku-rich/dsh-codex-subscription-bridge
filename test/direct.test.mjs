@@ -420,6 +420,12 @@ test('a content-free notification never discards a completed answer', async () =
     [delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, { type: 'response.metadata', metadata: { synthetic: true } }, completed],
     // A preceding notification must not disturb the buffered answer either.
     [{ type: 'response.metadata' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    // Progress notifications for item families this bridge does not project,
+    // including a nested member and an annotation on the projected text block.
+    [{ type: 'response.web_search_call.in_progress', item_id: 'ws-1' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    [{ type: 'response.code_interpreter_call_code.delta', item_id: 'ci-1', delta: 'synthetic' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    [{ type: 'response.output_text.annotation.added', item_id: 'message-1', content_index: 0, annotation: { type: 'url_citation' } }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+    [{ type: 'response.image_generation_call.generating', item_id: 'ig-1' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
   ]) {
     const bridge = new DirectBridge({ token: async () => jwt() },
       new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(...events)));
@@ -429,9 +435,11 @@ test('a content-free notification never discards a completed answer', async () =
     await bridge.close();
   }
   // An unlisted event still fails the turn, and names the kind of cause to suspect.
-  const bridge = new DirectBridge({ token: async () => jwt() },
-    new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, { type: 'response.synthetic_unknown' }, completed)));
-  await assert.rejects(collect(bridge.stream(input())), error => error.code === 'PROTOCOL_INVALID' && error.diagnostic === 'SSE_EVENT_UNSUPPORTED'
-    && error.message.endsWith('The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.'));
-  await bridge.close();
+  for (const type of ['response.synthetic_unknown', 'response.web_search_call.synthetic_suffix', 'response.web_search_call', 'response.output_text.annotation.synthetic']) {
+    const bridge = new DirectBridge({ token: async () => jwt() },
+      new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, { type }, completed)));
+    await assert.rejects(collect(bridge.stream(input())), error => error.code === 'PROTOCOL_INVALID' && error.diagnostic === 'SSE_EVENT_UNSUPPORTED'
+      && error.message.endsWith('The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.'));
+    await bridge.close();
+  }
 });
