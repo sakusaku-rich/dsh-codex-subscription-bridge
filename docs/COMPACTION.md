@@ -176,7 +176,7 @@ included in the normal tarball composition checks.
 
 Automated tests make no real authentication or subscription calls. A manually
 driven Desktop session confirmed real checkpoint issuance and reuse on a
-dedicated login; checkpoint expiry, model switches, cancellation during
+dedicated login; checkpoint expiry, cancellation during
 compaction, backend rejection shapes, supported models, latency, quota impact and
 long-run interaction with normal host thresholds remain unverified. The opt-in
 backend is checked at the module boundary against the pinned

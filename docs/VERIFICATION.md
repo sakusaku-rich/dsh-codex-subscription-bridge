@@ -73,6 +73,14 @@ The count in the second run is an artifact of the test threshold: at ratio 0.002
 
 On 2026-10-16, `npm run verify` passed on macOS with Node 22.23.3: syntax checks and all 120 tests. `git diff --check` also passed.
 
+## Model switching on a live checkpoint (2026-10-17)
+
+The reuse binding was exercised across a real model switch. A session under the enabled preset read a 100 KB high-entropy sample, which pushed one request to 33,546 input tokens and made the route issue a compaction item on that same turn (checkpoint scope digest `4ae740a4…`, two items). The next two turns cost 6,772 and 6,788 input tokens, so that checkpoint was replacing its covered prefix.
+
+The model was then switched from `gpt-5.6-terra` to `gpt-6-luna`. The next request cost 33,685 input tokens — the full local history — and the turn **succeeded**, and that same turn published a new checkpoint whose scope digest differs (`e742d569…`). The following turn cost 7,006 tokens, so reuse resumed under the new model. The two scope digests are the model binding that `compactionScope(account, model, tools, developer messages)` computes, observed on the wire: a switched model refuses the older window and re-issues one that matches.
+
+An earlier attempt with a 190 KB sample of repetitive prose reached only 14,157 input tokens — about 11 bytes per token, so the artificial text never crossed the server's 32,768-token threshold — and therefore exercised nothing; the switch itself still worked. The high-entropy sample exists only to reach that threshold, and a real long conversation reaches it the same way.
+
 ## Covered controls
 
 - Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release, including retry when a losing acquirer releases the lock after EEXIST but before its metadata check.
