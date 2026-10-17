@@ -52,7 +52,12 @@ function responseUsage(value, diagnostic) {
   if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || !Number.isSafeInteger(outputTokens) || outputTokens < 0) throw new BridgeError('PROTOCOL_INVALID', diagnostic);
   const usage = { inputTokens, outputTokens };
   const cached = wire.input_tokens_details?.cached_tokens;
-  if (cached !== undefined) { if (!Number.isSafeInteger(cached) || cached < 0) throw new BridgeError('PROTOCOL_INVALID', diagnostic); usage.cacheReadTokens = cached; }
+  if (cached !== undefined) {
+    if (!Number.isSafeInteger(cached) || cached < 0 || cached > inputTokens) throw new BridgeError('PROTOCOL_INVALID', diagnostic);
+    // Responses input includes cache hits; Harness expects disjoint input buckets.
+    usage.inputTokens = inputTokens - cached;
+    usage.cacheReadTokens = cached;
+  }
   const reasoning = wire.output_tokens_details?.reasoning_tokens;
   if (reasoning !== undefined) { if (!Number.isSafeInteger(reasoning) || reasoning < 0) throw new BridgeError('PROTOCOL_INVALID', diagnostic); usage.reasoningTokens = reasoning; }
   const total = wire.total_tokens;
