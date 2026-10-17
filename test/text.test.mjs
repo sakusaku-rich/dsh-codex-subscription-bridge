@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateInput, PROVIDER, TEXT_LIMIT, MESSAGE_LIMIT, TOOL_PARAMETERS_LIMIT, TOOLS_BYTES_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, IMAGE_MEDIA_TYPES } from '../src/text.js';
+import { validateInput, PROVIDER, TEXT_LIMIT, MESSAGE_LIMIT, TOOL_PARAMETERS_LIMIT, TOOLS_BYTES_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, IMAGE_MEDIA_TYPES, reasoningLevels, REASONING_LEVEL_LIMIT } from '../src/text.js';
 import { REQUEST_IMAGE_ATTACHMENT_MAX_BYTES } from '../src/image.js';
 const input = (overrides = {}) => ({ provider: PROVIDER, messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic prompt' }] }], ...overrides });
 const image = (overrides = {}) => ({ type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 1024, height: 768 }, ...overrides });
@@ -38,7 +38,7 @@ test('images become wire placeholders with per-attachment request targets', () =
 
 test('unsupported inputs and text bounds are refused before transport', () => {
   for (const overrides of [
-    { tools: {} }, { reasoningEffort: 'medium' },
+    { tools: {} }, { reasoningEffort: 'Medium' }, { reasoningEffort: '' }, { reasoningEffort: 4 },
     { messages: [] }, { messages: Array(MESSAGE_LIMIT + 1).fill(input().messages[0]) },
     { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Last assistant' }] }] },
     { messages: [{ role: 'user', content: Array(65).fill({ type: 'text', text: '' }) }] },
@@ -120,4 +120,23 @@ test('image blocks are validated conservatively', () => {
   }
   assert.throws(() => validateInput(input({ messages: [{ role: 'assistant', content: [image()] }] })), { code: 'UNSUPPORTED_CONTENT', diagnostic: 'IMAGE_PREPARE' });
   assert.throws(() => validateInput(input({ messages: [{ role: 'user', content: [{ type: 'file' }] }] })), { code: 'UNSUPPORTED_CONTENT' });
+});
+
+test('disclosed reasoning levels are projected in order and malformed disclosure is omitted', () => {
+  assert.deepEqual(reasoningLevels([
+    { effort: 'low', description: 'Fast responses with lighter reasoning' },
+    { effort: 'medium' },
+    { effort: 'xhigh' },
+  ]), [
+    { id: 'low', name: 'Low', description: 'Fast responses with lighter reasoning' },
+    { id: 'medium', name: 'Medium' },
+    { id: 'xhigh', name: 'Extra high' },
+  ]);
+  assert.equal(reasoningLevels(undefined), undefined);
+  // An oversized note is dropped without discarding the level itself.
+  assert.deepEqual(reasoningLevels([{ effort: 'low', description: 'x'.repeat(513) }]), [{ id: 'low', name: 'Low' }]);
+  for (const value of [null, [], 'low', [{ effort: 'Low' }], [{ effort: 'low' }, { effort: 'low' }], [{}], [null],
+    Array(REASONING_LEVEL_LIMIT + 1).fill({ effort: 'low' })]) {
+    assert.equal(reasoningLevels(value), undefined, JSON.stringify(value));
+  }
 });

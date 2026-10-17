@@ -2,7 +2,7 @@
 
 ## Scope
 
-macOS Desktop 0.2.0-rc.2, build `5e9e301dd9dc8923b2762f76dacfc5751f6ca851`, uses Electron 44.0.0 / Node 24.18.1 for plugins, not the separate tools Node. The exact pair is admitted after synthetic store/refresh/cancellation/streaming, packaged CLI/SDK, and installed Desktop runtime/profile verification. Full GUI and real subscription behavior still require manual verification. Other Desktop versions and Intel macOS are not claimed as verified.
+macOS Desktop 0.2.0-rc.2, build `5e9e301dd9dc8923b2762f76dacfc5751f6ca851`, uses Electron 44.0.0 / Node 24.18.1 for plugins, not the separate tools Node. The exact pair is admitted after synthetic store/refresh/cancellation/streaming, packaged CLI/SDK, and installed Desktop runtime/profile verification. Full GUI and real subscription behavior still require manual verification. Other Desktop versions and Intel macOS are not claimed as verified, and a different Desktop version requires fresh compatibility verification: do not bypass the host guard or edit a Desktop-bundled runtime.
 
 The host bundles Undici 7.29.0. Plugin HTTP instead uses bundled Undici 7.29.1 and an owned Agent; host global fetch and dispatcher are not used. This addresses the plugin's dependency baseline without changing Desktop. It does not fix or establish security of other Electron, Chromium, or Harness features. [Upstream Undici advisory](https://github.com/nodejs/undici/security/advisories/GHSA-rfgv-xxqx-mfg5). [Electron 44.0.0 release](https://releases.electronjs.org/release/v44.0.0).
 
@@ -13,7 +13,7 @@ Two preparation paths produce the same Desktop profile: a one-command install fr
 From a published release, download and read `install.sh`, then select the Desktop surface:
 
 ```sh
-sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/desktop-profile" --surface desktop
+sh install.sh --tag v0.0.3 --directory "$PWD/artifacts/desktop-profile" --surface desktop
 ```
 
 From a reviewed checkout, with the standalone Node 22.23.3 used for preparation:
@@ -38,7 +38,7 @@ The helper is not replaced, because the application already provides everything 
 1. Quit every existing DeepSeek Harness Desktop instance normally. The app uses a single-instance lock; otherwise the new invocation may focus the old window.
 2. Start `sh artifacts/desktop-verification/desktop.sh` from Terminal, keeping it open. This launcher is only for selecting the dedicated verification profile.
 3. Open **Settings → ChatGPT subscription**. Click **Log in**, click the displayed one-time sign-in code to copy it, and paste it on the linked OpenAI page. The panel updates after approval; no authentication script is needed for this flow.
-4. Select `Codex (ChatGPT subscription)` and an advertised model. Send a short prompt, then ask a follow-up. Tool passthrough and image input are implemented but unverified against the real backend, so record separately whether tool calls and images work. Cancel another turn and verify a later request still works. These requests consume allowance and can refresh this login.
+4. Select `Codex (ChatGPT subscription)` and an advertised model. Send a short prompt, then ask a follow-up. Tool passthrough has since been exercised on this runtime (hundreds of forwarded calls across the plugin's own sessions); image input is implemented but unverified against the real backend, so record separately whether images work. Cancel another turn and verify a later request still works. These requests consume allowance and can refresh this login.
 5. Record the reviewed commit, model and pass/fail result. Share only fixed error labels; never share codes, auth files, bootstrap URLs or raw logs/bodies.
 6. Use **Log out** in the same settings section to remove the local login when finished. Quit Desktop before filesystem recovery/removal.
 
@@ -58,4 +58,4 @@ DSH_DESKTOP_EXECUTABLE="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSe
 
 This checks the runtime pair, root suite, packaged CLI/SDK synthetic conversation, and a disposable profile against installed Desktop's ASAR runtime resolver. The CI alternative pins Electron 44.0.0 under `verification/desktop`, explicitly runs its checksum-verifying binary downloader, and runs the same host checks. The actual installed-ASAR lane is local only; CI does not have Harness Desktop.
 
-For updates, use a new reviewed checkout/artifact and a new directory. After a Desktop update the exact host guard may refuse startup; revalidate instead of bypassing it. Stop the profile, log out with its helper, and remove only its reviewed dedicated directory when finished. See [troubleshooting](TROUBLESHOOTING.md).
+For updates, use a new reviewed checkout/artifact and a new directory. After a Desktop update the exact host guard may refuse startup; revalidate instead of bypassing it. Stop the profile, log out in the settings panel (this surface has no helper), and remove only its reviewed dedicated directory when finished. See [troubleshooting](TROUBLESHOOTING.md).

@@ -15,15 +15,15 @@ A minimal DeepSeek Harness provider that connects directly to the Codex subscrip
 
 Download the installer, then run it. Nothing is executed before the checksum matches, and no download is piped into a shell: the file is written to disk first, so you can read it before it runs.
 
-Both examples below name the same tag on purpose. Downloading `install.sh` from `releases/latest` would pair a newer installer with an older `--tag`, so pin both together and replace `v0.0.2` with the release you reviewed.
+Both examples below name the same tag on purpose. Downloading `install.sh` from `releases/latest` would pair a newer installer with an older `--tag`, so pin both together and replace `v0.0.3` with the release you reviewed.
 
 ### Into the Desktop profile you already use
 
 This adds the bridge to your Desktop profile and keeps the settings, credentials and other plugins already there. Restart the application afterwards.
 
 ```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
-sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.3/install.sh
+sh install.sh --tag v0.0.3 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
 ```
 
 It modifies a profile you are using, so it backs up `package.json` and the lockfile first, uses the pnpm bundled with Desktop, leaves `cordis.patch.yml` untouched, and restores the backup if the install fails. To undo it, copy those files back over the profile and re-run the same pnpm install. See [the installation guide](docs/INSTALL.md#into-an-existing-desktop-profile).
@@ -33,9 +33,9 @@ It modifies a profile you are using, so it backs up `package.json` and the lockf
 Use this instead when you want the bridge kept apart from your normal profile. Nothing outside the new directory is touched, and the destination's parent must already exist.
 
 ```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.3/install.sh
 mkdir -p artifacts
-sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
+sh install.sh --tag v0.0.3 --directory "$PWD/artifacts/subscription-web"
 sh artifacts/subscription-web/start.sh
 ```
 
@@ -49,7 +49,7 @@ In Harness, open **Settings → ChatGPT subscription**, click **Log in**, and ap
 
 ## Harness configuration
 
-Use the bundle only in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md); the Desktop host loads it in [its separate verification profile](docs/DESKTOP_VERIFICATION.md). The adapter has no configuration keys:
+Use the bundle in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md), or in an existing Desktop profile through that guide's `--profile` path; the Desktop host also loads it in [its separate verification profile](docs/DESKTOP_VERIFICATION.md). The adapter has no configuration keys:
 
 ```yaml
 - id: llm-codex-subscription
@@ -58,10 +58,29 @@ Use the bundle only in a dedicated isolated profile prepared by [the installatio
 
 Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or `.env` credential locations are accepted. Models are fetched live from your visible subscription catalog; seeing a model listed does not establish entitlement to a successful request.
 
+## Compaction
+
+Harness condenses history locally, and the bridge also asks the subscription route to condense server-side, replaying the encrypted window it returns on later turns. A turn whose response published a window is marked "Server-side compaction" in that turn's work details, with the model and the window's item count. This is confirmed on a real account, including a model switch that refused the older window, resent the bounded history and issued a new one. [Compaction design, research and limits](docs/COMPACTION.md) records what a window covers, which refusals count as contradictions, and the wire bounds that force a new conversation.
+
+To let Codex own condensation for this provider's routes instead, enable the agent preset this package ships. It is inserted disabled, so installing the package changes nothing until you add this to the profile's `cordis.patch.yml` and restart Harness:
+
+```yaml
+- id: preset-codex-subscription
+  disabled: false
+```
+
+Then optionally set "Codex subscription" as the new-task default in **Settings → Agent presets**.
+
+Before enabling it, know that:
+
+- Only this provider's routes change. Every other provider, and every other preset, keeps the stock engine.
+- The preset subclasses a host-internal class and mirrors the pinned Harness composition, so a Harness upgrade can stop that one preset from composing, or leave the mirror stale. The dangerous case is a reshaped `compaction` group, which silently restores double summarization. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records those failure modes, the checks to run after restarting, and how a source checkout detects drift.
+- Delete that line when you remove the package, as [the installation guide](docs/INSTALL.md#remove-this-dedicated-installation) explains.
+
 ## What the provider sends and enforces
 
-- Only bounded text history is sent, with `store: false`; no conversation IDs are resumed or chained. Reasoning effort maps to `low` or `high`.
-- Harness tool definitions are validated and forwarded as strict function tools, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
+- Requests are sent with `store: false`, and no server conversation IDs are resumed or chained. Each model advertises the reasoning levels the backend discloses for it (for example `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) together with any disclosed default, so Harness offers the effort selector; the chosen id is forwarded verbatim.
+- Harness tool definitions are validated and forwarded, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
 - User message images are sent as `input_image` data URLs. Oversized requests fail with `IMAGE_OFFLOAD_REQUIRED` so the Harness host can offload its oldest images and retry, and image blocks in other roles are rejected.
 - `temperature` (finite, 0–2) is validated and forwarded; `maxTokens` (safe integer, 1–1,000,000) is accepted as an advisory budget but deliberately not forwarded; `stop` sequences are rejected with a fixed `UNSUPPORTED_OPTION` error.
 - HTTP 429 responses are classified by the backend: a recognized plan usage limit becomes terminal `QUOTA`, optionally with a "Try again in about N minutes." hint, while any other 429 stays transient `RATE_LIMIT`.
@@ -69,7 +88,7 @@ Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or 
 
 ## Status
 
-This is an experimental prototype. Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition. Real-account evidence is limited; [the verification record](docs/VERIFICATION.md#real-account-evidence-and-limits) records exactly what is confirmed and what remains unverified. Do not treat this prototype as a completed security audit.
+This is an experimental prototype. Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition. Real-account evidence covers sign-in, multi-turn generation, more than nine hundred forwarded tool calls, the disclosed reasoning levels, and server-side compaction issuance, reuse and model-switch handling; [the verification record](docs/VERIFICATION.md#real-account-evidence-and-limits) records exactly what is confirmed and what remains unverified. Do not treat this prototype as a completed security audit.
 
 ## Development
 
@@ -85,6 +104,7 @@ A real-account check is separate and requires authorization. The prepared `scrip
 - [Installation guide](docs/INSTALL.md) — the release and source install paths, updates, removal, and the support matrix.
 - [Desktop verification](docs/DESKTOP_VERIFICATION.md) — the separate Desktop host profile and its launcher.
 - [Direct connection architecture](docs/ARCHITECTURE.md) — behavior guarantees and limits.
+- [Compaction design and limits](docs/COMPACTION.md) — server-side windows, refusals, and the local fallback.
 - [Authentication panel design](docs/UI_DESIGN.md) — the sign-in panel's visual and interaction policy.
 - [Security requirements](SECURITY.md) — controls, problem reporting, and supported versions.
 - [Verification record](docs/VERIFICATION.md) — what was verified, the reproducible checks, and CI.
@@ -94,8 +114,6 @@ A real-account check is separate and requires authorization. The prepared `scrip
 ## Contributing
 
 Pull requests are always welcome, including bug fixes, tests, documentation, and security improvements. Report problems, including vulnerabilities, as GitHub Issues; see [the security requirements](SECURITY.md). Keep changes focused, use English for repository content, and include relevant verification results. Please read [AGENTS.md](AGENTS.md) and [the security requirements](SECURITY.md) before contributing.
-
-Never include credentials, device codes, authentication files, or raw authenticated responses in issues or pull requests.
 
 ## License
 

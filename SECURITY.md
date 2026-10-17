@@ -20,9 +20,14 @@ The plugin, Harness, Node runtime, OS, and processes running as the same OS user
 - Reread authentication on metadata cache hits and before model dispatch.
 - Bound requests, input/output, frames, queues, and waiting periods.
 - Cancel network readers on abort, timeout, shutdown and generator retirement.
-- Send only validated text, tool definitions, executed tool-call history, user image data URLs, and validated `temperature`; never execute tools in the bridge; use no resumed server IDs and `store: false`.
-- Reject malformed, non-function execution items, failed, or incomplete streams.
+- Send only the selected model id, separated developer instructions, validated text, tool definitions, executed tool-call history, user image data URLs, validated `temperature`, the reasoning effort the model disclosed, and bounded opaque compaction windows; never execute tools in the bridge; use no resumed server IDs and `store: false`.
+- Reject malformed, non-function execution items, failed, or incomplete streams. Ignore only the reviewed, content-free notification events listed in the adapter, and never echo an unrecognized upstream event type: the fixed error that reports one carries no field value or type name from the response.
+- Treat replay metadata as optional: a compaction window that cannot be proven is withheld and logged instead of failing a turn whose answer was already delivered, and a refusal label comes only from the bridge-owned vocabulary. Reuse still requires every binding check, so an unproven window trims nothing.
 - Classify HTTP 429 bodies within a bounded read: a recognized plan usage limit becomes terminal `QUOTA` whose only upstream-derived part is a reset hint computed from a validated integer (at most one week); upstream text, `plan_type`, and unrecognized bodies never reach error messages, which fall back to fixed `QUOTA`/`RATE_LIMIT` wording.
+
+Compaction checkpoints are conversation state, not OAuth credentials. They persist only in Harness assistant replay metadata and inherit the host session storage/export access boundary. Treat them as sensitive opaque content and keep them out of diagnostics: only a refusal label from the fixed bridge-owned vocabulary may reach the host log, never opaque content, prefixes or hashes. Integrity hashes detect inconsistency, not tampering by trusted local code, and disabling host summarization or weakening wire limits is not an acceptable way to recover an invalid checkpoint. [The compaction contract](docs/COMPACTION.md) records binding, expiration and schema rules.
+
+The opt-in compaction backend replaces a stock host plugin, so it couples to a host-internal class and a Harness upgrade can break that preset alone. It ships as a preset row inserted disabled and enabled by an operator through a single id-keyed profile-patch entry (the Plugins page lists the row but refuses to address it), so the default installation never selects it; it delegates every other provider to the stock implementation and neither reads nor changes credentials. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records the procedure and the failure modes.
 
 ## Verification boundary
 
@@ -32,7 +37,7 @@ Real-account evidence and its limits are recorded in [verification](docs/VERIFIC
 
 ## Reporting a problem
 
-Report every problem, including vulnerabilities, as a GitHub Issue in this repository. Issues are the single reporting channel for this project; no private vulnerability reporting address or email exists.
+Report every problem, including vulnerabilities, as a GitHub Issue in this repository. Issues are the reporting channel for this project, which publishes no private-reporting address or security email of its own.
 
 Never include credentials, device codes, authentication files, or raw authenticated responses in issues or pull requests. Share only sanitized reproduction steps, fixed diagnostic labels, and runtime/version information.
 
@@ -44,11 +49,11 @@ Pull requests that fix a reported problem directly are welcome. Reports are conf
 
 | Version | Supported |
 | --- | --- |
-| `0.0.x` prototype on `main` | yes |
-| Older releases | none exist |
+| `0.0.x` prototype on `main`, including the current release `v0.0.3` | yes |
+| `v0.0.1`, `v0.0.2` | no — install the current release |
 
 ## Scope
 
-In scope: this repository's plugin source, authentication CLI, bundled client, and the dedicated credential store under `~/.dsh-codex-subscription-bridge`.
+In scope: this repository's plugin source, authentication CLI, bundled client, the installer scripts (`install.sh` and `scripts/`), and the dedicated credential store — `$HOME/.dsh-codex-subscription-bridge` for a standalone CLI or Web profile, `$DSH_HOME/.dsh-codex-subscription-bridge` for a Desktop profile.
 
 Out of scope: DeepSeek Harness itself, the OpenAI/ChatGPT/Codex services and their infrastructure, the bundled dependency versions as shipped by their own projects, and any host outside the documented installation surfaces. Report problems in those systems to the corresponding projects.

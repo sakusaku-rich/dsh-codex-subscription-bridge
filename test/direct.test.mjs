@@ -91,16 +91,21 @@ test('catalog projects the disclosed context window and rejects malformed window
 });
 test('stream forwards tools and reasoning effort, stays unpersisted, and normalizes deltas', async () => {
   const calls = []; const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
-    calls.push({ url, options }); return url.includes('/models?') ? json({ models: [model] }) : sse(delta, { ...delta, type: 'response.output_text.done', text: 'Hello!' }, completed);
+    calls.push({ url, options }); return url.includes('/models?')
+      ? json({ models: [{ ...model, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }] }] })
+      : sse(delta, { ...delta, type: 'response.output_text.done', text: 'Hello!' }, completed);
   }));
-  const chunks = await collect(bridge.stream(input({ tools: [{ name: 'shell', description: 'Run shell', parameters: { type: 'object' }, deferLoading: true }], reasoningEffort: 'max' })));
+  const chunks = await collect(bridge.stream(input({ tools: [{ name: 'shell', description: 'Run shell', parameters: { type: 'object' }, deferLoading: true }], reasoningEffort: 'medium' })));
   assert.equal(chunks.at(-1).reason.kind, 'stop'); assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello!');
   const body = JSON.parse(calls.at(-1).options.body); assert.equal(body.store, false); assert.equal(body.stream, true);
   assert.deepEqual(body.tools, [{ type: 'function', name: 'shell', description: 'Run shell', strict: false, parameters: { type: 'object' } }]);
-  assert.deepEqual(body.reasoning, { effort: 'high' });
+  // The disclosed id travels verbatim; the backend, not this bridge, owns the scale.
+  assert.deepEqual(body.reasoning, { effort: 'medium' });
   await assert.rejects(collect(bridge.stream(input({ reasoningEffort: 'bogus' }))), { code: 'INPUT_UNSUPPORTED' });
   assert.equal((await bridge.listModels()).find(entry => entry.id === 'test-model').inputModalities.join(','), 'text,image');
   assert.equal(calls.at(-1).options.headers['ChatGPT-Account-ID'], 'synthetic-account');
+  await collect(bridge.stream(input({ reasoningEffort: 'low' })));
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body).reasoning, { effort: 'low' });
   await bridge.close();
 });
 test('native tool calls stream as blocks, pair with history outputs, and replay idempotently', async () => {
@@ -393,6 +398,10 @@ test('diagnostics use fixed allowlisted labels and discard mutable upstream mess
   assert.equal(failure(new BridgeError('QUOTA', undefined, { resetMinutes: 90 })).message.endsWith('Try again in about 90 minutes.'), true);
   assert.equal(new BridgeError('QUOTA', undefined, { resetMinutes: 0 }).message, 'The ChatGPT plan usage limit was reached.');
   assert.equal(new BridgeError('QUOTA', undefined, { resetMinutes: 20000 }).message, 'The ChatGPT plan usage limit was reached.');
+  // A cause hint is a closed label this bridge owns; upstream text never rides along.
+  const hinted = new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED', { hint: 'synthetic_secret' });
+  assert.equal(hinted.message.includes('synthetic_secret'), false);
+  assert.equal(hinted.hint, undefined);
   for (const [response, label] of [
     [new Response('data: {\n\n'), 'SSE_FRAME'],
     [sse({ type: 'synthetic_secret' }), 'SSE_EVENT_UNSUPPORTED'],
@@ -404,4 +413,25 @@ test('diagnostics use fixed allowlisted labels and discard mutable upstream mess
     await assert.rejects(collect(bridge.stream(input())), error => error.diagnostic === label && !error.message.includes('synthetic_secret'));
     await bridge.close();
   }
+});
+test('a content-free notification never discards a completed answer', async () => {
+  for (const events of [
+    // The observed shape: the notification arrives after the text completion.
+    [delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, { type: 'response.metadata', metadata: { synthetic: true } }, completed],
+    // A preceding notification must not disturb the buffered answer either.
+    [{ type: 'response.metadata' }, delta, { ...delta, type: 'response.output_text.done', text: 'Hello' }, completed],
+  ]) {
+    const bridge = new DirectBridge({ token: async () => jwt() },
+      new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(...events)));
+    const chunks = await collect(bridge.stream(input()));
+    assert.equal(chunks.at(-1).reason.kind, 'stop');
+    assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello');
+    await bridge.close();
+  }
+  // An unlisted event still fails the turn, and names the kind of cause to suspect.
+  const bridge = new DirectBridge({ token: async () => jwt() },
+    new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, { type: 'response.synthetic_unknown' }, completed)));
+  await assert.rejects(collect(bridge.stream(input())), error => error.code === 'PROTOCOL_INVALID' && error.diagnostic === 'SSE_EVENT_UNSUPPORTED'
+    && error.message.endsWith('The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.'));
+  await bridge.close();
 });

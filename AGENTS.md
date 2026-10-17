@@ -6,19 +6,16 @@ Use English for repository content: source code, comments, documentation, tests,
 
 ## Scope
 
-Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the initial feature set limited to model selection, streamed text conversations with validated tool passthrough and user image input, and cancellation.
+Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [SECURITY.md](SECURITY.md) before implementation. The owner authorized direct Codex subscription HTTPS access with dedicated OAuth. Keep the feature set to what `docs/SCOPE.md` lists; that document is the single description of what this bridge does and does not do.
 
 ## Credential and transport handling
 
-- Only the dedicated authentication module owns OAuth storage and refresh.
+Follow [the security requirements](SECURITY.md#required-controls); they are the canonical list. The rules an agent must not forget while changing this repository:
+
 - Never import, read, change, or log Codex credential files.
-- Never accept raw credentials or custom endpoints in plugin configuration.
-- Reject API-key authentication and never switch to paid API routes.
-- Use fixed HTTPS destinations, reject redirects, and return safe fixed errors.
-- Serialize refresh/login/logout and enforce private file ownership/modes.
-- Bound network operations and text/protocol sizes; cancel paused readers.
-- Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, and user image blocks.
-- Do not resume server IDs or persist server conversations.
+- Never accept raw credentials, custom endpoints, or a paid API route.
+- Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, user image blocks, and bounded opaque compaction windows.
+- Do not resume server IDs or persist server-resident conversations. Store a compaction window only in Harness replay metadata under the controls in [docs/COMPACTION.md](docs/COMPACTION.md).
 
 ## Git workflow
 
@@ -28,4 +25,4 @@ Do not create pull requests, publish packages, change account authentication, or
 
 ## Verification
 
-Use synthetic credentials and in-memory HTTPS fixtures in normal tests. Never make paid model calls or use the owner's existing authentication in automated tests. Pin supported Harness and dependency versions before implementing their integration. Keep source, packaged artifacts, and documented behavior consistent. Report unverified behavior and remaining security risks explicitly.
+Use synthetic credentials and in-memory HTTPS fixtures in normal tests. Never make paid model calls or use the owner's existing authentication in automated tests. Pin supported Harness and dependency versions before implementing their integration. Keep source, packaged artifacts, and documented behavior consistent, and state what is verified and what is not as [the security requirements](SECURITY.md#verification-boundary) require.

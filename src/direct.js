@@ -3,13 +3,25 @@ export {events} from './sse.js';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { BridgeError, classified, object, string } from './errors.js';
-import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT } from './text.js';
+import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, reasoningLevels } from './text.js';
 import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, estimateVisionTokens, imageDataUrl, requestImageTarget } from './image.js';
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
-import { Http, BASE, classifyStatusError } from './http.js';
-import { accountHeaders } from './auth.js';
+import { Http, BASE, classifyStatusError, readJson } from './http.js';
+import { accountHeaders, compactionAccount } from './auth.js';
+import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, threshold } from './compaction.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
+
+/**
+ * Stream events that announce route state without carrying response content.
+ *
+ * `response.metadata` was observed on the subscription route after a completed
+ * text finish; the buffered text, tool calls and usage all reconciled normally,
+ * so failing the turn on it discarded a usable answer. Each entry here is a
+ * reviewed notification: it is ignored deliberately, and an event that is not
+ * in this set still fails the turn.
+ */
+const NOTIFICATIONS = new Set(['response.metadata', 'response.queued']);
 
 function headers(token) {
   return { Authorization: `Bearer ${token}`, ...accountHeaders(token),
@@ -34,7 +46,7 @@ export class DirectBridge {
   constructor(auth, http = new Http(), { cacheMs = 60_000, turnTimeoutMs = 120_000, shutdownTimeoutMs = 5000 } = {}, context = {}) {
     this.auth = auth; this.http = http; this.cacheMs = cacheMs; this.turnTimeoutMs = turnTimeoutMs;
     this.active = new Set(); this.owners = new WeakMap(); this.pending = new Set(); this.closed = false; this.shutdownTimeoutMs = shutdownTimeoutMs;
-    this.context = context;
+    this.context = context; this.warn = typeof context?.warn === 'function' ? context.warn : () => {};
     // Mirror the DeepSeek adapter's shared access resolver: image placeholders,
     // request serialization, and pricing all resolve through one function that
     // stays undefined while no attachment service is mounted.
@@ -102,6 +114,16 @@ export class DirectBridge {
             if (!Number.isSafeInteger(entry.context_window) || entry.context_window <= 0) throw new BridgeError('PROTOCOL_INVALID');
             model.contextWindow = entry.context_window;
           }
+          // The backend also discloses this model's reasoning levels and, when
+          // it names one, the default it would apply. Both stay optional so an
+          // undisclosed model simply offers no effort selector.
+          const levels = reasoningLevels(entry.supported_reasoning_levels);
+          if (levels !== undefined) {
+            model.reasoningLevels = levels;
+            if (typeof entry.default_reasoning_level === 'string' && levels.some(level => level.id === entry.default_reasoning_level)) {
+              model.defaultReasoningLevel = entry.default_reasoning_level;
+            }
+          }
           models.push(model);
         }
       }
@@ -127,7 +149,12 @@ export class DirectBridge {
     // Project offloaded image occurrences into text placeholders before
     // validation, matching the DeepSeek adapter's projection order.
     const messages = projectOffloadedImages(options.messages, ref => offloadedImageText(ref, this.imageAccess(ref)));
-    const plan = validateInput({ ...options, messages }); string(options.model);
+    // Server-side compaction is always requested. Retained limits admit a
+    // transcript whose covered prefix a checkpoint may replace; the wire window
+    // is still validated below under the ordinary limits.
+    const originalPlan = validateInput({ ...options, messages }, true); string(options.model);
+    let plan = originalPlan;
+    const capture = new CompactionCapture(); let scope, compactThreshold;
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
     let phase = 'MODEL_CATALOG';
     const blocks = new Map(); let outputBytes = 0, toolBytes = 0, complete = false, toolCalls = false;
@@ -142,8 +169,8 @@ export class DirectBridge {
     };
     function* reconcile(item) {
       object(item);
-      if (!['message', 'reasoning', 'function_call'].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-      if (item.type === 'reasoning') return;
+      if (!['message', 'reasoning', 'function_call', 'compaction'].includes(item.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+      if (item.type === 'reasoning' || item.type === 'compaction') return;
       if (item.type === 'function_call') {
         if (item.status !== undefined && item.status !== 'completed') throw new BridgeError('PROTOCOL_INVALID', 'SSE_TOOL_CALL');
         const callId = item.call_id;
@@ -189,28 +216,73 @@ export class DirectBridge {
     }
     try {
       const models = await this.catalog(controller.signal, true);
-      if (!models.some(model => model.id === options.model)) throw new BridgeError('MODEL_UNAVAILABLE');
+      const selected = models.find(model => model.id === options.model);
+      if (selected === undefined) throw new BridgeError('MODEL_UNAVAILABLE');
+      // The host selects only declared levels, but a direct caller can name any
+      // bounded id; a choice the model does not disclose fails closed here.
+      if (plan.reasoning !== undefined && !(selected.reasoningLevels ?? []).some(level => level.id === plan.reasoning.effort)) {
+        throw new BridgeError('INPUT_UNSUPPORTED');
+      }
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
-      phase = 'IMAGE_PREPARE';
-      const versions = await this.prepareImages(plan, controller);
-      const input = versions.size ? plan.input.map(item => item.type !== 'message' ? item : { ...item, content: item.content.map(part => {
-        if (part.type !== 'input_image') return part;
-        const image = versions.get(part.attachmentId);
-        return { type: 'input_image', image_url: imageDataUrl(image.mediaType, Buffer.from(image.data).toString('base64')) };
-      }) }) : plan.input;
-      const instructions = input.filter(item => item.type === 'message' && item.role === 'developer').map(item => item.content.map(block => block.text).join('\n')).join('\n');
-      phase = 'HTTP_REQUEST';
-      response = await this.own(async () => {
-        const result = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify({ model: options.model, instructions, input: input.filter(item => !(item.type === 'message' && item.role === 'developer')),
-          store: false, stream: true, ...(plan.temperature === undefined ? {} : { temperature: plan.temperature }),
-          ...(plan.tools === undefined ? {} : { tools: plan.tools }), ...(plan.reasoning === undefined ? {} : { reasoning: plan.reasoning }) }) }, controller.signal);
-        const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}), controller);
-        controller.signal.addEventListener('abort', cancel, { once: true });
-        controller.removeBodyAbort = () => controller.signal.removeEventListener('abort', cancel);
-        if (controller.signal.aborted) await cancel();
-        return result;
-      }, controller.signal);
+      scope = compactionScope(compactionAccount(token), options.model, originalPlan);
+      compactThreshold = threshold(selected.contextWindow);
+      const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope);
+      // A refusal is the model-switch, expiry and edited-history boundary: the
+      // opaque state cannot carry over, so the host log names it before the
+      // bounded local history is resent on its own.
+      if (checkpoint.refusal !== undefined) this.warn(`The encrypted subscription compaction state was refused (${checkpoint.refusal}); resending the bounded local history.`);
+      // A selected checkpoint replaces only its exact covered prefix. Otherwise
+      // the retained transcript is revalidated under the ordinary wire limits.
+      if (checkpoint.items !== undefined) plan = compactPlan(originalPlan, checkpoint);
+      else {
+        try { plan = validateInput({ ...options, messages }); }
+        catch (error) {
+          // Without a reusable checkpoint the full local transcript is the only
+          // remaining input; name that boundary instead of the generic shape failure.
+          if (checkpoint.refusal !== undefined && error instanceof BridgeError && error.code === 'INPUT_UNSUPPORTED') throw new BridgeError('COMPACTION_UNAVAILABLE', 'COMPACTION');
+          throw error;
+        }
+      }
+      const openTurn = async () => {
+        phase = 'IMAGE_PREPARE';
+        const versions = await this.prepareImages(plan, controller);
+        const input = versions.size ? plan.input.map(item => item.type !== 'message' ? item : { ...item, content: item.content.map(part => {
+          if (part.type !== 'input_image') return part;
+          const image = versions.get(part.attachmentId);
+          return { type: 'input_image', image_url: imageDataUrl(image.mediaType, Buffer.from(image.data).toString('base64')) };
+        }) }) : plan.input;
+        const instructions = input.filter(item => item.type === 'message' && item.role === 'developer').map(item => item.content.map(block => block.text).join('\n')).join('\n');
+        phase = 'HTTP_REQUEST';
+        return await this.own(async () => {
+          const result = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          body: JSON.stringify({ model: options.model, instructions, input: input.filter(item => !(item.type === 'message' && item.role === 'developer')),
+            store: false, stream: true, ...(compactThreshold === undefined ? {} : { context_management: [{ type: 'compaction', compact_threshold: compactThreshold }] }), ...(plan.temperature === undefined ? {} : { temperature: plan.temperature }),
+            ...(plan.tools === undefined ? {} : { tools: plan.tools }), ...(plan.reasoning === undefined ? {} : { reasoning: plan.reasoning }) }) }, controller.signal);
+          const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}), controller);
+          controller.signal.addEventListener('abort', cancel, { once: true });
+          controller.removeBodyAbort = () => controller.signal.removeEventListener('abort', cancel);
+          if (controller.signal.aborted) await cancel();
+          return result;
+        }, controller.signal);
+      };
+      response = await openTurn();
+      // Only an explicit parameter rejection authorizes one bounded full-history retry.
+      // Never retry partial streams, quota/auth failures, or arbitrary upstream errors.
+      if (compactThreshold !== undefined && [400, 422].includes(response.status)) {
+        let rejected = false;
+        try {
+          const body = await this.own(() => readJson(response, 16 * 1024, controller.signal), controller.signal);
+          rejected = body?.error?.param === 'context_management' &&
+            ['unsupported_parameter', 'unknown_parameter'].includes(body.error.code);
+        } catch { if (controller.signal.aborted) throw new BridgeError('ABORTED'); }
+        if (rejected) {
+          controller.removeBodyAbort?.();
+          await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
+          plan = validateInput({ ...options, messages });
+          compactThreshold = undefined;
+          response = await openTurn();
+        }
+      }
       if (!response.ok) throw await classifyStatusError(response.status, response, controller.signal);
       // The subscription backend can send valid SSE without an SSE MIME header.
       // Trust the bounded frame/event parser and terminal state, not Content-Type.
@@ -236,25 +308,42 @@ export class DirectBridge {
           if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
         } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
           phase = 'SSE_OUTPUT_ITEM';
-          if (!['message', 'reasoning', 'function_call'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-          if (event.type === 'response.output_item.done') yield* reconcile(event.item);
+          if (!['message', 'reasoning', 'function_call', 'compaction'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+          if (event.type === 'response.output_item.done') {
+            capture.observe(event);
+            yield* reconcile(event.item);
+          }
         } else if (event.type === 'response.completed') {
           phase = 'SSE_TERMINAL';
           if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
           if (event.response.output !== undefined && event.response.output !== null) {
-            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', 'compaction'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
           }
           for (const item of event.response.output ?? []) yield* reconcile(item);
           for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
           complete = true;
           if (event.response.usage !== undefined && event.response.usage !== null) { if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'usage', usage: responseUsage(event.response.usage, 'SSE_TERMINAL') }; }
           if (controller.signal.aborted) throw new BridgeError('ABORTED');
-          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' } }; return;
+          const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan,
+            [...blocks.values()].map(block => block.type === 'tool-call'
+              ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text }));
+          // A refused checkpoint costs the next turn its replay window, not this
+          // turn's answer, so it is logged rather than raised.
+          if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
+          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
         } else if (['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done'].includes(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
+        // Notifications carry no response content, so an unrecognized one is
+        // ignored rather than failing a turn whose text and tool calls are
+        // already complete. Listed explicitly, so widening this set stays a
+        // deliberate change instead of an accident of the response shape.
+        else if (NOTIFICATIONS.has(event.type)) { /* no content to reconcile */ }
         else if (!['response.created', 'response.in_progress', 'response.content_part.added', 'response.content_part.done',
           'response.reasoning_summary_part.added', 'response.reasoning_summary_part.done', 'response.reasoning_summary_text.delta',
           'response.reasoning_summary_text.done', 'response.reasoning_text.delta', 'response.reasoning_text.done',
-          'response.function_call_arguments.delta', 'response.function_call_arguments.done'].includes(event.type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED');
+          'response.function_call_arguments.delta', 'response.function_call_arguments.done'].includes(event.type)) {
+          throw new BridgeError('PROTOCOL_INVALID', 'SSE_EVENT_UNSUPPORTED',
+            { hint: 'The subscription route may have sent a notification this bridge does not recognize; the response content is unaffected.' });
+        }
       }
       if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
     } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }

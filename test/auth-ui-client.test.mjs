@@ -13,7 +13,11 @@ test('client registers a settings section and renders only safe state and the fi
     useState(value) { return [value === null ? serverState : value, () => {}]; }, useRef(value) { return { current: value }; }, useEffect() {} };
   runInNewContext(source, { window: { __ModuleLoader__: { load(descriptor) { assert.equal(descriptor.id, 'dsh-codex-subscription-bridge'); plugin = descriptor.factory(name => { assert.equal(name, 'react'); return React; }); } } }, crypto: { randomUUID: () => id }, setTimeout, clearTimeout, setInterval, clearInterval, AbortController });
   const connection = { isLoopback: true, rpc: { call() { throw new Error('No automatic account operations are permitted during render'); } } };
-  plugin.apply({ connection, slots: { inject(slot, callback) { assert.equal(slot, 'settings.section'); callback(); }, register(options, view) { registration = options; component = view; } } });
+  // The plugin also registers a Chat node; this test drives the settings card,
+  // so only that slot is materialized here.
+  plugin.apply({ connection, uiConversation: { events: { register() {} } },
+    slots: { inject(slot, callback) { if (slot === 'settings.section') callback(); },
+      register(options, view) { registration = options; component = view; } } });
   assert.equal(registration.id, 'codex-subscription');
   const tree = component({ connection }); const serialized = JSON.stringify(tree);
   assert.equal(serialized.includes('synthetic-token-secret'), false);
@@ -35,7 +39,8 @@ test('only a random tab identifier persists across reload; insecure contexts deg
       useState(value) { return [value, () => {}]; }, useRef(value) { return { current: value }; }, useEffect(setup) { const cleanup = setup(); if (cleanup) cleanups.push(cleanup); } };
     runInNewContext(source, { window: { sessionStorage: storage, __ModuleLoader__: { load(descriptor) { plugin = descriptor.factory(() => React); } } }, crypto, setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {}, AbortController });
     const connection = { isLoopback: local, rpc: { async call(channel, action, args) { calls.push({ channel, action, args }); return { ok: true, value: { phase: 'idle' } }; } } };
-    plugin.apply({ connection, slots: { inject(slot, callback) { callback(); }, register(options, view) { component = view; } } });
+    plugin.apply({ connection, uiConversation: { events: { register() {} } },
+      slots: { inject(slot, callback) { callback(); }, register(options, view) { if (options.name === 'settings.section') component = view; } } });
     const tree = component({ connection }); await new Promise(resolve => setImmediate(resolve)); return tree;
   }
   const storage = { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) };

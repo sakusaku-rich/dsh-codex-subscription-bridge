@@ -1,6 +1,6 @@
 {
   "name": "dsh-codex-subscription-bridge",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "description": "A direct DeepSeek Harness provider for dedicated ChatGPT subscription OAuth",
@@ -27,11 +27,15 @@
   "exports": {
     ".": "./src/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./compaction": "./src/compaction-engine.js",
     "./client": "./client.js"
   },
   "files": [
     "src/index.js",
     "src/direct.js",
+    "src/compaction.js",
+    "src/compaction-owner.js",
+    "src/compaction-engine.js",
     "src/sse.js",
     "src/auth.js",
     "src/auth-cli.js",
@@ -42,6 +46,7 @@
     "src/errors.js",
     "src/environment.js",
     "cordis.patch.yml",
+    "presets",
     "README.md",
     "SECURITY.md",
     "docs",
@@ -54,6 +59,8 @@
     "check": "node scripts/check.mjs",
     "test": "node --test test/*.test.mjs",
     "verify": "npm run check && npm test",
+    "preset:sync": "node scripts/sync-preset.mjs",
+    "preset:check": "node scripts/sync-preset.mjs --check",
     "test:profile": "node scripts/verify-profile.mjs",
     "prepare:profile": "node scripts/prepare-profile.mjs",
     "prepare:release": "node scripts/build-release-asset.mjs",
@@ -66,18 +73,29 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-compaction-basic": "0.2.0-rc.2",
     "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-compaction-basic": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-compaction-basic": "0.2.0-rc.2",
     "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/codex-subscription.patch.yml"
+      ]
     },
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-connection"

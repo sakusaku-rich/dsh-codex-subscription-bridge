@@ -44,6 +44,18 @@ export function accountHeaders(token) {
   }
   return headers;
 }
+/** Stable dedicated identity for checkpoint hashing; never send these extra claims as headers. */
+export function compactionAccount(token) {
+  const parsed = claims(token);
+  const auth = object(parsed['https://api.openai.com/auth']);
+  const identity = accountHeaders(token);
+  for (const [key, value] of [['subject', parsed.sub], ['user', auth.chatgpt_user_id]]) {
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || !value.length || value.length > 256) throw new BridgeError('AUTH_REQUIRED');
+    identity[key] = value;
+  }
+  return identity;
+}
 export class AuthStore {
   constructor(directory, http = new Http()) { this.directory = directory; this.http = http; }
   async prepare() {

@@ -169,9 +169,78 @@ window.__ModuleLoader__.load({
         h('p', { className: 'dshcsb-note' }, 'Credentials stay on this computer in the backend. The settings page never receives access or refresh tokens.'),
       ]);
     }
+    // The subscription route condenses server-side, so there is no replacement
+    // message and no `compaction/*` event to render. The published checkpoint
+    // travels on the assistant message's client-visible provider metadata
+    // (`AssistantProviderMetadata.replayState`), which is what this node reads.
+    const CHECKPOINT_KEY = 'subscriptionCompactionV1';
+    const COMPACTION_KIND = 'server-compaction';
+    /** Read this bridge's replay checkpoint from an assistant message event. */
+    function serverCheckpoint(event) {
+      if (event === null || typeof event !== 'object' || event.type !== 'assistant/message') return null;
+      const source = event.data?.message?.source;
+      const checkpoint = source?.replayState?.response?.[CHECKPOINT_KEY];
+      if (checkpoint === null || typeof checkpoint !== 'object' || Array.isArray(checkpoint)) return null;
+      return {
+        items: Array.isArray(checkpoint.items) ? checkpoint.items.length : 0,
+        model: typeof source.model === 'string' ? source.model : '',
+      };
+    }
+    /** One Chat node per turn whose response published a server-side window. */
+    const serverCompactionDefinition = {
+      kind: COMPACTION_KIND,
+      target: 'chat',
+      match: event => {
+        const checkpoint = serverCheckpoint(event);
+        return checkpoint === null ? null : { id: String(event.seq), role: 'start' };
+      },
+      start: (_context, match) => {
+        const checkpoint = serverCheckpoint(match.event);
+        if (checkpoint === null) throw new Error('server-compaction start requires a checkpoint message');
+        return { seq: match.event.seq, time: match.event.time, ...checkpoint };
+      },
+      update: context => context.state,
+      buildViewNode: context => {
+        if (context.state === undefined) return null;
+        const { seq, ...data } = context.state;
+        return {
+          key: context.key,
+          kind: COMPACTION_KIND,
+          id: context.id,
+          target: 'chat',
+          anchorSeq: seq,
+          location: context.start?.location ?? { kind: 'unresolved' },
+          visibility: 'visible',
+          data,
+        };
+      },
+    };
+    /** Chat renderer for that node: a quiet marker, because the turn is unaffected. */
+    function ServerCompactionRow({ node }) {
+      const data = node?.data ?? {};
+      const items = Number.isSafeInteger(data.items) && data.items > 0 ? data.items : null;
+      const detail = [
+        items === null ? 'encrypted window' : `encrypted window, ${items} ${items === 1 ? 'item' : 'items'}`,
+        typeof data.model === 'string' && data.model !== '' ? data.model : null,
+      ].filter(value => value !== null).join(' · ');
+      return h('div', {
+        role: 'note',
+        title: 'Codex condensed earlier history into an encrypted window; the bridge replays that window instead of the full transcript.',
+        style: {
+          display: 'flex', alignItems: 'baseline', gap: '8px', width: 'fit-content', maxWidth: '100%',
+          margin: '2px 0', padding: '5px 12px', borderRadius: '9999px',
+          border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
+          fontSize: '12px', lineHeight: '18px', opacity: '0.72',
+        },
+      }, h('span', { style: { fontWeight: '600' } }, 'Server-side compaction'), h('span', null, detail));
+    }
     return {
-      inject: ['slots', 'connection'],
+      inject: ['slots', 'connection', 'uiConversation'],
       apply(ctx) {
+        ctx.uiConversation.events.register(serverCompactionDefinition);
+        ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+          name: 'conversation.chat.node', key: COMPACTION_KIND,
+        }, ServerCompactionRow));
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section', id: 'codex-subscription', order: 45,
           label: () => 'ChatGPT subscription', inject: () => ({ connection: ctx.connection }),

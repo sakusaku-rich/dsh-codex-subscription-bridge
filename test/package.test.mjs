@@ -73,7 +73,7 @@ await fiber.dispose(); await service.dispose();`;
     const manifest = JSON.parse(await readFile(join(profile, 'node_modules/dsh-codex-subscription-bridge/package.json'), 'utf8'));
     assert.equal(manifest.private, true);
     assert.equal(manifest.license, 'MIT');
-    assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml');
+    assert.deepEqual(manifest.dsh.bundle.patch, ['./cordis.patch.yml', './presets/codex-subscription.patch.yml']);
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
 

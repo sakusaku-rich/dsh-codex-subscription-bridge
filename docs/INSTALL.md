@@ -4,16 +4,16 @@
 
 Two installation paths prepare the same isolated, signed-out profile: a one-command install from a published release, and the source-checkout install used for development and recovery. Both are experimental prototype surfaces. A source checkout is built from a reviewed full commit SHA; a release install consumes a released, integrity-verified artifact. Do not install from a moving branch head.
 
-No release has been published yet, so the one-command path below cannot run until the first tagged release exists. Until then, use the source-checkout path. The release and version policy is tracked separately.
+The one-command path below installs a published release; replace `v0.0.3` in the examples with the release you reviewed. Use the source-checkout path when you need a commit that no release carries yet.
 
 | Surface / OS | Status |
 | --- | --- |
 | macOS CLI/SDK provider (text, tool passthrough, images) | Synthetic packaged integration verified |
 | macOS Web profile | Setup/startup verified; full real conversation pending |
-| macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified; UI/service pending |
+| macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified, and owner-operated real GUI, sign-in and service use verified |
 | Linux / Windows / other OS | Not supported; rejected before authentication |
 
-The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified. Use Node 22.23.3 (the checkout includes `.node-version` and `.nvmrc`). The supported standalone Node major is 22. Desktop uses its tested Electron host; the exact Node/Electron pair is required. Do not modify the Desktop binary. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for its separate verification profile.
+The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified. Use Node 22.23.3, the verified baseline (Undici 6.28.1, OpenSSL 3.5.8): the root and verification-runtime manifests and lockfiles require Node 22 >= 22.23.3 (the root engine also admits the Desktop 24.18.1 pair), and `.node-version` and `.nvmrc` pin 22.23.3 exactly, and the public adapter and authentication CLI reject older or unverified runtimes. Installing does not migrate a global Node installation or an existing account store. [Official release](https://nodejs.org/en/blog/release/v22.23.3). The supported standalone Node major is 22. Desktop uses its tested Electron host; the exact Node/Electron pair is required. Do not modify the Desktop binary. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for its separate verification profile.
 
 The plugin uses a dedicated plaintext OAuth store; no Codex installation or token import is required. Device-code login must be enabled by the account/workspace. Browser-PKCE fallback and keyring storage are not included. A successful model listing does not establish successful generation or entitlement to every model.
 
@@ -22,7 +22,7 @@ The plugin uses a dedicated plaintext OAuth store; no Codex installation or toke
 Download the published `install.sh` release asset and read it before running it. One installer serves both modes: `--profile` adds the bridge to a Desktop profile you already use, and `--directory` prepares a new isolated profile. Exactly one of the two is required.
 
 ```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.3/install.sh
 ```
 
 ### Into an existing Desktop profile
@@ -30,7 +30,7 @@ curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/relea
 Install into a Desktop profile you already use:
 
 ```sh
-sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
+sh install.sh --tag v0.0.3 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
 ```
 
 `--profile` needs `v0.0.2` or later. The `v0.0.1` installer bundle predates the script this mode runs, so it fails rather than falling back. It is Desktop-only and refuses a Web surface, because the standalone Web launch needs a runtime that only an isolated directory owns.
@@ -43,7 +43,7 @@ It differs from the isolated path in ways worth knowing before you run it:
 - **An install is refused when the bridge is already listed**, rather than repointing an existing entry.
 - **There is no `manifest.json` for this mode.** The isolated path records the release tag and verified digest there; a shared profile keeps the application's own layout, so the same record is written to the backup directory as `installed.json`.
 
-Restart the application to load the bridge. To undo the install, copy `package.json` and `pnpm-lock.yaml` from the backup directory back over the profile and run the same pnpm install again.
+Restart the application to load the bridge. To undo the install, copy `package.json` and `pnpm-lock.yaml` from the backup directory back over the profile and run the same pnpm install again, and delete the opt-in entry below from `cordis.patch.yml` if you added it, as the opt-in section explains.
 
 Because this mode changes a working environment, it is the less reversible of the two paths. The backup makes a failed install self-correcting, and an undo exact, but the isolated install remains the safer choice when you do not specifically need the existing profile's settings and plugins.
 
@@ -53,7 +53,7 @@ With the same `install.sh`, prepare a new profile in a directory that does not e
 
 ```sh
 mkdir -p artifacts
-sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
+sh install.sh --tag v0.0.3 --directory "$PWD/artifacts/subscription-web"
 ```
 
 `--surface` selects the verified host and defaults to `web`:
@@ -66,7 +66,7 @@ sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
 For a Desktop profile, prepare with `--surface desktop` and start it with the generated `desktop.sh`:
 
 ```sh
-sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/desktop-profile" --surface desktop
+sh install.sh --tag v0.0.3 --directory "$PWD/artifacts/desktop-profile" --surface desktop
 ```
 
 The Desktop surface is refused unless the installed application matches the verified host pair exactly; it is never worked around. Desktop's runtime resolver supplies the host peers from the application's own tree, so a Desktop profile deliberately does not contain a standalone runtime copy and does not build one. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for what the Desktop profile does and does not isolate, and for the owner-operated sign-in steps.
@@ -99,6 +99,41 @@ A release carries four assets. The installer bundle is separate from the publish
 `npm run prepare:release -- --tag v<version> --directory <new absolute directory>` builds and checksums these assets. It refuses a tag that does not match `package.json`, refuses to include development tooling in the published package, and refuses an existing output directory.
 
 For both install paths the parent directory must exist and the destination must not. The sections below on what preparation creates, how to start and sign in, how to update, and how to remove apply to both paths.
+
+## Consolidate on server-side compaction (opt-in)
+
+By default Harness condenses history locally while the bridge also requests Codex server-side compaction, so both can summarize. To let Codex own condensation for this provider, enable the agent preset this package ships.
+
+The pinned Harness keeps the compaction backend *inside its standard, ptc and cordis agent presets* (`preset-minimal` has no compaction group), each as an isolated `compaction` group, and disables the top-level `compaction-basic` and `command-compact` rows; the preset registry default resolves to `standard`. A preset is a complete declaration, so the only way to replace one child is to restate the whole composition: this package ships `presets/codex-subscription.patch.yml`, a mirror of the shipped standard preset whose `compaction` group runs `dsh-codex-subscription-bridge/compaction` instead. See [the composition evidence](VERIFICATION.md#preset-owned-compaction-2026-10-16).
+
+**The preset is inserted disabled, so installing this package changes nothing.** Enable it by adding one entry to the profile's `cordis.patch.yml` (for example `~/.dsh/profiles/desktop/cordis.patch.yml`), then restart Harness:
+
+```yaml
+- id: preset-codex-subscription
+  disabled: false
+```
+
+The Plugins page lists the row, but its switch is locked for a row the Host can only address through the profile patch (hovering the switch states the Host's reason), so this entry is the enable step rather than a toggle. The profile patch is applied after every bundle, which is why an override this small reaches a row a bundle declares.
+
+Then optionally set it as the new-task default in **Settings → Agent presets**; otherwise select "Codex subscription" in the preset chip when starting a session.
+
+Removing the package does not remove that entry, because the installer never writes `cordis.patch.yml`; delete the line when you uninstall, or the loader reports an unmatched patch entry on every start. An isolated profile needs no cleanup — the whole directory goes away.
+
+The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose routes then rely on the encrypted server-side window. Every other preset keeps the stock engine, so other providers are unaffected.
+
+Before relying on it, confirm all three behaviors after the restart:
+
+- A conversation on a subscription model raises no new `compaction/start` event.
+- A conversation on any other provider still condenses as before.
+- `/compact` still works (the replacement provides the same `compaction` service); disabling compaction entirely is not the intent.
+
+Know the failure modes before enabling it:
+
+- **It depends on a host-internal class.** The module subclasses `@deepseek-ai/dsh-compaction-basic`, which the Harness bundle provides. If a harness upgrade removes or renames that package, the preset fails its activation audit and **only that preset stops composing**; `preset-standard` and the other shipped presets keep working, and the Plugins page shows the row as failed to load. Disable the row to restore the stock behavior.
+- **It mirrors a pinned composition.** The preset copies the shipped standard list, so a Harness release that adds, removes or reconfigures a child leaves this copy stale until it is regenerated with `npm run preset:sync` (the profile verification path runs `npm run preset:check` and fails on drift). A release that changes the `compaction` group's shape is the dangerous case: the swap stops applying and double summarization silently returns, which the drift check is what catches.
+- **A harness upgrade can also soften it.** If the reconciled method changes shape, the override stops applying and the replacement behaves exactly like the stock engine: nothing breaks, but server-side consolidation no longer happens.
+- **Nothing bounds the local transcript.** The encrypted window is opaque and belongs to one account, model, instructions, tools and input prefix; switching models, resuming the same conversation after 24 hours, or editing history refuses it. The bridge then resends the bounded local history; if that exceeds its 256 KiB text, 2 MiB tool-history or 1024-item wire bounds, the turn fails with `COMPACTION_UNAVAILABLE` and asks for a new conversation. See [the compaction contract](COMPACTION.md).
+- **The context indicator keeps growing.** Harness prices the retained local surface, not the compacted request, so usage display does not reflect the server-side window.
 
 ## Prepare an isolated profile from a source checkout
 
