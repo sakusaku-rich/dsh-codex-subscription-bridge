@@ -135,7 +135,7 @@ The installed DeepSeek Harness Desktop 0.2.0-rc.2 (build `5e9e301dd9dc8923b2762f
 
 A generated standalone Web profile reached an authenticated localhost HTML page with HTTP 303/200 and was stopped without OAuth login or a model request. This checks startup and HTTP readiness, not a complete real Web conversation.
 
-The current root suite counts 91 tests. A local Node 22.23.2 run produces four known environment-only version-gate failures; hosted CI on Node 22.23.3 passes the full suite and is the authoritative check.
+The current root suite counts 124 tests (`npm test` runs `node --test test/*.test.mjs`). A local Node 22.23.2 run produces four known environment-only version-gate failures; hosted CI on Node 22.23.3 passes the full suite and is the authoritative check.
 
 ## Real-account evidence and limits
 
@@ -159,4 +159,4 @@ Still unverified: image turns and `input_image` acceptance (no live session carr
 
 CI adds a locked Electron 44.0.0 test package and an explicit checksum-verifying binary download before synthetic host checks; it does not install Harness Desktop or run real login. The installed-ASAR composition lane is verified locally rather than claimed as a CI check. The packaged tarball excludes `.github`, so the workflow link above resolves only inside a full checkout. Audit results only cover known advisories; no finite audit or test suite establishes absence of unknown vulnerabilities.
 
-The release install lane runs in CI against a locally published synthetic release over a `file://` transport. It does not download a real release asset, and CI does not publish packages, tag releases, or perform account operations. Creating the first real release asset is a separate decision.
+The release install lane runs in CI against a locally published synthetic release over a `file://` transport. It does not download a real release asset, and CI does not publish packages, tag releases, or perform account operations. Real releases are prepared and published outside CI.

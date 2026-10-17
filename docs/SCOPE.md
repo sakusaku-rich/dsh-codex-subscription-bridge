@@ -6,6 +6,6 @@ Expose live visible models, stream bounded text history with forwarded Harness t
 
 Initial exclusions: browser PKCE fallback, existing token import, keyring, credential pools, API keys, custom endpoints, tool execution by the bridge, stop-sequence overrides, search and quota UI. Non-image file attachments need no bridge handling (see the input mapping in [direct connection architecture](ARCHITECTURE.md)).
 
-Acceptance is proven by the synthetic checks recorded in [verification](VERIFICATION.md): dedicated authentication, private storage, bounded transport and history, validated tool and image passthrough with offload budgets, cancellation, shutdown, and packaged Harness CLI/SDK composition. Real OAuth/service/UI verification is a separately authorized step.
+Acceptance is proven by the synthetic checks recorded in [verification](VERIFICATION.md): dedicated authentication, private storage, bounded transport and history, validated tool and image passthrough with offload budgets, cancellation, shutdown, and packaged Harness CLI/SDK composition. Real-account verification was authorized later and is recorded in the same document; it covers sign-in, multi-turn generation, tool turns and server-side compaction, and what remains open is listed there.
 
 See [direct connection architecture](ARCHITECTURE.md) and [security requirements](../SECURITY.md).
