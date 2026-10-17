@@ -1,10 +1,10 @@
 # Authentication panel design
 
-The panel is the settings card the bundled client registers as `settings.section`; it is the supported way to sign in, read status and log out on every surface. Its audience is a contributor changing that card.
+The panel is the settings card the bundled client registers as `settings.section`; it is the supported in-Harness way to sign in, read status and log out on the Web and Desktop surfaces, with the authentication CLI as the supported non-UI equivalent.
 
 ## Surface and gating
 
-The card performs account actions only on a loopback Connection that supplies a client id. Anywhere else it renders one line, "Open this settings page locally in a browser with secure randomness support.", and no controls. It never starts a login on load: opening the section reads status and nothing else.
+The card performs account actions only on a loopback Connection that supplies a client id. Anywhere else it renders the card title and one line, "Open this settings page locally in a browser with secure randomness support.", and no controls. It never starts a login on load: opening the section reads status and nothing else.
 
 ## Layout
 
@@ -42,7 +42,7 @@ Until the first status reply arrives the phase row reads "Checking authenticatio
 - Every action is one Connection RPC with a ten-second deadline, and a new call supersedes the previous one.
 - While a login is active the panel polls status once a second and stops when it unmounts.
 - Cancel switches the local phase to `cancelling` and drops the code immediately, then reports what the backend returns.
-- **Log in** is disabled while any login is active, **Log out** while a login is active or no login is stored, and **Log out** asks `window.confirm('Remove this plugin's local login? Server-side authorization is not revoked.')` first.
+- **Log in** is disabled while any login is active, **Log out** while a login is active or no login is stored, and **Log out** asks `window.confirm('Remove this plugin’s local login? Server-side authorization is not revoked.')` first.
 - A failure renders a fixed message. A recognized code is appended as `The operation could not complete (CODE). Refresh status or try again.`; an unrecognized one gets the generic sentence. Upstream text, tokens and device codes never reach the alert.
 
 ## Presentation
@@ -51,4 +51,4 @@ Near-monochrome surfaces, pill actions and a restrained green accent follow the 
 
 Non-goals: showing tokens, starting a login automatically, claiming server-side validity or allowance, and quota display.
 
-Synthetic coverage of the panel — ownership, redaction, cancellation and malformed requests — is recorded in [the verification record](VERIFICATION.md#covered-controls).
+Synthetic coverage of the panel itself — ownership, redaction, cancellation and malformed requests — is in `test/auth-ui.test.mjs`, part of the root suite; the routes it calls are exercised by `npm run test:auth-ui`, and [the verification record](VERIFICATION.md#covered-controls) lists the covered controls.

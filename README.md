@@ -49,7 +49,7 @@ In Harness, open **Settings → ChatGPT subscription**, click **Log in**, and ap
 
 ## Harness configuration
 
-Use the bundle only in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md); the Desktop host loads it in [its separate verification profile](docs/DESKTOP_VERIFICATION.md). The adapter has no configuration keys:
+Use the bundle in a dedicated isolated profile prepared by [the installation guide](docs/INSTALL.md), or in an existing Desktop profile through that guide's `--profile` path; the Desktop host also loads it in [its separate verification profile](docs/DESKTOP_VERIFICATION.md). The adapter has no configuration keys:
 
 ```yaml
 - id: llm-codex-subscription
@@ -75,7 +75,7 @@ Before enabling it, know that:
 
 - Only this provider's routes change. Every other provider, and every other preset, keeps the stock engine.
 - The preset subclasses a host-internal class and mirrors the pinned Harness composition, so a Harness upgrade can stop that one preset from composing, or leave the mirror stale. The dangerous case is a reshaped `compaction` group, which silently restores double summarization. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records those failure modes, the checks to run after restarting, and how a source checkout detects drift.
-- Delete that line when you remove the package. The installer never writes `cordis.patch.yml`, so nothing else removes it, and a leftover entry is reported at every start.
+- Delete that line when you remove the package, as [the installation guide](docs/INSTALL.md#remove-this-dedicated-installation) explains.
 
 ## What the provider sends and enforces
 
@@ -114,8 +114,6 @@ A real-account check is separate and requires authorization. The prepared `scrip
 ## Contributing
 
 Pull requests are always welcome, including bug fixes, tests, documentation, and security improvements. Report problems, including vulnerabilities, as GitHub Issues; see [the security requirements](SECURITY.md). Keep changes focused, use English for repository content, and include relevant verification results. Please read [AGENTS.md](AGENTS.md) and [the security requirements](SECURITY.md) before contributing.
-
-Never include credentials, device codes, authentication files, or raw authenticated responses in issues or pull requests.
 
 ## License
 

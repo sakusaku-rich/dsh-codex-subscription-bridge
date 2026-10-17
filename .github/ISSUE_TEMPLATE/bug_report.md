@@ -6,9 +6,8 @@ labels: ''
 assignees: ''
 ---
 
-<!-- Never include credentials, device codes, authentication files, or raw
-     authenticated responses. Share only sanitized reproduction steps, fixed
-     diagnostic labels, and runtime/version information. See SECURITY.md. -->
+<!-- Share only sanitized reproduction steps and fixed diagnostic labels;
+     SECURITY.md lists what never belongs in an issue. -->
 
 **Describe the problem**
 

@@ -30,4 +30,4 @@ The owned verification runtime overrides:
 | `@modelcontextprotocol/core` | `2.2.0` |
 | `fflate` | `0.8.3` |
 
-After these overrides, npm audit reported zero known vulnerabilities and the packaged profile checks passed again. This result applies to the locked test runtime, not an existing installation. It does not establish MCP OAuth behavior or Office archive handling compatibility; neither feature is used in the test.
+After these overrides, npm audit reported zero known vulnerabilities and the packaged profile checks passed again. This result applies to the locked test runtime, not an existing installation. MCP and Office surfaces are outside this project's scope, so the overrides establish nothing about them.

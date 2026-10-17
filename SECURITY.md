@@ -49,7 +49,7 @@ Pull requests that fix a reported problem directly are welcome. Reports are conf
 
 | Version | Supported |
 | --- | --- |
-| `0.0.x` prototype on `main` | yes |
+| `0.0.x` prototype on `main`, including the current release `v0.0.3` | yes |
 | `v0.0.1`, `v0.0.2` | no — install the current release |
 
 ## Scope
