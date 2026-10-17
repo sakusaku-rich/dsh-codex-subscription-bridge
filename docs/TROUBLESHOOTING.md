@@ -6,13 +6,13 @@ Use the same launcher HOME for auth commands and Harness, and the same launcher 
 sh artifacts/subscription-web/auth.sh doctor
 ```
 
-A Desktop profile has no such helper, because the plugin imports host peers that only the application resolves. Its store state is visible through the settings panel instead, and its credentials live under the profile's `harness` directory as described in [the Desktop guide](DESKTOP_VERIFICATION.md).
+A Desktop profile has no such helper, because the plugin imports host peers that only the application resolves. Its settings panel shows one thing only, the local login state (`stored`, `expired`/`refresh_due`, `relogin_required`, `missing`); the `store`, `lock` and `action` fields the doctor reports have no Desktop equivalent, and a repeated "Local authentication has not been checked or is busy." reading means the store could not be verified. Because the panel offers no store diagnosis, recover a suspect Desktop store by quitting Harness and preparing a new profile directory instead of editing it; its credentials live under the profile's `harness` directory as described in [the Desktop guide](DESKTOP_VERIFICATION.md).
 
 The result contains only fixed local state/action labels, never credentials, account identifiers, raw responses or a claim of server-side validity. It does not refresh tokens, create a missing store, or acquire/remove a lock. Diagnosis is an advisory snapshot: another process can change the state immediately afterward. Repeat diagnosis after stopping store users before recovery.
 
 | Result | Meaning / action |
 | --- | --- |
-| `store: missing`, `auth: missing` | Run the explicit login command in this profile |
+| `store: missing`, `auth: missing` | Run `sh artifacts/subscription-web/auth.sh login`; on Desktop use **Settings → ChatGPT subscription → Log in** |
 | `auth: stored` | A structurally valid local grant exists; server validity is unverified |
 | `auth: refresh_due` / `expired` | Normal use may attempt refresh; doctor itself does not |
 | `auth: relogin_required` | Grant is quarantined, invalid, or refresh outcome is uncertain; log in again |
@@ -21,7 +21,7 @@ The result contains only fixed local state/action labels, never credentials, acc
 
 ## Lock recovery
 
-A login can legitimately hold the lock while waiting for browser approval. Close or cancel that command normally. If an owner crashed, all auth commands may return AUTH_BUSY after 30 seconds. No PID/lease proof or automatic lock takeover exists.
+A login can legitimately hold the lock while waiting for browser approval. Close or cancel that command normally. If an owner crashed, `login`, `status` and `logout` may each return AUTH_BUSY after 30 seconds. `doctor` never takes the lock, so it still reports `lock: present_owner_unknown`. No PID/lease proof or automatic lock takeover exists.
 
 Only after stopping **all** CLI/Web/auth processes using this store and confirming none remain, review the exact profile path. For the isolated guide's profile:
 
@@ -30,7 +30,7 @@ rmdir artifacts/subscription-web/home/.dsh-codex-subscription-bridge/auth.lock
 sh artifacts/subscription-web/auth.sh doctor
 ```
 
-`rmdir` removes an empty lock directory only; it refuses unexpected contents. Do not use recursive/force removal, remove a lock while a process is alive, or perform this on a store whose users you cannot identify. Resolve ownership before continuing. Then run the explicit login command if requested.
+`rmdir` removes an empty lock directory only; it refuses unexpected contents. Do not use recursive/force removal, remove a lock while a process is alive, or perform this on a store whose users you cannot identify. Resolve ownership before continuing. Then log in again if the next `doctor` reports `store: missing`: `sh artifacts/subscription-web/auth.sh login`, or **Log in** in the settings panel on Desktop.
 
 ## Uncertain refresh or insecure storage
 

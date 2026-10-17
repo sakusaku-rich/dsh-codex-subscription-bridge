@@ -4,7 +4,7 @@
 
 Two installation paths prepare the same isolated, signed-out profile: a one-command install from a published release, and the source-checkout install used for development and recovery. Both are experimental prototype surfaces. A source checkout is built from a reviewed full commit SHA; a release install consumes a released, integrity-verified artifact. Do not install from a moving branch head.
 
-No release has been published yet, so the one-command path below cannot run until the first tagged release exists. Until then, use the source-checkout path. The release and version policy is tracked separately.
+The one-command path below installs a published release; `v0.0.3` is current. Use the source-checkout path when you need a commit that no release carries yet.
 
 | Surface / OS | Status |
 | --- | --- |
