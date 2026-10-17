@@ -58,7 +58,7 @@ Use the bundle only in a dedicated isolated profile prepared by [the installatio
 
 Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or `.env` credential locations are accepted. Models are fetched live from your visible subscription catalog; seeing a model listed does not establish entitlement to a successful request.
 
-Server-side compaction is always requested when the selected model discloses a usable context window, while Harness local summaries stay enabled. Subscription compatibility is not yet verified with a real account; if the service rejects the parameter explicitly, the request is retried exactly once with bounded full history. See [compaction design, research and limits](docs/COMPACTION.md).
+Server-side compaction is always requested when the selected model discloses a usable context window, while Harness local summaries stay enabled. A dedicated live login confirmed that the route accepts the parameter and issues encrypted windows: a conversation priced at 38,612 input tokens replayed as 11,787 and kept reusing its window, and after a model switch the older window was refused, the full history was resent, and a new window was issued and reused. A window that cannot be proven is withheld and named in the host log; an explicit parameter rejection still retries exactly once with bounded full history, which has not been observed live. See [compaction design, research and limits](docs/COMPACTION.md).
 
 To let Codex own condensation instead of Harness, an opt-in agent preset runs the compact engine this package ships; every other provider keeps the stock behavior. The preset is inserted disabled, so installing the package changes nothing until it is enabled. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records the enable step, the checks and the coupling that comes with it.
 
@@ -74,7 +74,7 @@ To let Codex own condensation instead of Harness, an opt-in agent preset runs th
 
 ## Status
 
-This is an experimental prototype. Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition. Real-account evidence is limited; [the verification record](docs/VERIFICATION.md#real-account-evidence-and-limits) records exactly what is confirmed and what remains unverified. Do not treat this prototype as a completed security audit.
+This is an experimental prototype. Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition. Real-account evidence covers sign-in, multi-turn generation, more than nine hundred forwarded tool calls, the disclosed reasoning levels, and server-side compaction issuance, reuse and model-switch handling; [the verification record](docs/VERIFICATION.md#real-account-evidence-and-limits) records exactly what is confirmed and what remains unverified. Do not treat this prototype as a completed security audit.
 
 ## Development
 
