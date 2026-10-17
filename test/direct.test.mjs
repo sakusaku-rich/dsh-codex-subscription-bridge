@@ -108,6 +108,34 @@ test('stream forwards tools and reasoning effort, stays unpersisted, and normali
   assert.deepEqual(JSON.parse(calls.at(-1).options.body).reasoning, { effort: 'low' });
   await bridge.close();
 });
+test('usage separates cached input while preserving totals and optional fields', async () => {
+  for (const [details, cached] of [[undefined, undefined], [{}, undefined], [{ cached_tokens: 0 }, 0], [{ cached_tokens: 3 }, 3], [{ cached_tokens: 12 }, 12]]) {
+    const wire = { input_tokens: 12, output_tokens: 4, total_tokens: 16, ...(details === undefined ? {} : { input_tokens_details: details }) };
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?')
+      ? json({ models: [model] }) : sse({ ...completed, response: { ...completed.response, usage: wire } })));
+    try {
+      const chunks = await collect(bridge.stream(input()));
+      const usage = chunks.find(chunk => chunk.type === 'usage').usage;
+      assert.deepEqual(usage, { inputTokens: 12 - (cached ?? 0), outputTokens: 4, totalTokens: 16, ...(cached === undefined ? {} : { cacheReadTokens: cached }) });
+      // Harness sums disjoint prompt buckets for cache rate and context pressure.
+      const prompt = usage.inputTokens + (usage.cacheReadTokens ?? 0);
+      assert.equal(prompt, wire.input_tokens);
+      assert.equal(prompt, usage.totalTokens - usage.outputTokens);
+      assert.equal((usage.cacheReadTokens ?? 0) / prompt, (cached ?? 0) / wire.input_tokens);
+    } finally { await bridge.close(); }
+  }
+});
+test('usage rejects invalid cached counts before emitting usage', async () => {
+  for (const cached of [-1, 1.5, '3', null, 13, Number.MAX_SAFE_INTEGER + 1]) {
+    const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?')
+      ? json({ models: [model] }) : sse({ ...completed, response: { ...completed.response, usage: { input_tokens: 12, output_tokens: 4, input_tokens_details: { cached_tokens: cached } } } })));
+    const chunks = [];
+    try {
+      await assert.rejects(async () => { for await (const chunk of bridge.stream(input())) chunks.push(chunk); }, { code: 'PROTOCOL_INVALID' });
+      assert.equal(chunks.some(chunk => chunk.type === 'usage'), false);
+    } finally { await bridge.close(); }
+  }
+});
 test('native tool calls stream as blocks, pair with history outputs, and replay idempotently', async () => {
   const call = { type: 'function_call', call_id: 'call-1', name: 'shell', arguments: '{"cmd":"ls"}', status: 'completed' };
   const calls = []; const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
@@ -128,7 +156,7 @@ test('native tool calls stream as blocks, pair with history outputs, and replay 
     { type: 'tool-call-delta', index: 0, id: 'call-1', name: 'shell', argumentsDelta: '' },
     { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call-1', name: 'shell', arguments: '{"cmd":"ls"}' } },
   ]);
-  assert.deepEqual(chunks[3], { type: 'usage', usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16, cacheReadTokens: 3, reasoningTokens: 2 } });
+  assert.deepEqual(chunks[3], { type: 'usage', usage: { inputTokens: 9, outputTokens: 4, totalTokens: 16, cacheReadTokens: 3, reasoningTokens: 2 } });
   assert.deepEqual(chunks.at(-1).reason, { kind: 'tool-calls' });
   const body = JSON.parse(calls.at(-1).options.body);
   assert.deepEqual(body.input, [
