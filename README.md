@@ -58,9 +58,24 @@ Use the bundle only in a dedicated isolated profile prepared by [the installatio
 
 Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or `.env` credential locations are accepted. Models are fetched live from your visible subscription catalog; seeing a model listed does not establish entitlement to a successful request.
 
-Server-side compaction is always requested when the selected model discloses a usable context window, while Harness local summaries stay enabled. A dedicated live login confirmed that the route accepts the parameter and issues encrypted windows: a conversation priced at 38,612 input tokens replayed as 11,787 and kept reusing its window, and after a model switch the older window was refused, the full history was resent, and a new window was issued and reused. A window that cannot be proven is withheld and named in the host log; an explicit parameter rejection still retries exactly once with bounded full history, which has not been observed live. See [compaction design, research and limits](docs/COMPACTION.md).
+## Compaction
 
-To let Codex own condensation instead of Harness, an opt-in agent preset runs the compact engine this package ships; every other provider keeps the stock behavior. The preset is inserted disabled, so installing the package changes nothing until it is enabled. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records the enable step, the checks and the coupling that comes with it.
+Harness condenses history locally, and the bridge also asks the subscription route to condense server-side, replaying the encrypted window it returns on later turns. This is confirmed on a real account, including a model switch that refused the older window, resent the bounded history and issued a new one. [Compaction design, research and limits](docs/COMPACTION.md) records what a window covers, which refusals count as contradictions, and the wire bounds that force a new conversation.
+
+To let Codex own condensation for this provider's routes instead, enable the agent preset this package ships. It is inserted disabled, so installing the package changes nothing until you add this to the profile's `cordis.patch.yml` and restart Harness:
+
+```yaml
+- id: preset-codex-subscription
+  disabled: false
+```
+
+Then optionally set "Codex subscription" as the new-task default in **Settings → Agent presets**.
+
+Before enabling it, know that:
+
+- Only this provider's routes change. Every other provider, and every other preset, keeps the stock engine.
+- The preset subclasses a host-internal class and mirrors the pinned Harness composition, so a Harness upgrade can stop that one preset from composing, or leave the mirror stale. The dangerous case is a reshaped `compaction` group, which silently restores double summarization. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records those failure modes, the checks to run after restarting, and how a source checkout detects drift.
+- Delete that line when you remove the package. The installer never writes `cordis.patch.yml`, so nothing else removes it, and a leftover entry is reported at every start.
 
 ## What the provider sends and enforces
 
@@ -90,6 +105,7 @@ A real-account check is separate and requires authorization. The prepared `scrip
 - [Installation guide](docs/INSTALL.md) — the release and source install paths, updates, removal, and the support matrix.
 - [Desktop verification](docs/DESKTOP_VERIFICATION.md) — the separate Desktop host profile and its launcher.
 - [Direct connection architecture](docs/ARCHITECTURE.md) — behavior guarantees and limits.
+- [Compaction design and limits](docs/COMPACTION.md) — server-side windows, refusals, and the local fallback.
 - [Authentication panel design](docs/UI_DESIGN.md) — the sign-in panel's visual and interaction policy.
 - [Security requirements](SECURITY.md) — controls, problem reporting, and supported versions.
 - [Verification record](docs/VERIFICATION.md) — what was verified, the reproducible checks, and CI.
