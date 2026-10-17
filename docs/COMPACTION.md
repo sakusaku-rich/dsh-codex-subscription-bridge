@@ -4,7 +4,7 @@
 
 The bridge implements inline server-side compaction on its existing fixed
 subscription Responses endpoint. Harness local summarization stays in place by
-default; an opt-in profile composition replaces it for this provider alone, so
+default; an opt-in agent preset replaces it for this provider alone, so
 Codex can own condensation without changing the stock installation.
 
 The baseline `ea7abda40362be71080d36b527283304159b2958` did not send
@@ -115,9 +115,9 @@ The issuing turn carries a `Server-side compaction` marker naming the model and 
 - An unprovable window is never published, and never fails the turn: the answer
   has already been delivered by then, so the first refusal label is logged and
   the bounded local history is resent instead. Refusals name their own stage
-  (`ITEM_*`, `MSG_*`, `SUM_*`, `WINDOW_*`, `INDEX_GAP`, `NO_ORDER`,
-  `OBSERVE_DUPLICATE`, `COMPACTION_MISMATCH`, `CONTENT_MISMATCH`) from a
-  bridge-owned vocabulary, so no response value reaches the log.
+  (`ITEM_*`, `MSG_*`, `SUM_*`, `WINDOW_*`, `NO_ORDER`, `OBSERVE_DUPLICATE`,
+  `COMPACTION_MISMATCH`, `CONTENT_MISMATCH`) from a bridge-owned vocabulary,
+  so no response value reaches the log.
 - Harness stores the bounded opaque window in the assistant message's
   `source.replayState.response.subscriptionCompactionV1`. The normal transcript
   stays intact. No separate bridge checkpoint file or process-global cache exists.

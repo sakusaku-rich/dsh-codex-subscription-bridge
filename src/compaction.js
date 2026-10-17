@@ -14,7 +14,7 @@ const fail = reason => { const error = new BridgeError('PROTOCOL_INVALID', 'COMP
 const stage = error => (error instanceof BridgeError && typeof error.stage === 'string' ? error.stage : 'UNKNOWN');
 const text = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && Buffer.byteLength(value) <= max;
 
-function textParts(values, type, limit, tags = ['PARTS_SHAPE', 'PARTS_PART', 'PARTS_BYTES']) {
+function textParts(values, type, limit, tags) {
   if (!Array.isArray(values) || values.length > 64) return fail(tags[0]);
   let bytes = 0;
   return values.map(part => {
