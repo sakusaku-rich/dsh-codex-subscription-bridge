@@ -96,6 +96,10 @@ summarization described above.
 While the replacement is mounted, no local summary bounds the transcript, so the
 refusal and wire-budget behavior below is the only remaining recovery path.
 
+### What the chat shows
+
+The issuing turn carries a `Server-side compaction` marker naming the model and the replayed window's item count. It is derived entirely on the client from the assistant message's `replayState`, so it needs no session event: a reuse turn publishes nothing new and stays unmarked, and a refused window leaves the marker on the turn that originally published it. Refusals themselves stay in the host log, since a refusal is not durable in the session.
+
 ## State and validation
 
 - Only successfully completed responses can publish replay metadata. Cancelled,

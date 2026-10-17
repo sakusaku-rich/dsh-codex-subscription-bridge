@@ -81,6 +81,14 @@ The model was then switched from `gpt-5.6-terra` to `gpt-6-luna`. The next reque
 
 An earlier attempt with a 190 KB sample of repetitive prose reached only 14,157 input tokens — about 11 bytes per token, so the artificial text never crossed the server's 32,768-token threshold — and therefore exercised nothing; the switch itself still worked. The high-entropy sample exists only to reach that threshold, and a real long conversation reaches it the same way.
 
+## Chat marker for a published window (2026-10-17)
+
+Server-side compaction left no trace in the conversation, unlike local condensation, which the chat renders from its replacement message and `compaction/*` events. The marker was added entirely on the client: `AssistantProviderMetadata` already declares `replayState` as client-visible, so the plugin registers a Chat node (`server-compaction`) that matches an `assistant/message` carrying `subscriptionCompactionV1` and renders the model and the window's item count. No host-side event is appended, so nothing changes the transcript, the session vocabulary, or the checkpoint bindings; a reuse turn publishes nothing new and stays unmarked.
+
+`test/client-compaction-notice.test.mjs` drives the real bundle through the registries it injects into and covers the matching (checkpoint present, another adapter's replay key, missing metadata, malformed replay state, non-assistant events), the node state and view node, and the rendered row. `test/auth-ui-client.test.mjs` now supplies the `uiConversation` service the plugin declares.
+
+Unverified: the marker has not been seen in a running GUI. The client bundle is loaded from the installed package, so seeing it needs a Desktop restart on a conversation whose response publishes a new window (a reuse turn will not show it).
+
 ## Covered controls
 
 - Private dedicated OAuth storage: ownership, 0700/0600 modes, size/schema bounds, symlink and non-regular-file rejection, atomic durable replacement. FIFO tests demonstrate nonblocking refusal and lock release, including retry when a losing acquirer releases the lock after EEXIST but before its metadata check.
