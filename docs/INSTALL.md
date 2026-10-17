@@ -22,7 +22,7 @@ The plugin uses a dedicated plaintext OAuth store; no Codex installation or toke
 Download the published `install.sh` release asset and read it before running it. One installer serves both modes: `--profile` adds the bridge to a Desktop profile you already use, and `--directory` prepares a new isolated profile. Exactly one of the two is required.
 
 ```sh
-curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.2/install.sh
+curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/releases/download/v0.0.3/install.sh
 ```
 
 ### Into an existing Desktop profile
@@ -30,7 +30,7 @@ curl -fsSLO https://github.com/sakusaku-rich/dsh-codex-subscription-bridge/relea
 Install into a Desktop profile you already use:
 
 ```sh
-sh install.sh --tag v0.0.2 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
+sh install.sh --tag v0.0.3 --profile "$HOME/.dsh/profiles/desktop" --surface desktop
 ```
 
 `--profile` needs `v0.0.2` or later. The `v0.0.1` installer bundle predates the script this mode runs, so it fails rather than falling back. It is Desktop-only and refuses a Web surface, because the standalone Web launch needs a runtime that only an isolated directory owns.
@@ -53,7 +53,7 @@ With the same `install.sh`, prepare a new profile in a directory that does not e
 
 ```sh
 mkdir -p artifacts
-sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
+sh install.sh --tag v0.0.3 --directory "$PWD/artifacts/subscription-web"
 ```
 
 `--surface` selects the verified host and defaults to `web`:
@@ -66,7 +66,7 @@ sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/subscription-web"
 For a Desktop profile, prepare with `--surface desktop` and start it with the generated `desktop.sh`:
 
 ```sh
-sh install.sh --tag v0.0.2 --directory "$PWD/artifacts/desktop-profile" --surface desktop
+sh install.sh --tag v0.0.3 --directory "$PWD/artifacts/desktop-profile" --surface desktop
 ```
 
 The Desktop surface is refused unless the installed application matches the verified host pair exactly; it is never worked around. Desktop's runtime resolver supplies the host peers from the application's own tree, so a Desktop profile deliberately does not contain a standalone runtime copy and does not build one. Follow [the Desktop guide](DESKTOP_VERIFICATION.md) for what the Desktop profile does and does not isolate, and for the owner-operated sign-in steps.
