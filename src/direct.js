@@ -2,7 +2,7 @@ import {events} from './sse.js';
 export {events} from './sse.js';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { BridgeError, classified, object, string } from './errors.js';
+import { BridgeError, classified, errorFields, parameterRejection, classifyErrorFields, object, string } from './errors.js';
 import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, reasoningLevels } from './text.js';
 import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, estimateVisionTokens, imageDataUrl, requestImageTarget } from './image.js';
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
@@ -319,82 +319,107 @@ export class DirectBridge {
           return result;
         }, controller.signal);
       };
-      response = await openTurn();
-      // Only an explicit parameter rejection authorizes one bounded full-history retry.
-      // Never retry partial streams, quota/auth failures, or arbitrary upstream errors.
-      if (compactThreshold !== undefined && [400, 422].includes(response.status)) {
-        let rejected;
-        try {
-          const body = await this.own(() => readJson(response, 16 * 1024, controller.signal), controller.signal);
-          if (body?.error?.param === 'context_management' &&
-              ['unsupported_parameter', 'unknown_parameter'].includes(body.error.code)) rejected = body.error.param;
-        } catch { if (controller.signal.aborted) throw new BridgeError('ABORTED'); }
-        if (rejected !== undefined) {
-          // A rejected parameter is not resent, so the retry drops it.
+      let attempt = 0;
+      while (true) {
+        response = await openTurn();
+        // Only an explicit parameter rejection authorizes one bounded full-history
+        // retry, and only before anything was delivered. The route reports it in the
+        // structured error body on this path; the measured path reports it as an SSE
+        // error event, handled below. Both are read only to recognize the fixed code
+        // and the fixed parameter name.
+        if (compactThreshold !== undefined && attempt === 0 && [400, 422].includes(response.status)) {
+          let rejected;
+          try {
+            const body = await this.own(() => readJson(response, 16 * 1024, controller.signal), controller.signal);
+            if (parameterRejection(errorFields(body?.error))) rejected = true;
+          } catch { if (controller.signal.aborted) throw new BridgeError('ABORTED'); }
+          if (rejected) {
+            // A rejected parameter is not resent, so the retry drops it.
+            compactThreshold = undefined;
+            controller.removeBodyAbort?.();
+            await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
+            plan = { ...originalPlan, ...fullHistory() };
+            attempt += 1;
+            continue;
+          }
+        }
+        if (!response.ok) throw await classifyStatusError(response.status, response, controller.signal);
+        // The subscription backend can send valid SSE without an SSE MIME header.
+        // Trust the bounded frame/event parser and terminal state, not Content-Type.
+        phase = 'SSE_FRAME';
+        let rejectedParameter = false;
+        for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller))) {
+          try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
+          if (!CONSUMED_EVENTS.has(event.type) && !TERMINAL_FAILURES.has(event.type)) continue;
+          if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
+            phase = event.type.endsWith('.delta') ? 'SSE_TEXT_DELTA' : 'SSE_TEXT_COMPLETION';
+            const block = getBlock(event.item_id, event.content_index);
+            if (block.ended) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
+            let text;
+            if (event.type.endsWith('.delta')) {
+              if (typeof event.delta !== 'string' || Buffer.byteLength(event.delta) > 256 * 1024) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_DELTA');
+              text = event.delta;
+            }
+            else {
+              if (typeof event.text !== 'string' || !event.text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
+              text = event.text.slice(block.text.length);
+            }
+            outputBytes += Buffer.byteLength(text); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
+            if (!block.started) { block.started = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-start', index: block.index, blockType: 'text' }; }
+            if (text) { block.text += text; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'text-delta', index: block.index, text }; }
+            if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
+          } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
+            phase = 'SSE_OUTPUT_ITEM';
+            if (!['message', 'reasoning', 'function_call', 'compaction'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+            if (event.type === 'response.output_item.done') {
+              capture.observe(event);
+              yield* reconcile(event.item);
+            }
+          } else if (event.type === 'response.completed') {
+            phase = 'SSE_TERMINAL';
+            if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
+            if (event.response.output !== undefined && event.response.output !== null) {
+              if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', 'compaction'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+            }
+            for (const item of event.response.output ?? []) yield* reconcile(item);
+            for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
+            complete = true;
+            if (event.response.usage !== undefined && event.response.usage !== null) { if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'usage', usage: responseUsage(event.response.usage, 'SSE_TERMINAL') }; }
+            if (controller.signal.aborted) throw new BridgeError('ABORTED');
+            const emitted = [...blocks.values()].map(block => block.type === 'tool-call'
+              ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text });
+            const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan, emitted);
+            // A refused checkpoint costs the next turn its replay window, not this
+            // turn's answer, so it is logged rather than raised.
+            if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
+            if (capture.trimmed > 0) this.warn(`The published subscription compaction window was trimmed from the oldest end (${capture.trimmed} items) to fit its bound.`);
+            yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
+          } else if (TERMINAL_FAILURES.has(event.type)) {
+            const fields = errorFields(event.error);
+            // On this backend a rejected parameter arrives as a structured SSE error
+            // event rather than in the HTTP body. Nothing delivered to the host yet is
+            // the boundary that still allows the one bounded retry.
+            if (compactThreshold !== undefined && attempt === 0 && blocks.size === 0 && parameterRejection(fields)) { rejectedParameter = true; break; }
+            throw classifyErrorFields(fields);
+          }
+          // Any other event is a notification the bridge does not project. It is
+          // ignored rather than failing a turn whose answer was already
+          // delivered; the consumed branches above remain the only paths that
+          // can produce text or tool calls.
+          }
+        if (rejectedParameter) {
+          // A rejected parameter is not resent, so the retry drops it. The stream
+          // ended at the error event, so nothing was delivered on this attempt.
           compactThreshold = undefined;
           controller.removeBodyAbort?.();
           await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
           plan = { ...originalPlan, ...fullHistory() };
-          response = await openTurn();
+          attempt += 1;
+          continue;
         }
+        if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
+        return;
       }
-      if (!response.ok) throw await classifyStatusError(response.status, response, controller.signal);
-      // The subscription backend can send valid SSE without an SSE MIME header.
-      // Trust the bounded frame/event parser and terminal state, not Content-Type.
-      phase = 'SSE_FRAME';
-      for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller))) {
-        try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
-        if (!CONSUMED_EVENTS.has(event.type) && !TERMINAL_FAILURES.has(event.type)) continue;
-        if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
-          phase = event.type.endsWith('.delta') ? 'SSE_TEXT_DELTA' : 'SSE_TEXT_COMPLETION';
-          const block = getBlock(event.item_id, event.content_index);
-          if (block.ended) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
-          let text;
-          if (event.type.endsWith('.delta')) {
-            if (typeof event.delta !== 'string' || Buffer.byteLength(event.delta) > 256 * 1024) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_DELTA');
-            text = event.delta;
-          }
-          else {
-            if (typeof event.text !== 'string' || !event.text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
-            text = event.text.slice(block.text.length);
-          }
-          outputBytes += Buffer.byteLength(text); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
-          if (!block.started) { block.started = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-start', index: block.index, blockType: 'text' }; }
-          if (text) { block.text += text; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'text-delta', index: block.index, text }; }
-          if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
-        } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-          phase = 'SSE_OUTPUT_ITEM';
-          if (!['message', 'reasoning', 'function_call', 'compaction'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-          if (event.type === 'response.output_item.done') {
-            capture.observe(event);
-            yield* reconcile(event.item);
-          }
-        } else if (event.type === 'response.completed') {
-          phase = 'SSE_TERMINAL';
-          if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
-          if (event.response.output !== undefined && event.response.output !== null) {
-            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', 'compaction'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-          }
-          for (const item of event.response.output ?? []) yield* reconcile(item);
-          for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
-          complete = true;
-          if (event.response.usage !== undefined && event.response.usage !== null) { if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'usage', usage: responseUsage(event.response.usage, 'SSE_TERMINAL') }; }
-          if (controller.signal.aborted) throw new BridgeError('ABORTED');
-          const emitted = [...blocks.values()].map(block => block.type === 'tool-call'
-            ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text });
-          const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan, emitted);
-          // A refused checkpoint costs the next turn its replay window, not this
-          // turn's answer, so it is logged rather than raised.
-          if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
-          if (capture.trimmed > 0) this.warn(`The published subscription compaction window was trimmed from the oldest end (${capture.trimmed} items) to fit its bound.`);
-          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
-        } else if (TERMINAL_FAILURES.has(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
-        // Any other event is a notification the bridge does not project. It is
-        // ignored rather than failing a turn whose answer was already
-        // delivered; the consumed branches above remain the only paths that
-        // can produce text or tool calls.
-      }
-      if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
     } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }
     finally { controller.abort(); controller.removeBodyAbort?.(); await this.track(Promise.resolve(response?.body?.cancel()).catch(() => {}), controller); controller.release(); }
   }

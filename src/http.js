@@ -2,7 +2,7 @@ import { setImmediate as yieldLoop } from 'node:timers/promises';
 import { Agent, fetch as subscriptionFetch } from 'undici';
 // Do not inherit a dispatcher created by the host's older bundled Undici.
 const subscriptionDispatcher = new Agent({ connections: 4, pipelining: 1 });
-import { BridgeError, classified } from './errors.js';
+import { BridgeError, classified, errorFields } from './errors.js';
 import { isQuotaExceededError } from '@deepseek-ai/dsh-llm';
 export const BASE = 'https://chatgpt.com/backend-api/codex';
 export const ISSUER = 'https://auth.openai.com';
@@ -38,12 +38,12 @@ export async function classifyStatusError(status, response, signal) {
   catch { return statusError(status); }
   if (!body || typeof body !== 'object' || Array.isArray(body) || !body.error || typeof body.error !== 'object' ||
       Array.isArray(body.error)) return statusError(status);
-  const detail = body.error;
-  const kind = typeof detail.code === 'string' ? detail.code : typeof detail.type === 'string' ? detail.type : '';
+  const detail = errorFields(body.error);
+  const kind = detail.code || detail.type;
   if (!USAGE_LIMIT_CODES.has(kind) && !isQuotaExceededError(kind)) return statusError(status);
   // `resets_at` is an epoch-seconds integer; a bounded, validated count joins
   // the fixed message as a hint. Absent, past, or implausible values omit it.
-  const resetsAt = detail.resets_at;
+  const resetsAt = body.error.resets_at;
   const resetMinutes = Number.isSafeInteger(resetsAt) && resetsAt > 0 && resetsAt <= 1e12
     ? Math.round((resetsAt * 1000 - Date.now()) / 60_000) : undefined;
   return new BridgeError('QUOTA', undefined, resetMinutes !== undefined && resetMinutes >= 1

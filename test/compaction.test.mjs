@@ -333,6 +333,46 @@ test('a rejected parameter is dropped and the retry sends the trimmed full histo
   } finally { await f.bridge.close(); }
 });
 
+// Measured on a real account, the subscription backend reports a structured
+// rejection in the SSE error event, not in the HTTP error body.
+test('a structured SSE context-limit error becomes the context-limit code without upstream text', async () => {
+  const f = fixture([[{ type: 'error', error: { code: 'context_length_exceeded', param: 'input', type: 'invalid_request_error', message: 'must-not-leak' } }]]);
+  try {
+    await assert.rejects(run(f.bridge, options([user('Start')])),
+      error => error.code === 'CONTEXT_LIMIT' && !error.message.includes('must-not-leak'));
+  } finally { await f.bridge.close(); }
+  // An unrecognized terminal code stays the generic upstream failure.
+  const other = fixture([[{ type: 'error', error: { code: 'server_error', param: 'input', message: 'must-not-leak' } }]]);
+  try {
+    await assert.rejects(run(other.bridge, options([user('Start')])),
+      error => error.code === 'UPSTREAM_FAILED' && !error.message.includes('must-not-leak'));
+  } finally { await other.bridge.close(); }
+});
+
+test('a structured SSE parameter rejection retries once without the parameter', async () => {
+  const rejected = { type: 'error', error: { code: 'unsupported_parameter', param: 'context_management', message: 'must-not-leak' } };
+  const f = fixture([[rejected], [complete([reply('Fallback')])]]);
+  try {
+    await run(f.bridge, options([user('Start')]));
+    assert.equal(f.payloads.length, 2);
+    assert.ok(f.payloads[0].context_management !== undefined);
+    assert.equal(f.payloads[1].context_management, undefined);
+  } finally { await f.bridge.close(); }
+  // A rejection after text was delivered is not retried.
+  const partial = fixture([[{ type: 'response.output_text.delta', item_id: 'msg-1', content_index: 0, delta: 'Half' }, rejected],
+    [complete([reply('Second')])]]);
+  try {
+    await assert.rejects(run(partial.bridge, options([user('Start')])), error => error.code === 'UPSTREAM_FAILED');
+    assert.equal(partial.payloads.length, 1);
+  } finally { await partial.bridge.close(); }
+  // Only the first attempt retries; a second rejection fails closed.
+  const twice = fixture([[rejected], [rejected]]);
+  try {
+    await assert.rejects(run(twice.bridge, options([user('Start')])), error => error.code === 'UPSTREAM_FAILED');
+    assert.equal(twice.payloads.length, 2);
+  } finally { await twice.bridge.close(); }
+});
+
 test('cancellation after a completed compaction item never commits replay state', async () => {
   const abort = new AbortController();
   const f = fixture([[{ type: 'response.output_item.done', output_index: 0, item: compact },

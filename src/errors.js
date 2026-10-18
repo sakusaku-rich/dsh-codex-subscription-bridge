@@ -14,6 +14,7 @@ const messages = Object.freeze({
   CONFIG_INVALID: 'The bridge configuration is invalid.',
   INPUT_UNSUPPORTED: 'The conversation does not match the bounded request shape this subscription route accepts.',
   COMPACTION_UNAVAILABLE: 'The encrypted server-side compaction state cannot be reused, and the full conversation is too large to send. Start a new conversation.',
+  CONTEXT_LIMIT: 'The conversation is larger than the context this subscription model can carry. Start a new conversation.',
   UNSUPPORTED_CONTENT: 'The conversation contains content this subscription route cannot carry.',
   IMAGE_OFFLOAD_REQUIRED: 'The conversation images exceed the subscription route request image budget. The oldest conversation images must be offloaded before retrying.',
   MODEL_UNAVAILABLE: 'The selected subscription model is unavailable.',
@@ -67,6 +68,25 @@ export const failure = (error) => {
   return { code: safe.code, message: safe.message,
     ...(safe.offloadImages === undefined ? {} : { offloadImages: safe.offloadImages }) };
 };
+/**
+ * Read the structured fields of a subscription error body. Only fixed codes and
+ * the fixed parameter name are recognized; upstream message text is never kept,
+ * so the fixed messages above remain the only user-visible text.
+ */
+const FIELD_LIMIT = 256;
+export function errorFields(error) {
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
+  const field = value => typeof value === 'string' && Buffer.byteLength(value) <= FIELD_LIMIT ? value : '';
+  return { code: field(error.code), type: field(error.type), param: field(error.param) };
+}
+// The only parameter the bridge may drop and resend without.
+export const REJECTED_PARAMETER = 'context_management';
+const PARAM_REJECTION_CODES = new Set(['unsupported_parameter', 'unknown_parameter']);
+export const parameterRejection = fields => fields.param === REJECTED_PARAMETER && PARAM_REJECTION_CODES.has(fields.code);
+// Structured context-limit codes the subscription route reports.
+const CONTEXT_LIMIT_CODES = new Set(['context_length_exceeded']);
+export const classifyErrorFields = fields => new BridgeError(
+  CONTEXT_LIMIT_CODES.has(fields.code || fields.type) ? 'CONTEXT_LIMIT' : 'UPSTREAM_FAILED', 'SSE_TERMINAL');
 export function object(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BridgeError('PROTOCOL_INVALID');
   return value;
