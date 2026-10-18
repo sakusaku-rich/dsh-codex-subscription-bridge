@@ -79,7 +79,7 @@ Before enabling it, know that:
 
 ## What the provider sends and enforces
 
-- Requests are sent with `store: false`, and no server conversation IDs are resumed or chained. Each model advertises the reasoning levels the backend discloses for it (for example `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) together with any disclosed default, so Harness offers the effort selector; the chosen id is forwarded verbatim.
+- Requests are sent with `store: true`, and a conversation is chained through `previous_response_id` only for a chain this bridge established and can prove from Harness replay metadata; a chain that cannot be proven is refused and the full bounded history is sent. The record holds a bounded response id and integrity digests, not conversation content. Each model advertises the reasoning levels the backend discloses for it (for example `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) together with any disclosed default, so Harness offers the effort selector; the chosen id is forwarded verbatim.
 - Harness tool definitions are validated and forwarded, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
 - User message images are sent as `input_image` data URLs. Oversized requests fail with `IMAGE_OFFLOAD_REQUIRED` so the Harness host can offload its oldest images and retry, and image blocks in other roles are rejected.
 - `temperature` (finite, 0–2) is validated and forwarded; `maxTokens` (safe integer, 1–1,000,000) is accepted as an advisory budget but deliberately not forwarded; `stop` sequences are rejected with a fixed `UNSUPPORTED_OPTION` error.
