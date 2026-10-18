@@ -68,7 +68,7 @@ const REASONING_LEVEL_NAMES = Object.freeze({
  * Project one catalog entry's `supported_reasoning_levels` into declared efforts.
  *
  * Absent, oversized or malformed disclosure stays omitted rather than
- * advertising an id the route may not accept, so the host simply offers no
+ * advertising an id the endpoint may not accept, so the host simply offers no
  * effort selector for that model.
  * @param value - the entry's `supported_reasoning_levels` field.
  * @returns detached efforts in disclosure order, or `undefined` when unusable.
@@ -100,7 +100,7 @@ function reasoningEffort(value) {
 
 function requestTemperature(value) {
   // Forwarded verbatim as the Responses `temperature` field, like the
-  // subscription route's own adapter. The Responses API documents 0..2.
+  // official subscription adapter. The Responses API documents 0..2.
   if (value === undefined) return undefined;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 2) {
     throw new BridgeError('INPUT_UNSUPPORTED', 'TEMPERATURE');
@@ -109,8 +109,8 @@ function requestTemperature(value) {
 }
 
 function requestMaxTokens(value) {
-  // Accepted and shape-checked but not forwarded: the subscription route's own
-  // adapter omits `max_output_tokens` for this route, so a turn token budget
+  // Accepted and shape-checked but not forwarded: the official subscription
+  // adapter omits `max_output_tokens` on this endpoint, so a turn token budget
   // stays advisory. Values that the runtime itself would reject are still
   // refused so a caller cannot mistake silence for acceptance.
   if (value === undefined) return;
@@ -121,7 +121,7 @@ function requestMaxTokens(value) {
 
 function validateToolHistory(value) {
   // The Harness runtime sends the complete current tool list on every request
-  // for routes without incremental tool updates; history content is never
+  // for providers without incremental tool updates; history content is never
   // serialized. Validation is purely defensive against oversized inputs.
   if (value === undefined) return;
   if (!value || typeof value !== 'object' || !Array.isArray(value.tools) || value.tools.length > TOOL_LIMIT ||
@@ -135,7 +135,7 @@ function serializeTools(value) {
   const tools = [];
   for (const tool of value) {
     if (!tool || typeof tool !== 'object' || Array.isArray(tool)) throw new BridgeError('INPUT_UNSUPPORTED', 'TOOL_INPUT');
-    // The Harness runtime strips `deferLoading` for routes without incremental
+    // The Harness runtime strips `deferLoading` for providers without incremental
     // tool updates, so it cannot reach this bridge; accept a boolean defensively
     // and never serialize it.
     if (tool.deferLoading !== undefined && typeof tool.deferLoading !== 'boolean') throw new BridgeError('INPUT_UNSUPPORTED', 'TOOL_INPUT');
@@ -236,7 +236,7 @@ export function validateInput(options, retained = false, limits = defaultLimits(
   }
   // Generation overrides: temperature is forwarded, a turn token budget is
   // accepted but not forwarded (documented exception), stop sequences stay
-  // unsupported like the route's own adapter.
+  // unsupported like the official adapter.
   const temperature = requestTemperature(options.temperature);
   requestMaxTokens(options.maxTokens);
   if (options.stop !== undefined) throw new BridgeError('UNSUPPORTED_OPTION', 'STOP');
@@ -285,13 +285,13 @@ export function validateInput(options, retained = false, limits = defaultLimits(
         if (message.role !== 'assistant') throw new BridgeError('INPUT_UNSUPPORTED');
         serializeToolCall(block, calls, pendingCalls, bytesRef);
       } else if (block.type === 'reasoning') {
-        // Reasoning history replay has no wire representation on this route
+        // Reasoning history replay has no wire representation on this endpoint
         // and is dropped, matching the DeepSeek adapter's documented exception
         // to reject-unknown handling.
       } else if ((block.type === 'tool-addition' || block.type === 'tool-removal') &&
           (message.role === 'system' || message.role === 'developer')) {
         // The Harness runtime drops developer tool-registry messages for this
-        // route; defensively skip registry blocks if any still arrive.
+        // endpoint; defensively skip registry blocks if any still arrive.
       } else if (block.type === 'file') {
         throw new BridgeError('UNSUPPORTED_CONTENT');
       } else {

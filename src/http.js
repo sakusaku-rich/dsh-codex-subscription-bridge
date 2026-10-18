@@ -14,8 +14,8 @@ const FENCES = [BASE, ISSUER].map(base => ({ base, normalized: new URL(base) }))
 export function statusError(status) {
   return new BridgeError(status === 401 || status === 403 ? 'AUTH_REQUIRED' : status === 429 ? 'RATE_LIMIT' : 'UPSTREAM_FAILED');
 }
-// Structured usage-limit codes of the subscription route, from the same body
-// family the route's own adapter recognizes, plus the shared quota wording.
+// Structured usage-limit codes of the subscription endpoint, from the same
+// body family the official adapter recognizes, plus the shared quota wording.
 const USAGE_LIMIT_CODES = new Set(['usage_limit_reached', 'usage_not_included']);
 const USAGE_LIMIT_BODY_LIMIT = 16 * 1024;
 /**

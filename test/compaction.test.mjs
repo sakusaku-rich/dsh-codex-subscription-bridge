@@ -127,8 +127,8 @@ test('a covered window past the wire bound is trimmed from the oldest end instea
 
 const windowBytesOf = values => 2 + values.reduce((total, value) => total + Buffer.byteLength(JSON.stringify(value)) + 1, 0);
 
-test('the bound is a resource limit, not a window guard: a request past the window in the route measure is sent whole', async () => {
-  // Measured on a real account, the route compacts a request whose measured count
+test('the bound is a resource limit, not a window guard: a request past the window in the upstream measure is sent whole', async () => {
+  // Measured on a real account, the upstream compacts a request whose measured count
   // is past the model window. A transcript that is past the window in the bridge's
   // byte estimate but inside the resource bound is sent as it is.
   const measuredBytesPerToken = 5.14;
@@ -138,13 +138,13 @@ test('the bound is a resource limit, not a window guard: a request past the wind
     await run(f.bridge, options([user(pastWindow)]));
     assert.equal(f.warnings.length, 0, 'nothing is trimmed while the request fits the resource bound');
     assert.equal(f.payloads[0].input[0].content[0].text, pastWindow, 'the whole transcript is sent');
-    assert.ok(Buffer.byteLength(pastWindow) / measuredBytesPerToken > WINDOW, 'the route measures this past the window');
+    assert.ok(Buffer.byteLength(pastWindow) / measuredBytesPerToken > WINDOW, 'the upstream measures this past the window');
     assert.ok(Buffer.byteLength(pastWindow) <= requestLimits(WINDOW).inputBytes, 'and it stays inside the resource bound');
   } finally { await f.bridge.close(); }
 });
 
 test('a window past its bound drops the oldest covered items instead of refusing', async () => {
-  // The bound is derived from the disclosed window, so a window the route can
+  // The bound is derived from the disclosed window, so a window the upstream can
   // produce cannot exceed it; the drop is the residual path, matching the official
   // client removing the oldest history item when the window is exceeded.
   const limit = requestLimits(WINDOW).checkpointBytes;
@@ -230,7 +230,7 @@ test('malformed or contradictory checkpoint state withholds the window but keeps
 });
 
 test('a streamed window the terminal array omits still publishes and reuses a checkpoint', async () => {
-  // Observed on the live route: the compaction item and the message arrive as
+  // Observed on the live endpoint: the compaction item and the message arrive as
   // streamed completed items, while response.completed.response.output omits
   // the compaction item. The streamed order is the one that must be kept.
   const textDelta = { type: 'response.output_text.delta', item_id: 'msg-1', content_index: 0, delta: 'Hello' };
@@ -447,11 +447,11 @@ test('a disclosed per-model percent drives the threshold and the bound, absence 
   finally { await malformed.bridge.close(); }
 });
 
-test('the request carries the stateless shape the subscription route accepts', async () => {
+test('the request carries the stateless shape the subscription endpoint accepts', async () => {
   const f = fixture([[complete([reply('Plain')])]]);
   try {
     await run(f.bridge, options([user('Start')]));
-    // Measured on a real account: this route rejects store true and rejects
+    // Measured on a real account: this endpoint rejects store true and rejects
     // previous_response_id, so the stateless shape is the only one it accepts.
     assert.equal(f.payloads[0].store, false);
     assert.equal(f.payloads[0].previous_response_id, undefined);

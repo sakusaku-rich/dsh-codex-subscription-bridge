@@ -8,15 +8,15 @@ const messages = Object.freeze({
   // optional reset hint below is the only message part derived from upstream
   // data, and it is a validated integer, never upstream text.
   QUOTA: 'The ChatGPT plan usage limit was reached.',
-  UNSUPPORTED_OPTION: 'The request option is not supported by this subscription route.',
+  UNSUPPORTED_OPTION: 'The request option is not supported by this subscription endpoint.',
   PLATFORM_UNSUPPORTED: 'This bridge currently supports macOS only.',
   NODE_VERSION_UNSUPPORTED: 'Use Node.js 22 >=22.23.3 or the supported Electron 44.0.0 Desktop host.',
   CONFIG_INVALID: 'The bridge configuration is invalid.',
-  INPUT_UNSUPPORTED: 'The conversation does not match the bounded request shape this subscription route accepts.',
+  INPUT_UNSUPPORTED: 'The conversation does not match the bounded request shape this subscription endpoint accepts.',
   COMPACTION_UNAVAILABLE: 'The encrypted server-side compaction state cannot be reused, and the full conversation is too large to send. Start a new conversation.',
   CONTEXT_LIMIT: 'The conversation is larger than the context this subscription model can carry. Start a new conversation.',
-  UNSUPPORTED_CONTENT: 'The conversation contains content this subscription route cannot carry.',
-  IMAGE_OFFLOAD_REQUIRED: 'The conversation images exceed the subscription route request image budget. The oldest conversation images must be offloaded before retrying.',
+  UNSUPPORTED_CONTENT: 'The conversation contains content this subscription endpoint cannot carry.',
+  IMAGE_OFFLOAD_REQUIRED: 'The conversation images exceed the image budget for a single subscription request. The oldest conversation images must be offloaded before retrying.',
   MODEL_UNAVAILABLE: 'The selected subscription model is unavailable.',
   PROTOCOL_INVALID: 'The subscription service returned an unsupported protocol message.',
   UPSTREAM_FAILED: 'The subscription service request failed.',
@@ -83,7 +83,7 @@ export function errorFields(error) {
 export const REJECTED_PARAMETER = 'context_management';
 const PARAM_REJECTION_CODES = new Set(['unsupported_parameter', 'unknown_parameter']);
 export const parameterRejection = fields => fields.param === REJECTED_PARAMETER && PARAM_REJECTION_CODES.has(fields.code);
-// Structured context-limit codes the subscription route reports.
+// Structured context-limit codes the subscription endpoint reports.
 const CONTEXT_LIMIT_CODES = new Set(['context_length_exceeded']);
 export const classifyErrorFields = fields => new BridgeError(
   CONTEXT_LIMIT_CODES.has(fields.code || fields.type) ? 'CONTEXT_LIMIT' : 'UPSTREAM_FAILED', 'SSE_TERMINAL');

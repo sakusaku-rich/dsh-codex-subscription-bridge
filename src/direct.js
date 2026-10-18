@@ -333,7 +333,7 @@ export class DirectBridge {
       while (true) {
         response = await openTurn();
         // Only an explicit parameter rejection authorizes one bounded full-history
-        // retry, and only before anything was delivered. The route reports it in the
+        // retry, and only before anything was delivered. The endpoint reports it in the
         // structured error body on this path; the measured path reports it as an SSE
         // error event, handled below. Both are read only to recognize the fixed code
         // and the fixed parameter name.
