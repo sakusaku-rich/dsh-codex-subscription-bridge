@@ -16,10 +16,10 @@ const { name, version } = createRequire(import.meta.url)('../package.json');
 
 /**
  * Stream events the bridge consumes. Everything else in the stream is a
- * notification: it may announce route state, progress, or parts of an item
+ * notification: it may announce backend state, progress, or parts of an item
  * this bridge does not project, and it carries nothing the bridge renders.
  *
- * The subscription route is a live, evolving Responses surface, and the
+ * The subscription backend is a live, evolving Responses surface, and the
  * reference implementation bundled with the verified Harness
  * (`@earendil-works/pi-ai`, `api/openai-responses-shared.js`) dispatches this
  * same event set and has no catch-all that fails an unknown event: only
@@ -39,7 +39,7 @@ const CONSUMED_EVENTS = new Set([
   'response.output_text.delta', 'response.output_text.done',
   'response.output_item.added', 'response.output_item.done', 'response.completed',
 ]);
-// Terminal failures and refusals are fatal: they mean the route reported that
+// Terminal failures and refusals are fatal: they mean the backend reported that
 // it could not produce the answer, which must not be reported as success.
 const TERMINAL_FAILURES = new Set(['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done']);
 function headers(token) {
@@ -47,7 +47,7 @@ function headers(token) {
     'User-Agent': `${name}/${version}`, originator: 'dsh-codex-subscription-bridge' };
 }
 
-/** Map the subscription route's terminal usage record; absent fields stay absent. */
+/** Map the subscription backend's terminal usage record; absent fields stay absent. */
 function responseUsage(value, diagnostic) {
   const wire = object(value);
   const inputTokens = wire.input_tokens, outputTokens = wire.output_tokens;
@@ -138,7 +138,7 @@ export class DirectBridge {
             if (!Number.isSafeInteger(entry.context_window) || entry.context_window <= 0) throw new BridgeError('PROTOCOL_INVALID');
             model.contextWindow = entry.context_window;
           }
-          // The route's own client derives its compaction limit from a per-model
+          // The backend's own client derives its compaction limit from a per-model
           // effective percent, so a disclosed percent is read here. Absence stays
           // optional and the shipped ratio is the fallback; a malformed disclosed
           // value fails closed like the window does.
@@ -252,7 +252,7 @@ export class DirectBridge {
       // resolved before validation. Retained limits admit a transcript that may
       // be trimmed from the oldest end to fit the wire bound below. Trimming
       // enforces that resource limit; it is not what keeps the request inside the
-      // model window, because the route compacts a request past the window.
+      // model window, because the backend compacts a request past the window.
       const retainedLimits = requestLimits(selected.contextWindow, true, selected.effectivePercent);
       const wireLimits = requestLimits(selected.contextWindow, false, selected.effectivePercent);
       // The persisted window bound comes from the same disclosed window as the

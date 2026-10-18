@@ -6,12 +6,12 @@ export const CHECKPOINT_KEY = 'subscriptionCompactionV1';
 // Floor for a window bound, used when no usable window is disclosed.
 export const CHECKPOINT_BYTES = 512 * 1024;
 export const CHECKPOINT_MAX_AGE = 24 * 60 * 60 * 1000;
-// The subscription route's own client measures the active context against a
+// The subscription backend's own client measures the active context against a
 // limit derived from the disclosed window and a per-model effective percent.
 // The percent is read from the catalog when it is disclosed; this ratio is the
 // fallback for an undisclosed model, and the value observed on this account.
 // The bridge has no tokenizer: the byte bound below is a guard, not a token
-// guarantee, and the route compares its own rendered count against the number
+// guarantee, and the backend compares its own rendered count against the number
 // sent here.
 export const COMPACT_RATIO = 0.95;
 export const PERCENT_MAX = 100;
@@ -137,7 +137,7 @@ export function threshold(contextWindow, percent) {
  * Express the persisted window bound in bytes for one disclosed window.
  *
  * This is a resource bound for opaque content the bridge cannot measure in
- * tokens. The route compacts a request whose measured count is past the model
+ * tokens. The backend compacts a request whose measured count is past the model
  * window, so the window it returns is a reduction of a larger input — measured
  * at about a quarter of the input, well under this bound, but not proven by an
  * observed oversized window. The fixed value stays as the floor when no usable
@@ -152,11 +152,11 @@ export function checkpointLimit(contextWindow, percent) {
  * Express the request bound in bytes for one disclosed window.
  *
  * The bound is a resource limit — bounded read, memory and cost for one request
- * — not a guard against rejection. The route compacts a request whose measured
+ * — not a guard against rejection. The backend compacts a request whose measured
  * count is past the model window, so a request that is past the window in the
  * bridge's byte estimate is sent as it is.
  *
- * The bound must stay above the threshold in the route's own measure, otherwise
+ * The bound must stay above the threshold in the backend's own measure, otherwise
  * the bridge refuses before compaction can ever fire: the fixed floor admits
  * about 51,000 tokens at the measured bytes-per-token, far below the threshold.
  * The conservative bytes-per-token keeps that margin.
@@ -242,7 +242,7 @@ export class CompactionCapture {
     const terminal = Array.isArray(output) ? output : undefined;
     const streamed = [...this.observed.values()];
     if (!terminal?.some(value => value?.type === 'compaction') && !streamed.some(value => value?.type === 'compaction')) return undefined;
-    // The streamed order is authoritative: the subscription route omits items
+    // The streamed order is authoritative: the subscription backend omits items
     // from the terminal array (observed as a missing index on a real
     // compaction), so positional agreement with it cannot be required. A
     // terminal compaction item that exists and disagrees is still a
