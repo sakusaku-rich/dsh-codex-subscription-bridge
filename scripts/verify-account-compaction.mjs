@@ -4,6 +4,8 @@ import { AuthStore, authDirectory } from '../src/auth.js';
 import { DirectBridge } from '../src/direct.js';
 import { BridgeError, failure } from '../src/errors.js';
 import { CHECKPOINT_KEY, threshold, requestLimits } from '../src/compaction.js';
+import { CONVERSATION_KEY } from '../src/conversation.js';
+import { BlockAssembler } from '@deepseek-ai/dsh-llm';
 
 // Owner-authorized real-account measurement only; never part of CI. It reports
 // sanitized counters and sizes, never opaque checkpoints, credentials, account
@@ -32,9 +34,17 @@ const sent = [];
 const real = new Http();
 const http = new Http(async (url, options) => {
   const response = await real.open(url, options, options.signal);
-  const entry = { compactThreshold: null, bytes: typeof options.body === 'string' ? Buffer.byteLength(options.body) : 0, status: response.status, events: [] };
+  const entry = { compactThreshold: null, store: null, chained: null, inputItems: null, bytes: typeof options.body === 'string' ? Buffer.byteLength(options.body) : 0, status: response.status, events: [] };
   if (typeof options.body === 'string') {
-    try { entry.compactThreshold = JSON.parse(options.body).context_management?.[0]?.compact_threshold ?? null; } catch { /* shape only */ }
+    // Shape and counters only. The conversation id itself is a server identifier
+    // for a stored conversation, so it is recorded as a boolean, never as a value.
+    try {
+      const body = JSON.parse(options.body);
+      entry.compactThreshold = body.context_management?.[0]?.compact_threshold ?? null;
+      entry.store = body.store ?? null;
+      entry.chained = body.previous_response_id !== undefined;
+      entry.inputItems = Array.isArray(body.input) ? body.input.length : null;
+    } catch { /* shape only */ }
   }
   sent.push(entry);
   // Event types only, never content: read a tee'd copy alongside the bridge.
@@ -50,13 +60,15 @@ const http = new Http(async (url, options) => {
 
 const bridge = new DirectBridge(new AuthStore(authDirectory(process.env)), http, {}, { warn: () => {} });
 const turns = [];
+const history = [];
 let spent = 0;
 
 async function turn(text, label) {
   const record = { label, bytes: Buffer.byteLength(text) };
   const chunks = [];
+  const firstSent = sent.length;
   try {
-    for await (const chunk of bridge.stream({ provider: 'codex-subscription', model, messages: [{ role: 'user', content: [{ type: 'text', text }] }] })) chunks.push(chunk);
+    for await (const chunk of bridge.stream({ provider: 'codex-subscription', model, messages: [...history, { role: 'user', content: [{ type: 'text', text }] }] })) chunks.push(chunk);
   } catch (error) {
     record.failure = failure(error).code;
     turns.push(record);
@@ -67,7 +79,14 @@ async function turn(text, label) {
   record.usage = usage ?? null;
   record.renderedInput = usage === undefined ? null : usage.inputTokens + (usage.cacheReadTokens ?? 0);
   record.checkpoint = finish?.replayState?.response?.[CHECKPOINT_KEY] !== undefined;
+  record.chainPublished = finish?.replayState?.response?.[CONVERSATION_KEY] !== undefined;
+  // The request this turn produced, matched by order rather than by content.
+  const request = sent[firstSent];
+  if (request !== undefined) { record.chained = request.chained; record.inputItems = request.inputItems; }
   if (record.renderedInput !== null) spent += record.renderedInput;
+  const assembler = new BlockAssembler();
+  for (const chunk of chunks) assembler.push(chunk);
+  history.push({ role: 'assistant', content: assembler.blocks(), source: { kind: 'model', provider: 'codex-subscription', model, replayState: assembler.replayState } });
   turns.push(record);
   return record;
 }
@@ -95,6 +114,12 @@ try {
     if (record.checkpoint) break;
     // Re-estimate from the turn that just ran, so the next attempt converges.
     if (record.renderedInput) bytesPerToken = record.bytes / record.renderedInput;
+  }
+  if (turns.some(entry => entry.checkpoint) && spent < tokenBudget) {
+    // A chained follow-up sends only what it appends, so one item is the signal
+    // that the backend conversation was referenced rather than resent.
+    const follow = await turn('Confirm the chain is reused.', 'follow-up');
+    follow.chainConfirmed = follow.chained === true && follow.inputItems === 1;
   }
   await new Promise(resolve => setTimeout(resolve, 4000));
   console.log(JSON.stringify({ bytesPerToken: Number(bytesPerToken.toFixed(2)), spent, sent, turns }));

@@ -89,7 +89,7 @@ test('catalog projects the disclosed context window and rejects malformed window
     await assert.rejects(bad.listModels(), { code: 'PROTOCOL_INVALID' });
   }
 });
-test('stream forwards tools and reasoning effort, stays unpersisted, and normalizes deltas', async () => {
+test('stream forwards tools and reasoning effort, persists the conversation, and normalizes deltas', async () => {
   const calls = []; const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async (url, options) => {
     calls.push({ url, options }); return url.includes('/models?')
       ? json({ models: [{ ...model, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }] }] })
@@ -97,7 +97,9 @@ test('stream forwards tools and reasoning effort, stays unpersisted, and normali
   }));
   const chunks = await collect(bridge.stream(input({ tools: [{ name: 'shell', description: 'Run shell', parameters: { type: 'object' }, deferLoading: true }], reasoningEffort: 'medium' })));
   assert.equal(chunks.at(-1).reason.kind, 'stop'); assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello!');
-  const body = JSON.parse(calls.at(-1).options.body); assert.equal(body.store, false); assert.equal(body.stream, true);
+  const body = JSON.parse(calls.at(-1).options.body); assert.equal(body.store, true); assert.equal(body.stream, true);
+  // A first turn has no chain to reference; the id it returns is what later turns use.
+  assert.equal(body.previous_response_id, undefined);
   assert.deepEqual(body.tools, [{ type: 'function', name: 'shell', description: 'Run shell', strict: false, parameters: { type: 'object' } }]);
   // The disclosed id travels verbatim; the backend, not this bridge, owns the scale.
   assert.deepEqual(body.reasoning, { effort: 'medium' });

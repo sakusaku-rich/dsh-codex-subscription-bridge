@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSubscriptionCompactionEngine, ownsSubscriptionCompaction } from '../src/compaction-owner.js';
-import { CompactionCapture, CHECKPOINT_MAX_AGE, compactionScope, inspectCheckpoint } from '../src/compaction.js';
+import { CompactionCapture } from '../src/compaction.js';
+import { CONVERSATION_MAX_AGE, conversationScope, inspectConversation, conversationRecord } from '../src/conversation.js';
+import { digest, contentDigest } from '../src/hashes.js';
 import { validateInput } from '../src/text.js';
 
 const user = text => ({ role: 'user', content: [{ type: 'text', text }] });
@@ -45,32 +47,39 @@ test('the shipped backend extends the pinned host engine and inherits its plugin
   assert.equal(Engine.Config, BasicCompactionEngine.Config);
 });
 
-function checkpointed() {
+function chained() {
   const plan = validateInput(options([user('Start')]));
-  const scope = compactionScope({ account: 'one' }, 'synthetic', plan);
+  const scope = conversationScope({ account: 'one' }, 'synthetic', plan);
   const blocks = [{ type: 'text', text: 'Answer' }];
-  const replayState = new CompactionCapture().finish([compact, reply('Answer')], scope, plan, blocks);
-  return { plan, scope, blocks, replayState };
+  return { plan, scope, blocks, record: conversationRecord(scope, 'resp-1', digest(plan.input), contentDigest(blocks)) };
 }
 
-test('checkpoint inspection names every refusal instead of silently discarding state', () => {
-  const { plan, scope, blocks, replayState } = checkpointed();
-  const messages = [user('Start'), { role: 'assistant', content: blocks, source: { replayState } }, user('Next')];
+test('the marker record carries only a count, because a stateful turn replays nothing', () => {
+  const { plan, scope, blocks, record } = chained();
+  const marker = new CompactionCapture().finish([compact, reply('Answer')], scope, plan, blocks);
+  assert.equal(marker.response.subscriptionCompactionV1.count, 2);
+  assert.equal(JSON.stringify(marker.response.subscriptionCompactionV1).includes('opaque'), false);
+  assert.equal(record.response.subscriptionConversationV1.id, 'resp-1');
+});
+
+test('conversation inspection names every refusal instead of silently trusting a chain', () => {
+  const { plan, scope, blocks, record } = chained();
+  const messages = [user('Start'), { role: 'assistant', content: blocks, source: { replayState: record } }, user('Next')];
   const next = validateInput(options(messages));
-  assert.ok(inspectCheckpoint(messages, next, scope).items);
-  assert.deepEqual(inspectCheckpoint([user('Start')], validateInput(options([user('Start')])), scope), {});
-  assert.equal(inspectCheckpoint(messages, next, 'another-scope').refusal, 'SCOPE');
-  assert.equal(inspectCheckpoint(messages, next, scope, Date.now() + CHECKPOINT_MAX_AGE + 1).refusal, 'EXPIRED');
+  assert.equal(inspectConversation(messages, next, scope).id, 'resp-1');
+  assert.deepEqual(inspectConversation([user('Start')], validateInput(options([user('Start')])), scope), {});
+  assert.equal(inspectConversation(messages, next, 'another-scope').refusal, 'SCOPE');
+  assert.equal(inspectConversation(messages, next, scope, Date.now() + CONVERSATION_MAX_AGE + 1).refusal, 'EXPIRED');
   const edited = clone(messages); edited[0] = user('Edited');
-  assert.equal(inspectCheckpoint(edited, validateInput(options(edited)), scope).refusal, 'PREFIX');
+  assert.equal(inspectConversation(edited, validateInput(options(edited)), scope).refusal, 'PREFIX');
   const content = clone(messages); content[1].content[0].text = 'Changed';
-  assert.equal(inspectCheckpoint(content, next, scope).refusal, 'CONTENT');
-  const future = clone(messages); future[1].source.replayState.response.subscriptionCompactionV1.createdAt = Date.now() + 60_000;
-  assert.equal(inspectCheckpoint(future, next, scope).refusal, 'METADATA');
-  const digest = clone(messages); digest[1].source.replayState.response.subscriptionCompactionV1.items[0].encrypted_content = 'changed';
-  assert.equal(inspectCheckpoint(digest, next, scope).refusal, 'DIGEST');
-  const invalid = clone(messages); invalid[1].source.replayState.response.subscriptionCompactionV1.items = [];
-  assert.equal(inspectCheckpoint(invalid, next, scope).refusal, 'WINDOW_SHAPE');
+  assert.equal(inspectConversation(content, next, scope).refusal, 'CONTENT');
+  const future = clone(messages); future[1].source.replayState.response.subscriptionConversationV1.createdAt = Date.now() + 60_000;
+  assert.equal(inspectConversation(future, next, scope).refusal, 'METADATA');
+  const opaque = clone(messages); opaque[1].source.replayState.response.subscriptionConversationV1.id = '';
+  assert.equal(inspectConversation(opaque, next, scope).refusal, 'ID');
+  const role = clone(messages); role[1].role = 'user';
+  assert.equal(inspectConversation(role, next, scope).refusal, 'SHAPE');
   // A failure with no stage of its own still reports the generic label.
-  assert.equal(inspectCheckpoint(messages, { ...next, spans: undefined }, scope).refusal, 'INVALID');
+  assert.equal(inspectConversation(messages, { ...next, spans: undefined }, scope).refusal, 'INVALID');
 });

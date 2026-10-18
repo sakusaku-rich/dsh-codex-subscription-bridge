@@ -34,6 +34,8 @@
     "src/index.js",
     "src/direct.js",
     "src/compaction.js",
+    "src/conversation.js",
+    "src/hashes.js",
     "src/compaction-owner.js",
     "src/compaction-engine.js",
     "src/sse.js",

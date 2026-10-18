@@ -8,7 +8,9 @@ import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, es
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
 import { Http, BASE, classifyStatusError, readJson } from './http.js';
 import { accountHeaders, compactionAccount } from './auth.js';
-import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, threshold, requestLimits } from './compaction.js';
+import { CompactionCapture, threshold, requestLimits } from './compaction.js';
+import { CONVERSATION_ID_MAX, conversationScope, inspectConversation, appendedItems, conversationRecord } from './conversation.js';
+import { digest, contentDigest } from './hashes.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
@@ -172,7 +174,7 @@ export class DirectBridge {
     // validation, matching the DeepSeek adapter's projection order.
     const messages = projectOffloadedImages(options.messages, ref => offloadedImageText(ref, this.imageAccess(ref)));
     string(options.model);
-    const capture = new CompactionCapture(); let scope, compactThreshold;
+    const capture = new CompactionCapture(); let scope, compactThreshold, conversationId;
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
     let phase = 'MODEL_CATALOG';
     const blocks = new Map(); let outputBytes = 0, toolBytes = 0, complete = false, toolCalls = false;
@@ -242,9 +244,6 @@ export class DirectBridge {
       // replace; the wire window is still validated below under the derived limits.
       const retainedLimits = requestLimits(selected.contextWindow, true);
       const wireLimits = requestLimits(selected.contextWindow);
-      // The persisted window bound comes from the same disclosed window as the
-      // threshold, so a window the route can produce cannot exceed it.
-      capture.limit = wireLimits.checkpointBytes;
       phase = 'INPUT';
       const originalPlan = validateInput({ ...options, messages }, true, retainedLimits);
       let plan = originalPlan;
@@ -254,28 +253,29 @@ export class DirectBridge {
         throw new BridgeError('INPUT_UNSUPPORTED');
       }
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
-      scope = compactionScope(compactionAccount(token), options.model, originalPlan);
+      scope = conversationScope(compactionAccount(token), options.model, originalPlan);
       compactThreshold = threshold(selected.contextWindow);
-      const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope, Date.now(), wireLimits.checkpointBytes);
+      const conversation = inspectConversation(messages, originalPlan, scope);
       // A refusal is the model-switch, expiry and edited-history boundary: the
-      // opaque state cannot carry over, so the host log names it before the
-      // bounded local history is resent on its own.
-      if (checkpoint.refusal !== undefined) this.warn(`The encrypted subscription compaction state was refused (${checkpoint.refusal}); resending the bounded local history.`);
-      // A selected checkpoint replaces only its exact covered prefix. Otherwise
-      // the retained transcript is revalidated under the window-derived wire limits.
-      if (checkpoint.items !== undefined) {
-        plan = compactPlan(originalPlan, checkpoint, wireLimits);
-        // Dropping the oldest covered items is recovery, not refusal: the turn
-        // still runs on a shorter window, matching the official client's behavior
-        // when the window is exceeded while compacting. The log names the count.
-        if (plan.trimmed > 0) this.warn(`The subscription compaction window was trimmed from the oldest end (${plan.trimmed} items) to fit the request bound.`);
+      // bridge can prove what it sent but not what the backend still holds, so the
+      // chain is refused rather than trusted, and the host log names it before the
+      // full history is sent on its own.
+      if (conversation.refusal !== undefined) this.warn(`The subscription conversation chain was refused (${conversation.refusal}); sending the full history.`);
+      // A usable chain sends only what this turn appends. The backend holds the
+      // covered part, so that part is not bounded here.
+      if (conversation.id !== undefined) {
+        const appended = appendedItems(originalPlan, conversation, wireLimits);
+        plan = { ...originalPlan, input: appended.input,
+          images: new Map([...originalPlan.images].filter(([id]) => appended.attachments.has(id))),
+          imageBlocks: originalPlan.imageBlocks.slice(conversation.imageEnd) };
+        conversationId = conversation.id;
       }
       else {
         try { plan = validateInput({ ...options, messages }, false, wireLimits); }
         catch (error) {
-          // Without a reusable checkpoint the full local transcript is the only
-          // remaining input; name that boundary instead of the generic shape failure.
-          if (checkpoint.refusal !== undefined && error instanceof BridgeError && error.code === 'INPUT_UNSUPPORTED') throw new BridgeError('COMPACTION_UNAVAILABLE', 'COMPACTION');
+          // Without a usable chain the full local transcript is the only remaining
+          // input; name that boundary instead of the generic shape failure.
+          if (conversation.refusal !== undefined && error instanceof BridgeError && error.code === 'INPUT_UNSUPPORTED') throw new BridgeError('CONVERSATION_UNAVAILABLE', 'CONVERSATION');
           throw error;
         }
       }
@@ -292,7 +292,7 @@ export class DirectBridge {
         return await this.own(async () => {
           const result = await this.http.open(`${BASE}/responses`, { method: 'POST', headers: { ...headers(token), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
           body: JSON.stringify({ model: options.model, instructions, input: input.filter(item => !(item.type === 'message' && item.role === 'developer')),
-            store: false, stream: true, ...(compactThreshold === undefined ? {} : { context_management: [{ type: 'compaction', compact_threshold: compactThreshold }] }), ...(plan.temperature === undefined ? {} : { temperature: plan.temperature }),
+            store: true, stream: true, ...(conversationId === undefined ? {} : { previous_response_id: conversationId }), ...(compactThreshold === undefined ? {} : { context_management: [{ type: 'compaction', compact_threshold: compactThreshold }] }), ...(plan.temperature === undefined ? {} : { temperature: plan.temperature }),
             ...(plan.tools === undefined ? {} : { tools: plan.tools }), ...(plan.reasoning === undefined ? {} : { reasoning: plan.reasoning }) }) }, controller.signal);
           const cancel = () => this.track(Promise.resolve(result.body?.cancel()).catch(() => {}), controller);
           controller.signal.addEventListener('abort', cancel, { once: true });
@@ -304,18 +304,20 @@ export class DirectBridge {
       response = await openTurn();
       // Only an explicit parameter rejection authorizes one bounded full-history retry.
       // Never retry partial streams, quota/auth failures, or arbitrary upstream errors.
-      if (compactThreshold !== undefined && [400, 422].includes(response.status)) {
-        let rejected = false;
+      if ((compactThreshold !== undefined || conversationId !== undefined) && [400, 422].includes(response.status)) {
+        let rejected;
         try {
           const body = await this.own(() => readJson(response, 16 * 1024, controller.signal), controller.signal);
-          rejected = body?.error?.param === 'context_management' &&
-            ['unsupported_parameter', 'unknown_parameter'].includes(body.error.code);
+          if (['context_management', 'previous_response_id'].includes(body?.error?.param) &&
+              ['unsupported_parameter', 'unknown_parameter'].includes(body.error.code)) rejected = body.error.param;
         } catch { if (controller.signal.aborted) throw new BridgeError('ABORTED'); }
-        if (rejected) {
+        if (rejected !== undefined) {
+          // A rejected chain id is not reused, so the chain is dropped with it.
+          if (rejected === 'previous_response_id') conversationId = undefined;
+          else compactThreshold = undefined;
           controller.removeBodyAbort?.();
           await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
           plan = validateInput({ ...options, messages }, false, wireLimits);
-          compactThreshold = undefined;
           response = await openTurn();
         }
       }
@@ -361,14 +363,17 @@ export class DirectBridge {
           complete = true;
           if (event.response.usage !== undefined && event.response.usage !== null) { if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'usage', usage: responseUsage(event.response.usage, 'SSE_TERMINAL') }; }
           if (controller.signal.aborted) throw new BridgeError('ABORTED');
-          const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan,
-            [...blocks.values()].map(block => block.type === 'tool-call'
-              ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text }));
-          // A refused checkpoint costs the next turn its replay window, not this
-          // turn's answer, so it is logged rather than raised.
-          if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
-          if (capture.trimmed > 0) this.warn(`The published subscription compaction window was trimmed from the oldest end (${capture.trimmed} items) to fit its bound.`);
-          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
+          const emitted = [...blocks.values()].map(block => block.type === 'tool-call'
+            ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text });
+          const marker = capture.finish(event.response.output, scope, originalPlan, emitted);
+          // A marker is not part of the answer: failing to prove one never fails the turn.
+          if (capture.refusal !== undefined) this.warn(`The subscription compaction marker was not published (${capture.refusal}); the turn's answer is unaffected.`);
+          // The record is what the next turn can prove against. A turn whose id
+          // cannot be bounded publishes nothing and the next turn sends full history.
+          const record = conversationRecord(scope, event.response.id, digest(originalPlan.input), contentDigest(emitted));
+          if (record.refusal !== undefined) this.warn(`The subscription conversation record was not published (${record.refusal}); the next turn sends the full history.`);
+          const published = { ...(record.refusal === undefined ? record.response : {}), ...(marker?.response ?? {}) };
+          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(Object.keys(published).length === 0 ? {} : { replayState: { response: published } }) }; return;
         } else if (TERMINAL_FAILURES.has(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
         // Any other event is a notification the bridge does not project. It is
         // ignored rather than failing a turn whose answer was already

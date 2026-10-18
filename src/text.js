@@ -30,6 +30,25 @@ export const IMAGE_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp
 const ATTACHMENT_ID = /^sha256:[0-9a-f]{64}$/;
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
 
+/** Count what a wire input contributes against a bound. */
+export function measure(input) {
+  let textBytes = 0, toolBytes = 0;
+  const attachments = new Set();
+  for (const value of input) {
+    if (value.type === 'message') for (const part of value.content) {
+      if (typeof part.text === 'string') textBytes += Buffer.byteLength(part.text);
+      if (part.attachmentId) attachments.add(part.attachmentId);
+    }
+    if (value.type === 'function_call') toolBytes += Buffer.byteLength(value.arguments);
+    if (value.type === 'function_call_output') toolBytes += Buffer.byteLength(value.output);
+  }
+  return { textBytes, toolBytes, attachments };
+}
+
+export const fits = (limits, input, measured) => input.length <= limits.messageLimit &&
+  measured.textBytes <= limits.textBytes && measured.toolBytes <= limits.toolBytes &&
+  measured.textBytes + measured.toolBytes <= limits.inputBytes;
+
 /**
  * One disclosed reasoning level: a bounded id plus an optional bounded note.
  *
