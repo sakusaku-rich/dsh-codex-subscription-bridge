@@ -8,8 +8,8 @@ import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, es
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
 import { Http, BASE, classifyStatusError, readJson } from './http.js';
 import { accountHeaders, compactionAccount } from './auth.js';
-import { CompactionCapture, threshold, requestLimits } from './compaction.js';
-import { CONVERSATION_ID_MAX, conversationScope, inspectConversation, appendedItems, conversationRecord } from './conversation.js';
+import { CompactionCapture, PERCENT_MAX, threshold, requestLimits } from './compaction.js';
+import { CONVERSATION_ID_MAX, conversationScope, inspectConversation, appendedItems, trimOldest, conversationRecord } from './conversation.js';
 import { digest, contentDigest } from './hashes.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
@@ -138,6 +138,15 @@ export class DirectBridge {
             if (!Number.isSafeInteger(entry.context_window) || entry.context_window <= 0) throw new BridgeError('PROTOCOL_INVALID');
             model.contextWindow = entry.context_window;
           }
+          // The route's own client derives its compaction limit from a per-model
+          // effective percent, so a disclosed percent is read here. Absence stays
+          // optional and the shipped ratio is the fallback; a malformed disclosed
+          // value fails closed like the window does.
+          if (entry.effective_context_window_percent !== undefined) {
+            if (!Number.isSafeInteger(entry.effective_context_window_percent) ||
+                entry.effective_context_window_percent < 1 || entry.effective_context_window_percent > PERCENT_MAX) throw new BridgeError('PROTOCOL_INVALID');
+            model.effectivePercent = entry.effective_context_window_percent;
+          }
           // The backend also discloses this model's reasoning levels and, when
           // it names one, the default it would apply. Both stay optional so an
           // undisclosed model simply offers no effort selector.
@@ -174,7 +183,7 @@ export class DirectBridge {
     // validation, matching the DeepSeek adapter's projection order.
     const messages = projectOffloadedImages(options.messages, ref => offloadedImageText(ref, this.imageAccess(ref)));
     string(options.model);
-    const capture = new CompactionCapture(); let scope, compactThreshold, conversationId;
+    const capture = new CompactionCapture(); let scope, compactThreshold, conversationId, trimmed;
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
     let phase = 'MODEL_CATALOG';
     const blocks = new Map(); let outputBytes = 0, toolBytes = 0, complete = false, toolCalls = false;
@@ -239,11 +248,11 @@ export class DirectBridge {
       const selected = models.find(model => model.id === options.model);
       if (selected === undefined) throw new BridgeError('MODEL_UNAVAILABLE');
       // The request bound and the compaction threshold come from the same
-      // disclosed window, so the model has to be resolved before validation.
-      // Retained limits admit a transcript whose covered prefix a checkpoint may
-      // replace; the wire window is still validated below under the derived limits.
-      const retainedLimits = requestLimits(selected.contextWindow, true);
-      const wireLimits = requestLimits(selected.contextWindow);
+      // disclosed window and the same per-model percent, so the model has to be
+      // resolved before validation. Retained limits admit a transcript that may
+      // be trimmed from the oldest end to fit the wire bound below.
+      const retainedLimits = requestLimits(selected.contextWindow, true, selected.effectivePercent);
+      const wireLimits = requestLimits(selected.contextWindow, false, selected.effectivePercent);
       phase = 'INPUT';
       const originalPlan = validateInput({ ...options, messages }, true, retainedLimits);
       let plan = originalPlan;
@@ -254,15 +263,30 @@ export class DirectBridge {
       }
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
       scope = conversationScope(compactionAccount(token), options.model, originalPlan);
-      compactThreshold = threshold(selected.contextWindow);
+      compactThreshold = threshold(selected.contextWindow, selected.effectivePercent);
       const conversation = inspectConversation(messages, originalPlan, scope);
       // A refusal is the model-switch, expiry and edited-history boundary: the
       // bridge can prove what it sent but not what the backend still holds, so the
       // chain is refused rather than trusted, and the host log names it before the
       // full history is sent on its own.
       if (conversation.refusal !== undefined) this.warn(`The subscription conversation chain was refused (${conversation.refusal}); sending the full history.`);
-      // A usable chain sends only what this turn appends. The backend holds the
-      // covered part, so that part is not bounded here.
+      // The full local transcript is the input when no chain is usable. Following
+      // the official client, the oldest history items are dropped until the request
+      // fits instead of failing the turn; a tool call and its executed result are
+      // dropped as one unit, and an image occurrence is left for the host to
+      // offload. Nothing left to drop is still a refusal, and limits are never
+      // raised silently.
+      const fullHistory = () => {
+        const fitted = trimOldest(originalPlan, wireLimits);
+        if (fitted.trimmed > 0) {
+          this.warn(`The full history was trimmed from the oldest end (${fitted.trimmed} items) to fit the request bound.`);
+          // A trimmed request is not the whole transcript, so the bridge cannot
+          // prove the backend holds what the transcript says. The chain is not
+          // published and the next turn starts a new conversation.
+          trimmed = true;
+        }
+        return fitted;
+      };
       if (conversation.id !== undefined) {
         const appended = appendedItems(originalPlan, conversation, wireLimits);
         plan = { ...originalPlan, input: appended.input,
@@ -271,10 +295,10 @@ export class DirectBridge {
         conversationId = conversation.id;
       }
       else {
-        try { plan = validateInput({ ...options, messages }, false, wireLimits); }
+        try { plan = { ...originalPlan, ...fullHistory() }; }
         catch (error) {
-          // Without a usable chain the full local transcript is the only remaining
-          // input; name that boundary instead of the generic shape failure.
+          // Without a usable chain and with nothing left to drop, name that
+          // boundary instead of the generic shape failure.
           if (conversation.refusal !== undefined && error instanceof BridgeError && error.code === 'INPUT_UNSUPPORTED') throw new BridgeError('CONVERSATION_UNAVAILABLE', 'CONVERSATION');
           throw error;
         }
@@ -317,7 +341,7 @@ export class DirectBridge {
           else compactThreshold = undefined;
           controller.removeBodyAbort?.();
           await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
-          plan = validateInput({ ...options, messages }, false, wireLimits);
+          plan = { ...originalPlan, ...fullHistory() };
           response = await openTurn();
         }
       }
@@ -369,8 +393,11 @@ export class DirectBridge {
           // A marker is not part of the answer: failing to prove one never fails the turn.
           if (capture.refusal !== undefined) this.warn(`The subscription compaction marker was not published (${capture.refusal}); the turn's answer is unaffected.`);
           // The record is what the next turn can prove against. A turn whose id
-          // cannot be bounded publishes nothing and the next turn sends full history.
-          const record = conversationRecord(scope, event.response.id, digest(originalPlan.input), contentDigest(emitted));
+          // cannot be bounded publishes nothing, and a trimmed turn cannot prove
+          // the backend holds what the transcript says, so the chain is not
+          // published and the next turn starts a new conversation.
+          const record = trimmed ? { refusal: 'TRIMMED' }
+            : conversationRecord(scope, event.response.id, digest(originalPlan.input), contentDigest(emitted));
           if (record.refusal !== undefined) this.warn(`The subscription conversation record was not published (${record.refusal}); the next turn sends the full history.`);
           const published = { ...(record.refusal === undefined ? record.response : {}), ...(marker?.response ?? {}) };
           yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(Object.keys(published).length === 0 ? {} : { replayState: { response: published } }) }; return;

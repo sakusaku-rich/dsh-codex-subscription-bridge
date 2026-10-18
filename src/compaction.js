@@ -9,10 +9,13 @@ export const CHECKPOINT_KEY = 'subscriptionCompactionV1';
 // 1 MiB, so this is the floor used when no window is disclosed.
 export const CHECKPOINT_BYTES = 512 * 1024;
 // The subscription route's own client measures the active context against a
-// limit derived from the disclosed window, and 95% is that client's disclosed
-// effective percent. The byte bound below is a guard, not a token guarantee, and
-// the route compares its own rendered count against the number sent here.
+// limit derived from the disclosed window and a per-model effective percent.
+// The percent is read from the catalog when it is disclosed; this ratio is the
+// fallback for an undisclosed model. The byte bound below is a guard, not a
+// token guarantee, and the route compares its own rendered count against the
+// number sent here.
 export const COMPACT_RATIO = 0.95;
+export const PERCENT_MAX = 100;
 export const BYTES_PER_TOKEN = 8;
 
 // The failing stage travels on the thrown error, so this module owns the whole
@@ -119,8 +122,13 @@ export class CompactionCapture {
   }
 }
 
-export function threshold(contextWindow) {
-  return Number.isSafeInteger(contextWindow) && contextWindow >= 2048 ? Math.floor(contextWindow * COMPACT_RATIO) : undefined;
+/** The per-model effective percent when the catalog discloses one, else the shipped ratio. */
+export function ratio(percent) {
+  return Number.isSafeInteger(percent) && percent >= 1 && percent <= PERCENT_MAX ? percent / 100 : COMPACT_RATIO;
+}
+
+export function threshold(contextWindow, percent) {
+  return Number.isSafeInteger(contextWindow) && contextWindow >= 2048 ? Math.floor(contextWindow * ratio(percent)) : undefined;
 }
 
 /**
@@ -128,12 +136,12 @@ export function threshold(contextWindow) {
  *
  * The bound is the compaction threshold at a conservative bytes-per-token, with
  * the fixed floor kept when no window is usable. A request that can reach the
- * threshold must fit under this bound, otherwise the bridge refuses it before
- * the route has a chance to compact. In a stateful turn the bound applies only to
- * what this turn appends; the part the backend already holds is not bounded here.
+ * threshold must fit under this bound, otherwise the bridge trims the oldest
+ * history items to fit it. In a stateful turn the bound applies only to what
+ * this turn appends; the part the backend already holds is not bounded here.
  */
-export function requestLimits(contextWindow, retained = false) {
-  const tokens = threshold(contextWindow);
+export function requestLimits(contextWindow, retained = false, percent) {
+  const tokens = threshold(contextWindow, percent);
   const floor = retained ? RETAINED_INPUT_BYTES_FLOOR : INPUT_BYTES_FLOOR;
   const bound = tokens === undefined ? floor : tokens * BYTES_PER_TOKEN;
   return {

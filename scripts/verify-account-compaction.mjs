@@ -58,7 +58,8 @@ const http = new Http(async (url, options) => {
   return response;
 });
 
-const bridge = new DirectBridge(new AuthStore(authDirectory(process.env)), http, {}, { warn: () => {} });
+const warnings = [];
+const bridge = new DirectBridge(new AuthStore(authDirectory(process.env)), http, {}, { warn: message => warnings.push(message) });
 const turns = [];
 const history = [];
 let spent = 0;
@@ -67,6 +68,7 @@ async function turn(text, label) {
   const record = { label, bytes: Buffer.byteLength(text) };
   const chunks = [];
   const firstSent = sent.length;
+  const firstWarning = warnings.length;
   try {
     for await (const chunk of bridge.stream({ provider: 'codex-subscription', model, messages: [...history, { role: 'user', content: [{ type: 'text', text }] }] })) chunks.push(chunk);
   } catch (error) {
@@ -83,6 +85,7 @@ async function turn(text, label) {
   // The request this turn produced, matched by order rather than by content.
   const request = sent[firstSent];
   if (request !== undefined) { record.chained = request.chained; record.inputItems = request.inputItems; }
+  record.warnings = warnings.slice(firstWarning);
   if (record.renderedInput !== null) spent += record.renderedInput;
   const assembler = new BlockAssembler();
   for (const chunk of chunks) assembler.push(chunk);
@@ -96,10 +99,13 @@ try {
   const selected = models.find(entry => entry.id === model);
   if (selected === undefined) throw new BridgeError('MODEL_UNAVAILABLE');
   const window = selected.contextWindow;
-  const limit = threshold(window);
+  const percent = selected.effectivePercent;
+  const limit = threshold(window, percent);
   if (limit === undefined) throw new BridgeError('INPUT_UNSUPPORTED', 'MODEL_CATALOG');
-  const bound = requestLimits(window).inputBytes;
-  console.log(JSON.stringify({ model, window, compactThreshold: limit, inputBytesBound: bound }));
+  const bound = requestLimits(window, false, percent).inputBytes;
+  // The percent is recorded as null when the catalog disclosed none, so the
+  // shipped fallback is distinguishable from a per-model measurement.
+  console.log(JSON.stringify({ model, window, effectivePercent: percent ?? null, compactThreshold: limit, inputBytesBound: bound }));
 
   const calibration = await turn(prose(1200).text, 'calibration');
   if (calibration.renderedInput === null) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');

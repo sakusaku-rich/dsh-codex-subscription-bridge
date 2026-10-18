@@ -4,7 +4,7 @@ import { BlockAssembler } from '@deepseek-ai/dsh-llm';
 import { DirectBridge } from '../src/direct.js';
 import { Http } from '../src/http.js';
 import { CHECKPOINT_KEY, CompactionCapture, threshold, requestLimits } from '../src/compaction.js';
-import { CONVERSATION_KEY, CONVERSATION_MAX_AGE, conversationScope, inspectConversation, appendedItems, conversationRecord } from '../src/conversation.js';
+import { CONVERSATION_KEY, CONVERSATION_MAX_AGE, conversationScope, inspectConversation, appendedItems, trimOldest, conversationRecord } from '../src/conversation.js';
 import { digest, contentDigest } from '../src/hashes.js';
 import { validateInput, TEXT_LIMIT, TOOL_BYTES_LIMIT } from '../src/text.js';
 import { Context } from '@deepseek-ai/cordis';
@@ -32,7 +32,8 @@ function fixture(responses, settings = {}, warnings = []) {
   const payloads = []; let account = 'synthetic-account';
   const bridge = new DirectBridge({ token: async () => token(account) }, new Http(async (url, request) => {
     if (url.includes('/models?')) return Response.json({ models: [{ slug: 'synthetic', display_name: 'Synthetic', visibility: 'list',
-      ...(settings.modelWindow === null ? {} : { context_window: settings.modelWindow ?? WINDOW }) }] });
+      ...(settings.modelWindow === null ? {} : { context_window: settings.modelWindow ?? WINDOW }),
+      ...(settings.modelPercent === null ? {} : { effective_context_window_percent: settings.modelPercent ?? 95 }) }] });
     payloads.push(JSON.parse(request.body));
     const next = responses.shift();
     assert.ok(next, 'unexpected request');
@@ -113,14 +114,52 @@ test('a chained turn whose appended part exceeds the wire bound is refused', asy
   } finally { await f.bridge.close(); }
 });
 
-test('a refused chain with a full history past the wire bounds names the boundary', async () => {
+test('a refused chain with a full history past the wire bounds drops the oldest items to fit', async () => {
   const f = fixture([[complete([reply('First')])], [complete([reply('Next')])]]);
   try {
     const start = user('x'.repeat(TEXT_BOUND - 10));
     const first = await run(f.bridge, options([start]));
-    const request = options([start, first.message, user('y'.repeat(100))]);
-    request.messages[0] = user('x'.repeat(TEXT_BOUND - 10).replace('x', 'y'));
+    const tail = user('y'.repeat(100));
+    const request = options([start, first.message, tail]);
+    request.messages[0] = user('x'.repeat(TEXT_BOUND - 10).replace('x', 'z'));
+    await run(f.bridge, request);
+    assert.ok(f.warnings.some(message => message.includes('chain was refused (PREFIX)')));
+    assert.ok(f.warnings.some(message => message.includes('trimmed from the oldest end')));
+    // A trimmed request is not the whole transcript, so nothing is published and
+    // the next turn starts a new conversation.
+    assert.ok(f.warnings.some(message => message.includes('not published (TRIMMED)')));
+    const sent = f.payloads[1].input;
+    assert.equal(sent.some(value => value.content?.[0]?.text === start.content[0].text), false);
+    assert.equal(sent.some(value => value.content?.[0]?.text === tail.content[0].text), true);
+  } finally { await f.bridge.close(); }
+});
+
+test('a full history with nothing left to drop still names the boundary', async () => {
+  const f = fixture([[complete([reply('First')])], [complete([reply('Next')])]]);
+  try {
+    const start = user('x'.repeat(100));
+    const first = await run(f.bridge, options([start]));
+    const request = options([start, first.message, user('y'.repeat(TEXT_BOUND + 1))]);
+    request.messages[0] = user('z'.repeat(100));
     await assert.rejects(run(f.bridge, request), { code: 'CONVERSATION_UNAVAILABLE' });
+    assert.ok(f.warnings.some(message => message.includes('chain was refused (PREFIX)')));
+  } finally { await f.bridge.close(); }
+});
+
+test('an image occurrence is never dropped by the bridge; the host offloads and retries', async () => {
+  const image = { type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 32, height: 32 } };
+  const original = { role: 'user', content: [image, { type: 'text', text: 'x'.repeat(TEXT_BOUND - 10) }] };
+  const plan = validateInput(options([original]), true, requestLimits(WINDOW, true));
+  const content = [{ type: 'text', text: 'Description' }];
+  const scope = conversationScope(compactionAccount(token('synthetic-account')), 'synthetic', plan);
+  const record = conversationRecord(scope, 'resp-1', digest(plan.input), contentDigest(content));
+  // The oldest item is an image, so the bridge cannot drop it to fit the bound;
+  // the host owns the attachment store and offloads its oldest images instead.
+  const messages = [{ role: 'user', content: [image, { type: 'text', text: 'y'.repeat(TEXT_BOUND - 10) }] },
+    { role: 'assistant', content, source: { replayState: record } }, user('Next')];
+  const f = fixture([[complete([reply('Continued')])]]);
+  try {
+    await assert.rejects(run(f.bridge, options(messages)), { code: 'CONVERSATION_UNAVAILABLE' });
     assert.ok(f.warnings.some(message => message.includes('chain was refused (PREFIX)')));
   } finally { await f.bridge.close(); }
 });
@@ -217,13 +256,22 @@ test('explicit unsupported parameters retry once with full bounded history', asy
   }
 });
 
-test('fallback does not resend oversized full history', async () => {
-  const f = fixture([[complete([compact, reply('First')])], Response.json({ error: { code: 'unsupported_parameter', param: 'previous_response_id' } }, { status: 400 })]);
+test('fallback drops the oldest history to fit instead of resending it oversized', async () => {
+  const f = fixture([[complete([compact, reply('First')])],
+    Response.json({ error: { code: 'unsupported_parameter', param: 'previous_response_id' } }, { status: 400 }),
+    [complete([reply('Retried')], 'resp-2')]]);
   try {
     const start = user('x'.repeat(TEXT_BOUND - 10));
+    const tail = user('x'.repeat(100));
     const first = await run(f.bridge, options([start]));
-    await assert.rejects(run(f.bridge, options([start, first.message, user('x'.repeat(100))])), { code: 'INPUT_UNSUPPORTED' });
-    assert.equal(f.payloads.length, 2);
+    await run(f.bridge, options([start, first.message, tail]));
+    assert.ok(f.warnings.some(message => message.includes('trimmed from the oldest end')));
+    assert.equal(f.payloads.length, 3);
+    // The retry runs without the rejected id and carries only what still fits.
+    assert.equal(f.payloads[2].previous_response_id, undefined);
+    const sent = f.payloads[2].input;
+    assert.equal(sent.some(value => value.content?.[0]?.text === start.content[0].text), false);
+    assert.equal(sent.some(value => value.content?.[0]?.text === tail.content[0].text), true);
   } finally { await f.bridge.close(); }
 });
 
@@ -271,6 +319,18 @@ test('covered image attachments are not read or resent on a chained turn', async
   } finally { await f.bridge.close(); }
 });
 
+test('a tool call and its executed result are dropped as one unit', () => {
+  const call = { role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'read', arguments: 'x'.repeat(TOOL_BYTES_LIMIT + 1) }] };
+  const result = { role: 'tool', toolCallId: 'call-1', content: [{ type: 'text', text: 'y'.repeat(100) }] };
+  const plan = validateInput(options([call, result, user('z'.repeat(100))]), true, requestLimits(WINDOW, true));
+  const fitted = trimOldest(plan, requestLimits(WINDOW));
+  assert.equal(fitted.trimmed, 2);
+  assert.deepEqual(fitted.input.map(value => value.type), ['message']);
+  assert.equal(fitted.input[0].content[0].text, 'z'.repeat(100));
+  // Dropping the call alone would leave its result orphaned, so the pair is one unit.
+  assert.equal(fitted.input.some(value => value.type === 'function_call_output'), false);
+});
+
 test('undisclosed model capacity omits compaction and a disclosed window uses the ratio', async () => {
   for (const [modelWindow, expected] of [[null, undefined], [1024, undefined], [4096, 3891], [272000, 258400]]) {
     const f = fixture([[complete([reply('Plain')])]], { modelWindow });
@@ -279,6 +339,24 @@ test('undisclosed model capacity omits compaction and a disclosed window uses th
       assert.equal(f.payloads[0].context_management?.[0].compact_threshold, expected);
     } finally { await f.bridge.close(); }
   }
+});
+
+test('a disclosed per-model percent drives the threshold and the bound, absence falls back to the shipped ratio', async () => {
+  assert.equal(threshold(272000, 80), 217600);
+  for (const percent of [null, undefined, 0, 101, 95.5, -1]) assert.equal(threshold(272000, percent), 258400);
+  assert.equal(requestLimits(500000, false, 80).inputBytes, 400000 * 8);
+  for (const [modelPercent, expected] of [[80, 217600], [null, 258400]]) {
+    const f = fixture([[complete([reply('Plain')])]], { modelPercent });
+    try {
+      await run(f.bridge, options([user('Start')]));
+      assert.equal(f.payloads[0].context_management?.[0].compact_threshold, expected);
+    } finally { await f.bridge.close(); }
+  }
+  // A disclosed value that is not a usable percent fails closed rather than being
+  // quietly replaced by the shipped ratio.
+  const malformed = fixture([[complete([reply('Plain')])]], { modelPercent: 0 });
+  try { await assert.rejects(run(malformed.bridge, options([user('Start')])), { code: 'PROTOCOL_INVALID' }); }
+  finally { await malformed.bridge.close(); }
 });
 
 test('the request byte bound is derived from the same window as the threshold', async () => {
