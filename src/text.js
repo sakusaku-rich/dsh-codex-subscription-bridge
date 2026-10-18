@@ -10,6 +10,15 @@ export const TOOL_DESCRIPTION_LIMIT = 8192;
 export const TOOL_PARAMETERS_LIMIT = 64 * 1024;
 export const TOOLS_BYTES_LIMIT = 256 * 1024;
 export const TOOL_BYTES_LIMIT = 2 * 1024 * 1024;
+// The request bound expressed in bytes. It stays the floor when the model
+// discloses no usable window; a disclosed window raises it through
+// `requestLimits` in compaction.js so the bound and the compaction threshold
+// come from the same measurement.
+export const INPUT_BYTES_FLOOR = TEXT_LIMIT + TOOL_BYTES_LIMIT;
+export const RETAINED_TEXT_LIMIT = 4 * 1024 * 1024;
+export const RETAINED_TOOL_BYTES_LIMIT = 16 * 1024 * 1024;
+export const RETAINED_INPUT_BYTES_FLOOR = RETAINED_TEXT_LIMIT + RETAINED_TOOL_BYTES_LIMIT;
+export const RETAINED_MESSAGE_LIMIT = 4096;
 export const CALL_ID_LIMIT = 256;
 export const BLOCK_LIMIT = 64;
 // Agent turns interleave tool calls and results as separate messages; the old
@@ -145,16 +154,35 @@ function serializeImage(block, images, imageBlocks) {
   imageBlocks.push(block);
 }
 
-function serializeToolCall(block, calls, pendingCalls, toolBytesRef) {
+// One shared byte counter so the combined request bound and the per-part bound
+// are checked against the same measurement. Text overflow stays the shape
+// failure it was; tool payload overflow stays a bound breach.
+function addBytes(bytesRef, kind, size) {
+  bytesRef[kind] += size;
+  if (bytesRef[kind] > bytesRef.limits[kind === 'text' ? 'textBytes' : 'toolBytes']) {
+    throw new BridgeError(kind === 'text' ? 'INPUT_UNSUPPORTED' : 'LIMIT_EXCEEDED');
+  }
+  if (bytesRef.text + bytesRef.tool > bytesRef.limits.inputBytes) throw new BridgeError('LIMIT_EXCEEDED');
+}
+
+export function defaultLimits(retained = false) {
+  return {
+    inputBytes: retained ? RETAINED_INPUT_BYTES_FLOOR : INPUT_BYTES_FLOOR,
+    textBytes: retained ? RETAINED_TEXT_LIMIT : TEXT_LIMIT,
+    toolBytes: retained ? RETAINED_TOOL_BYTES_LIMIT : TOOL_BYTES_LIMIT,
+    messageLimit: retained ? RETAINED_MESSAGE_LIMIT : MESSAGE_LIMIT,
+  };
+}
+
+function serializeToolCall(block, calls, pendingCalls, bytesRef) {
   if (typeof block.id !== 'string' || block.id.length === 0 || block.id.length > CALL_ID_LIMIT ||
       typeof block.name !== 'string' || block.name.length === 0 || Buffer.byteLength(block.name) > TOOL_NAME_LIMIT ||
       typeof block.arguments !== 'string' || calls.has(block.id)) throw new BridgeError('INPUT_UNSUPPORTED');
-  toolBytesRef.value += Buffer.byteLength(block.arguments);
-  if (toolBytesRef.value > toolBytesRef.limit) throw new BridgeError('LIMIT_EXCEEDED');
+  addBytes(bytesRef, 'tool', Buffer.byteLength(block.arguments));
   pendingCalls.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: block.arguments });
 }
 
-function serializeToolResult(message, calls, results, toolBytesRef) {
+function serializeToolResult(message, calls, results, bytesRef) {
   const callId = message.toolCallId ?? message.source?.callId;
   if (typeof callId !== 'string' || callId.length === 0 || callId.length > CALL_ID_LIMIT ||
       !calls.has(callId) || results.has(callId)) throw new BridgeError('INPUT_UNSUPPORTED');
@@ -166,8 +194,7 @@ function serializeToolResult(message, calls, results, toolBytesRef) {
     text.push(block.text);
   }
   const output = text.join('\n');
-  toolBytesRef.value += Buffer.byteLength(output);
-  if (toolBytesRef.value > toolBytesRef.limit) throw new BridgeError('LIMIT_EXCEEDED');
+  addBytes(bytesRef, 'tool', Buffer.byteLength(output));
   results.add(callId);
   return { type: 'function_call_output', call_id: callId, output };
 }
@@ -177,15 +204,15 @@ function serializeToolResult(message, calls, results, toolBytesRef) {
 * @param options - Harness generate options for this provider.
 * @param retained - Apply larger bounded transcript limits before checkpoint selection.
 *   The caller must still validate the selected wire window or the ordinary fallback.
+ * @param limits - Byte and message bounds for this request, derived from the disclosed
+ *   window when one is available and otherwise the fixed floor.
 * @returns a plan: `input` wire items with image placeholders, `tools` wire
 *   declarations, `reasoning` effort mapping, a validated `temperature` when
 *   the request carries one, and per-attachment image entries
 *   with their durable references, request targets, and original blocks.
 */
-export function validateInput(options, retained = false) {
-  const textLimit = retained ? 4 * 1024 * 1024 : TEXT_LIMIT;
-  const messageLimit = retained ? 4096 : MESSAGE_LIMIT;
-  if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > messageLimit || !options.messages.length) {
+export function validateInput(options, retained = false, limits = defaultLimits(retained)) {
+  if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > limits.messageLimit || !options.messages.length) {
     throw new BridgeError('INPUT_UNSUPPORTED');
   }
   // Generation overrides: temperature is forwarded, a turn token budget is
@@ -197,8 +224,7 @@ export function validateInput(options, retained = false) {
   const reasoning = reasoningEffort(options.reasoningEffort);
   const tools = serializeTools(options.tools);
   validateToolHistory(options.toolHistory);
-  let bytes = 0;
-  const toolBytesRef = { value: 0, limit: retained ? 16 * 1024 * 1024 : TOOL_BYTES_LIMIT };
+  const bytesRef = { text: 0, tool: 0, limits };
   const spans = [];
   const input = [];
   const images = new Map();
@@ -207,8 +233,7 @@ export function validateInput(options, retained = false) {
   const results = new Set();
   if (options.system !== undefined) {
     if (typeof options.system !== 'string') throw new BridgeError('INPUT_UNSUPPORTED');
-    bytes += Buffer.byteLength(options.system);
-    if (bytes > textLimit) throw new BridgeError('INPUT_UNSUPPORTED');
+    addBytes(bytesRef, 'text', Buffer.byteLength(options.system));
     input.push({ type: 'message', role: 'developer', content: [{ type: 'input_text', text: options.system }] });
   }
   for (const message of options.messages) {
@@ -217,7 +242,7 @@ export function validateInput(options, retained = false) {
     if (!message || !Array.isArray(message.content) ||
         !['system', 'developer', 'user', 'assistant', 'tool'].includes(message.role)) throw new BridgeError('INPUT_UNSUPPORTED');
     if (message.role === 'tool') {
-      const item = serializeToolResult(message, calls, results, toolBytesRef);
+      const item = serializeToolResult(message, calls, results, bytesRef);
       input.push(item);
       span.end = input.length;
       continue;
@@ -229,8 +254,8 @@ export function validateInput(options, retained = false) {
       if (!block || typeof block !== 'object' || Array.isArray(block)) throw new BridgeError('INPUT_UNSUPPORTED');
       if (block.type === 'text') {
         if (typeof block.text !== 'string') throw new BridgeError('INPUT_UNSUPPORTED');
-        bytes += Buffer.byteLength(block.text);
-        if (bytes > textLimit || total() >= BLOCK_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED');
+        addBytes(bytesRef, 'text', Buffer.byteLength(block.text));
+        if (total() >= BLOCK_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED');
         content.push({ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: block.text });
       } else if (block.type === 'image') {
         if (message.role !== 'user') throw new BridgeError('UNSUPPORTED_CONTENT', 'IMAGE_PREPARE');
@@ -239,7 +264,7 @@ export function validateInput(options, retained = false) {
         content.push({ type: 'input_image', image_url: '', attachmentId: block.attachment.attachmentId });
       } else if (block.type === 'tool-call') {
         if (message.role !== 'assistant') throw new BridgeError('INPUT_UNSUPPORTED');
-        serializeToolCall(block, calls, pendingCalls, toolBytesRef);
+        serializeToolCall(block, calls, pendingCalls, bytesRef);
       } else if (block.type === 'reasoning') {
         // Reasoning history replay has no wire representation on this route
         // and is dropped, matching the DeepSeek adapter's documented exception

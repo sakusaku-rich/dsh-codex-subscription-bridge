@@ -8,7 +8,7 @@ import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, es
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
 import { Http, BASE, classifyStatusError, readJson } from './http.js';
 import { accountHeaders, compactionAccount } from './auth.js';
-import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, threshold } from './compaction.js';
+import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, threshold, requestLimits } from './compaction.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
@@ -171,11 +171,7 @@ export class DirectBridge {
     // Project offloaded image occurrences into text placeholders before
     // validation, matching the DeepSeek adapter's projection order.
     const messages = projectOffloadedImages(options.messages, ref => offloadedImageText(ref, this.imageAccess(ref)));
-    // Server-side compaction is always requested. Retained limits admit a
-    // transcript whose covered prefix a checkpoint may replace; the wire window
-    // is still validated below under the ordinary limits.
-    const originalPlan = validateInput({ ...options, messages }, true); string(options.model);
-    let plan = originalPlan;
+    string(options.model);
     const capture = new CompactionCapture(); let scope, compactThreshold;
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
     let phase = 'MODEL_CATALOG';
@@ -240,6 +236,15 @@ export class DirectBridge {
       const models = await this.catalog(controller.signal, true);
       const selected = models.find(model => model.id === options.model);
       if (selected === undefined) throw new BridgeError('MODEL_UNAVAILABLE');
+      // The request bound and the compaction threshold come from the same
+      // disclosed window, so the model has to be resolved before validation.
+      // Retained limits admit a transcript whose covered prefix a checkpoint may
+      // replace; the wire window is still validated below under the derived limits.
+      const retainedLimits = requestLimits(selected.contextWindow, true);
+      const wireLimits = requestLimits(selected.contextWindow);
+      phase = 'INPUT';
+      const originalPlan = validateInput({ ...options, messages }, true, retainedLimits);
+      let plan = originalPlan;
       // The host selects only declared levels, but a direct caller can name any
       // bounded id; a choice the model does not disclose fails closed here.
       if (plan.reasoning !== undefined && !(selected.reasoningLevels ?? []).some(level => level.id === plan.reasoning.effort)) {
@@ -254,10 +259,10 @@ export class DirectBridge {
       // bounded local history is resent on its own.
       if (checkpoint.refusal !== undefined) this.warn(`The encrypted subscription compaction state was refused (${checkpoint.refusal}); resending the bounded local history.`);
       // A selected checkpoint replaces only its exact covered prefix. Otherwise
-      // the retained transcript is revalidated under the ordinary wire limits.
-      if (checkpoint.items !== undefined) plan = compactPlan(originalPlan, checkpoint);
+      // the retained transcript is revalidated under the window-derived wire limits.
+      if (checkpoint.items !== undefined) plan = compactPlan(originalPlan, checkpoint, wireLimits);
       else {
-        try { plan = validateInput({ ...options, messages }); }
+        try { plan = validateInput({ ...options, messages }, false, wireLimits); }
         catch (error) {
           // Without a reusable checkpoint the full local transcript is the only
           // remaining input; name that boundary instead of the generic shape failure.
@@ -300,7 +305,7 @@ export class DirectBridge {
         if (rejected) {
           controller.removeBodyAbort?.();
           await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
-          plan = validateInput({ ...options, messages });
+          plan = validateInput({ ...options, messages }, false, wireLimits);
           compactThreshold = undefined;
           response = await openTurn();
         }

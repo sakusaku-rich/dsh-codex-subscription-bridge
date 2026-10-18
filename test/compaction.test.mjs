@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { BlockAssembler } from '@deepseek-ai/dsh-llm';
 import { DirectBridge } from '../src/direct.js';
 import { Http } from '../src/http.js';
-import { CHECKPOINT_KEY, CHECKPOINT_MAX_AGE, CompactionCapture, compactionScope, selectCheckpoint, compactPlan } from '../src/compaction.js';
-import { validateInput, TEXT_LIMIT } from '../src/text.js';
+import { CHECKPOINT_KEY, CHECKPOINT_MAX_AGE, CompactionCapture, compactionScope, selectCheckpoint, compactPlan, threshold, requestLimits } from '../src/compaction.js';
+import { validateInput, TEXT_LIMIT, TOOL_BYTES_LIMIT } from '../src/text.js';
 import { Context } from '@deepseek-ai/cordis';
 import { LlmRuntime } from '@deepseek-ai/dsh-llm';
 import * as plugin from '../src/index.js';
@@ -17,6 +17,11 @@ const user = text => ({ role: 'user', content: [{ type: 'text', text }] });
 const compact = { type: 'compaction', id: 'cp-1', encrypted_content: 'synthetic-opaque-checkpoint' };
 const reply = text => ({ type: 'message', id: 'msg-1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] });
 const options = messages => ({ provider: 'codex-subscription', model: 'synthetic', messages });
+// The fixture's disclosed window. The request byte bound and the compaction
+// threshold both derive from it, so payloads that must be refused are sized
+// against the bound rather than a fixed constant.
+const WINDOW = 272000;
+const TEXT_BOUND = requestLimits(WINDOW).textBytes;
 const token = account => `x.${Buffer.from(JSON.stringify({ exp: 4000000000, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
 const sse = values => new Response(values.map(value => `data: ${JSON.stringify(value)}\n\n`).join(''));
 const complete = output => ({ type: 'response.completed', response: { status: 'completed', output } });
@@ -24,7 +29,7 @@ function fixture(responses, settings = {}, warnings = []) {
   const payloads = []; let account = 'synthetic-account';
   const bridge = new DirectBridge({ token: async () => token(account) }, new Http(async (url, request) => {
     if (url.includes('/models?')) return Response.json({ models: [{ slug: 'synthetic', display_name: 'Synthetic', visibility: 'list',
-      ...(settings.modelWindow === null ? {} : { context_window: settings.modelWindow ?? 272000 }) }] });
+      ...(settings.modelWindow === null ? {} : { context_window: settings.modelWindow ?? WINDOW }) }] });
     payloads.push(JSON.parse(request.body));
     const next = responses.shift();
     assert.ok(next, 'unexpected request');
@@ -49,7 +54,7 @@ test('encrypted window survives Harness assembly, JSON persistence, and multiple
     assert.ok(saved.source.replayState.response[CHECKPOINT_KEY]);
     const second = await run(f.bridge, options([user('Start'), saved, user('Next')]));
     await run(f.bridge, options([user('Start'), saved, user('Next'), second.message, user('Again')]));
-    assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 32768 }]);
+    assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 258400 }]);
     assert.deepEqual(f.payloads[1].input, [compact, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'First' }] },
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Next' }] }]);
     assert.equal(f.payloads[2].input.length, 5);
@@ -96,12 +101,12 @@ test('changed history, instructions, tools, account, expired or corrupt metadata
 test('covered history may exceed text wire budget but fallback and uncovered tail cannot', async () => {
   const f = fixture([[complete([compact, reply('First')])], [complete([reply('Next')])]]);
   try {
-    const start = user('x'.repeat(TEXT_LIMIT - 10));
+    const start = user('x'.repeat(TEXT_BOUND - 10));
     const first = await run(f.bridge, options([start]));
     const request = options([start, first.message, user('y'.repeat(100))]);
     await run(f.bridge, request);
     assert.equal(f.payloads[1].input[0].type, 'compaction');
-    await assert.rejects(run(f.bridge, options([start, first.message, user('y'.repeat(TEXT_LIMIT))])), { code: 'INPUT_UNSUPPORTED' });
+    await assert.rejects(run(f.bridge, options([start, first.message, user('y'.repeat(TEXT_BOUND))])), { code: 'INPUT_UNSUPPORTED' });
     f.account('other');
     // A refused checkpoint is the consolidation boundary, not a generic shape error.
     await assert.rejects(run(f.bridge, request), { code: 'COMPACTION_UNAVAILABLE' });
@@ -170,7 +175,7 @@ test('compaction is always requested without configuration and a plain response 
   const f = fixture([[complete([reply('Plain')])], [complete([reply('Again')])]]);
   try {
     const first = await run(f.bridge, options([user('Start')]));
-    assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 32768 }]);
+    assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 258400 }]);
     assert.equal(first.message.source.replayState, undefined);
     await run(f.bridge, options([user('Start')]));
     assert.equal(f.payloads[1].context_management[0].type, 'compaction');
@@ -218,7 +223,7 @@ test('explicit unsupported compaction parameter retries once with full bounded h
 test('fallback does not resend oversized full history', async () => {
   const f = fixture([[complete([compact, reply('First')])], Response.json({ error: { code: 'unsupported_parameter', param: 'context_management' } }, { status: 400 })]);
   try {
-    const start = user('x'.repeat(TEXT_LIMIT - 10));
+    const start = user('x'.repeat(TEXT_BOUND - 10));
     const first = await run(f.bridge, options([start]));
     await assert.rejects(run(f.bridge, options([start, first.message, user('x'.repeat(100))])), { code: 'INPUT_UNSUPPORTED' });
     assert.equal(f.payloads.length, 2);
@@ -269,14 +274,29 @@ test('covered image attachments are not read or resent', async () => {
   } finally { await f.bridge.close(); }
 });
 
-test('undisclosed model capacity omits compaction and small windows use a bounded threshold', async () => {
-  for (const [modelWindow, expected] of [[null, undefined], [1024, undefined], [4096, 2048]]) {
+test('undisclosed model capacity omits compaction and a disclosed window uses the ratio', async () => {
+  for (const [modelWindow, expected] of [[null, undefined], [1024, undefined], [4096, 3891], [272000, 258400]]) {
     const f = fixture([[complete([reply('Plain')])]], { modelWindow });
     try {
       await run(f.bridge, options([user('Start')]));
       assert.equal(f.payloads[0].context_management?.[0].compact_threshold, expected);
     } finally { await f.bridge.close(); }
   }
+});
+
+test('the request byte bound is derived from the same window as the threshold', async () => {
+  const derived = requestLimits(500000);
+  assert.equal(threshold(500000), 475000);
+  assert.equal(derived.inputBytes, 475000 * 8);
+  assert.equal(derived.textBytes, 475000 * 8);
+  assert.equal(derived.toolBytes, 475000 * 8);
+  // A window too small to derive a bound keeps the fixed floor, so the bound
+  // never falls below the shape limits the bridge has always enforced.
+  const floor = requestLimits(undefined);
+  assert.equal(floor.inputBytes, 256 * 1024 + 2 * 1024 * 1024);
+  assert.equal(requestLimits(4096).inputBytes, floor.inputBytes);
+  assert.equal(requestLimits(4096).textBytes, TEXT_LIMIT);
+  assert.equal(requestLimits(4096).toolBytes, TOOL_BYTES_LIMIT);
 });
 
 test('retained transcript limits and parallel conversations remain independent', async () => {
@@ -320,7 +340,7 @@ test('public adapter carries checkpoints through the pinned Harness runtime', as
     const first = await run(ctx.llm, options([user('Start')]));
     await run(ctx.llm, options([user('Start'), first.message, user('Next')]));
     assert.equal(payloads[1].input[0].type, 'compaction');
-    assert.equal(payloads[1].context_management[0].compact_threshold, 32768);
+    assert.equal(payloads[1].context_management[0].compact_threshold, 258400);
   } finally {
     await fiber?.dispose(); await service?.dispose(); Http.prototype.open = originalOpen;
     await rm(root, { recursive: true, force: true });

@@ -1,10 +1,17 @@
 import { createHash } from 'node:crypto';
 import { BridgeError } from './errors.js';
-import { TEXT_LIMIT, TOOL_BYTES_LIMIT, MESSAGE_LIMIT } from './text.js';
+import { TEXT_LIMIT, TOOL_BYTES_LIMIT, MESSAGE_LIMIT, INPUT_BYTES_FLOOR, RETAINED_INPUT_BYTES_FLOOR, RETAINED_TEXT_LIMIT, RETAINED_TOOL_BYTES_LIMIT, RETAINED_MESSAGE_LIMIT, defaultLimits } from './text.js';
 
 export const CHECKPOINT_KEY = 'subscriptionCompactionV1';
 export const CHECKPOINT_BYTES = 512 * 1024;
 export const CHECKPOINT_MAX_AGE = 24 * 60 * 60 * 1000;
+// The subscription route's own client measures the active context against a
+// limit derived from the disclosed window, and 95% is that client's disclosed
+// effective percent. The bridge has no tokenizer: the byte bound below is a
+// guard, not a token guarantee, and the route compares its own rendered count
+// against the number sent here.
+export const COMPACT_RATIO = 0.95;
+export const BYTES_PER_TOKEN = 8;
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const contentDigest = blocks => digest(blocks.filter(block => block.type === 'text' || block.type === 'tool-call').map(block => block.type === 'text'
   ? { type: 'text', text: block.text } : { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments }));
@@ -103,7 +110,27 @@ export function selectCheckpoint(messages, plan, scope, now = Date.now()) {
 }
 
 export function threshold(contextWindow) {
-  return Number.isSafeInteger(contextWindow) && contextWindow >= 2048 ? Math.min(32768, Math.floor(contextWindow / 2)) : undefined;
+  return Number.isSafeInteger(contextWindow) && contextWindow >= 2048 ? Math.floor(contextWindow * COMPACT_RATIO) : undefined;
+}
+
+/**
+ * Express the request bound in bytes for one disclosed window.
+ *
+ * The bound is the compaction threshold at a conservative bytes-per-token, with
+ * the fixed floor kept when no window is usable. A request that can reach the
+ * threshold must fit under this bound, otherwise the bridge refuses it before
+ * the route has a chance to compact.
+ */
+export function requestLimits(contextWindow, retained = false) {
+  const tokens = threshold(contextWindow);
+  const floor = retained ? RETAINED_INPUT_BYTES_FLOOR : INPUT_BYTES_FLOOR;
+  const bound = tokens === undefined ? floor : tokens * BYTES_PER_TOKEN;
+  return {
+    inputBytes: Math.max(bound, floor),
+    textBytes: Math.max(bound, retained ? RETAINED_TEXT_LIMIT : TEXT_LIMIT),
+    toolBytes: Math.max(bound, retained ? RETAINED_TOOL_BYTES_LIMIT : TOOL_BYTES_LIMIT),
+    messageLimit: retained ? RETAINED_MESSAGE_LIMIT : MESSAGE_LIMIT,
+  };
 }
 
 /**
@@ -167,8 +194,8 @@ export class CompactionCapture {
   }
 }
 
-/** Preserve existing wire budgets even when the retained transcript is larger. */
-export function compactPlan(plan, checkpoint) {
+/** Revalidate the selected wire window against the bound the request was admitted under. */
+export function compactPlan(plan, checkpoint, limits = defaultLimits(false)) {
   const input = [...plan.input.slice(0, checkpoint.end).filter(value => value.type === 'message' && value.role === 'developer'),
     ...checkpoint.items, ...plan.input.slice(checkpoint.end)];
   let textBytes = 0, toolBytes = 0;
@@ -181,7 +208,8 @@ export function compactPlan(plan, checkpoint) {
     if (value.type === 'function_call') toolBytes += Buffer.byteLength(value.arguments);
     if (value.type === 'function_call_output') toolBytes += Buffer.byteLength(value.output);
   }
-  if (input.length > MESSAGE_LIMIT || textBytes > TEXT_LIMIT || toolBytes > TOOL_BYTES_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED', 'COMPACTION');
+  if (input.length > limits.messageLimit || textBytes > limits.textBytes || toolBytes > limits.toolBytes ||
+      textBytes + toolBytes > limits.inputBytes) throw new BridgeError('INPUT_UNSUPPORTED', 'COMPACTION');
   return { ...plan, input, images: new Map([...plan.images].filter(([id]) => attachments.has(id))),
     imageBlocks: plan.imageBlocks.slice(checkpoint.imageEnd) };
 }
