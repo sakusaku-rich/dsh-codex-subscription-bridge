@@ -119,7 +119,7 @@ Then optionally set it as the new-task default in **Settings → Agent presets**
 
 Removing the package does not remove that entry, because the installer never writes `cordis.patch.yml`; delete the line when you uninstall, or the loader reports an unmatched patch entry on every start. An isolated profile needs no cleanup — the whole directory goes away.
 
-The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose routes then rely on the encrypted server-side window. Every other preset keeps the stock engine, so other providers are unaffected.
+The replacement extends the host's stock engine and delegates every provider except `codex-subscription`, whose requests then rely on the encrypted server-side window. Every other preset keeps the stock engine, so other providers are unaffected.
 
 Before relying on it, confirm all three behaviors after the restart:
 

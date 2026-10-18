@@ -62,7 +62,7 @@ Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or 
 
 Harness condenses history locally, and the bridge also asks the subscription backend to condense server-side. The backend requires `store: false` and rejects `previous_response_id`, so the bridge keeps no server-side conversation: each turn sends the input it can prove, replaying the bounded compaction window it captured for a turn it can prove, and a turn whose response published a compaction is marked "Server-side compaction" in that turn's work details, with the model and the number of items the backend compacted. [Compaction design, research and limits](docs/COMPACTION.md) records the request shape, the window binding, the wire bounds, the oldest-end recovery, and the differences deliberately not closed.
 
-To let Codex own condensation for this provider's routes instead, enable the agent preset this package ships. It is inserted disabled, so installing the package changes nothing until you add this to the profile's `cordis.patch.yml` and restart Harness:
+To let Codex own condensation for this provider instead, enable the agent preset this package ships. It is inserted disabled, so installing the package changes nothing until you add this to the profile's `cordis.patch.yml` and restart Harness:
 
 ```yaml
 - id: preset-codex-subscription
@@ -73,7 +73,7 @@ Then optionally set "Codex subscription" as the new-task default in **Settings â
 
 Before enabling it, know that:
 
-- Only this provider's routes change. Every other provider, and every other preset, keeps the stock engine.
+- Only this provider's behavior changes. Every other provider, and every other preset, keeps the stock engine.
 - The preset subclasses a host-internal class and mirrors the pinned Harness composition, so a Harness upgrade can stop that one preset from composing, or leave the mirror stale. The dangerous case is a reshaped `compaction` group, which silently restores double summarization. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records those failure modes, the checks to run after restarting, and how a source checkout detects drift.
 - Delete that line when you remove the package, as [the installation guide](docs/INSTALL.md#remove-this-dedicated-installation) explains.
 

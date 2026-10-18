@@ -13,9 +13,9 @@ Read [docs/SCOPE.md](docs/SCOPE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 Follow [the security requirements](SECURITY.md#required-controls); they are the canonical list. The rules an agent must not forget while changing this repository:
 
 - Never import, read, change, or log Codex credential files.
-- Never accept raw credentials, custom endpoints, or a paid API route.
+- Never accept raw credentials, custom endpoints, or paid API access.
 - Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, and user image blocks.
-- Persist only the bounded compaction window in Harness replay metadata, under the controls in [docs/COMPACTION.md](docs/COMPACTION.md). A window the bridge cannot prove is refused and the full history is sent. Requests are stateless: the route requires `store: false` and rejects `previous_response_id`.
+- Persist only the bounded compaction window in Harness replay metadata, under the controls in [docs/COMPACTION.md](docs/COMPACTION.md). A window the bridge cannot prove is refused and the full history is sent. Requests are stateless: the subscription endpoint requires `store: false` and rejects `previous_response_id`.
 
 ## Git workflow
 
