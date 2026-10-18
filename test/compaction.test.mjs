@@ -127,6 +127,22 @@ test('a covered window past the wire bound is trimmed from the oldest end instea
 
 const windowBytesOf = values => 2 + values.reduce((total, value) => total + Buffer.byteLength(JSON.stringify(value)) + 1, 0);
 
+test('the bound is a resource limit, not a window guard: a request past the window in the route measure is sent whole', async () => {
+  // Measured on a real account, the route compacts a request whose measured count
+  // is past the model window. A transcript that is past the window in the bridge's
+  // byte estimate but inside the resource bound is sent as it is.
+  const measuredBytesPerToken = 5.14;
+  const pastWindow = 'a'.repeat(Math.floor(WINDOW * measuredBytesPerToken * 1.2));
+  const f = fixture([[complete([reply('Answered')])]]);
+  try {
+    await run(f.bridge, options([user(pastWindow)]));
+    assert.equal(f.warnings.length, 0, 'nothing is trimmed while the request fits the resource bound');
+    assert.equal(f.payloads[0].input[0].content[0].text, pastWindow, 'the whole transcript is sent');
+    assert.ok(Buffer.byteLength(pastWindow) / measuredBytesPerToken > WINDOW, 'the route measures this past the window');
+    assert.ok(Buffer.byteLength(pastWindow) <= requestLimits(WINDOW).inputBytes, 'and it stays inside the resource bound');
+  } finally { await f.bridge.close(); }
+});
+
 test('a window past its bound drops the oldest covered items instead of refusing', async () => {
   // The bound is derived from the disclosed window, so a window the route can
   // produce cannot exceed it; the drop is the residual path, matching the official

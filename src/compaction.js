@@ -136,9 +136,11 @@ export function threshold(contextWindow, percent) {
 /**
  * Express the persisted window bound in bytes for one disclosed window.
  *
- * A compaction window is a reduction of the input the route measured, and that
- * input is bounded by the same derived value, so a window the route can produce
- * cannot exceed this bound. The fixed value stays as the floor when no usable
+ * This is a resource bound for opaque content the bridge cannot measure in
+ * tokens. The route compacts a request whose measured count is past the model
+ * window, so the window it returns is a reduction of a larger input — measured
+ * at about a quarter of the input, well under this bound, but not proven by an
+ * observed oversized window. The fixed value stays as the floor when no usable
  * window is disclosed.
  */
 export function checkpointLimit(contextWindow, percent) {
@@ -149,10 +151,15 @@ export function checkpointLimit(contextWindow, percent) {
 /**
  * Express the request bound in bytes for one disclosed window.
  *
- * The bound is the compaction threshold at a conservative bytes-per-token, with
- * the fixed floor kept when no window is usable. A request that can reach the
- * threshold must fit under this bound, otherwise the bridge trims the oldest
- * items to fit it.
+ * The bound is a resource limit — bounded read, memory and cost for one request
+ * — not a guard against rejection. The route compacts a request whose measured
+ * count is past the model window, so a request that is past the window in the
+ * bridge's byte estimate is sent as it is.
+ *
+ * The bound must stay above the threshold in the route's own measure, otherwise
+ * the bridge refuses before compaction can ever fire: the fixed floor admits
+ * about 51,000 tokens at the measured bytes-per-token, far below the threshold.
+ * The conservative bytes-per-token keeps that margin.
  */
 export function requestLimits(contextWindow, retained = false, percent) {
   const tokens = threshold(contextWindow, percent);

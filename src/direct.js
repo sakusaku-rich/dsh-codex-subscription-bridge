@@ -250,11 +250,13 @@ export class DirectBridge {
       // The request bound and the compaction threshold come from the same
       // disclosed window and the same per-model percent, so the model has to be
       // resolved before validation. Retained limits admit a transcript that may
-      // be trimmed from the oldest end to fit the wire bound below.
+      // be trimmed from the oldest end to fit the wire bound below. Trimming
+      // enforces that resource limit; it is not what keeps the request inside the
+      // model window, because the route compacts a request past the window.
       const retainedLimits = requestLimits(selected.contextWindow, true, selected.effectivePercent);
       const wireLimits = requestLimits(selected.contextWindow, false, selected.effectivePercent);
       // The persisted window bound comes from the same disclosed window as the
-      // threshold, so a window the route can produce cannot exceed it.
+      // threshold. It bounds opaque content the bridge cannot measure in tokens.
       capture.limit = wireLimits.checkpointBytes;
       phase = 'INPUT';
       const originalPlan = validateInput({ ...options, messages }, true, retainedLimits);
