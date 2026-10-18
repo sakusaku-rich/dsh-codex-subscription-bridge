@@ -244,7 +244,7 @@ Measured on a real account, the model's view on a firing turn is the full conten
 
 Measured on a real account, the interval between firings is the growth from the post-firing window to the threshold: firing at 361,353 tokens, nine turns without firing (28,905 to 231,238), then firing at 260,256 tokens against a threshold of 258,400 — about 231,000 tokens of new content between firings.
 
-Still unverified: what the official client uses when `auto_compact_token_limit` is null — the configuration reference says "unset uses model defaults", the config schema carries no default, and the live catalog returns null for every model on this account, so the null branch is not readable from the binary — and the condition under which the official client takes the path that removes the oldest history item. Each further account operation requires separate explicit authorization.
+Still unverified: what the official client uses when `auto_compact_token_limit` is null — the configuration reference says "unset uses model defaults", the config schema carries no default, and the live catalog returns null for every model on this account, so the null branch is not readable from the binary — and the condition under which the official client takes the path that removes the oldest history item. The binary carries that path only as an error string ("Context window exceeded while compacting; removing oldest history item. Error: …"), which shows it is recovery from a failed compaction rather than a fit before sending; whether it removes once or repeats is not readable. Each further account operation requires separate explicit authorization.
 
 ### Alignment with the official client (2026-10-18)
 
