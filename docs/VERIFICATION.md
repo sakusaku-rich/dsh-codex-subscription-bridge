@@ -236,7 +236,9 @@ The implementation is therefore back to the stateless form: `store: false`, no `
 
 Synthetic tests cover the stateless request shape, the window round trip through JSON persistence, refusals for history, instructions, tools, account, expiry, future timestamps, content, scope and digest, the derived window bound, oldest-end trimming with tool-call pairs kept as one unit and an image occurrence never dropped, the `COMPACTION_UNAVAILABLE` boundary, and the one-time retry for an explicit `context_management` rejection.
 
-Still unverified: the oldest-end trim path on a real account, the interval between firings, and what the official client uses when `auto_compact_token_limit` is null. Each further account operation requires separate explicit authorization.
+Measured on a real account (dedicated login, gpt-6-luna): the subscription backend has no default compaction threshold. A request carrying no `context_management` at all was accepted and completed past the disclosed window without returning a compaction item — 1,716,353 bytes measured as 334,186 input tokens (23% past the 272,000 window), and 3,218,135 bytes measured as 626,591 input tokens (2.3× the window). Neither was rejected. So the disclosed `context_window` is the client's accounting value rather than a cap the backend enforces, and compaction happens only when the client sends `compact_threshold`.
+
+Still unverified: the interval between firings, and what the official client uses when `auto_compact_token_limit` is null — the configuration reference says "unset uses model defaults", the config schema carries no default, and the live catalog returns null for every model on this account, so the null branch is not readable from the binary. Each further account operation requires separate explicit authorization.
 
 ### Alignment with the official client (2026-10-18)
 
