@@ -1,11 +1,10 @@
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BlockAssembler } from '@deepseek-ai/dsh-llm';
 import { DirectBridge } from '../src/direct.js';
 import { Http } from '../src/http.js';
-import { CHECKPOINT_KEY, CompactionCapture, threshold, requestLimits } from '../src/compaction.js';
-import { CONVERSATION_KEY, CONVERSATION_MAX_AGE, conversationScope, inspectConversation, appendedItems, trimOldest, conversationRecord } from '../src/conversation.js';
-import { digest, contentDigest } from '../src/hashes.js';
+import { CHECKPOINT_KEY, CHECKPOINT_MAX_AGE, CHECKPOINT_BYTES, COMPACT_RATIO, CompactionCapture, compactionScope, inspectCheckpoint, selectCheckpoint, compactPlan, trimOldest, threshold, requestLimits, ratio } from '../src/compaction.js';
 import { validateInput, TEXT_LIMIT, TOOL_BYTES_LIMIT } from '../src/text.js';
 import { Context } from '@deepseek-ai/cordis';
 import { LlmRuntime } from '@deepseek-ai/dsh-llm';
@@ -26,14 +25,13 @@ const WINDOW = 272000;
 const TEXT_BOUND = requestLimits(WINDOW).textBytes;
 const token = account => `x.${Buffer.from(JSON.stringify({ exp: 4000000000, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
 const sse = values => new Response(values.map(value => `data: ${JSON.stringify(value)}\n\n`).join(''));
-// The terminal event carries the id the next turn references.
-const complete = (output, id = 'resp-1') => ({ type: 'response.completed', response: { status: 'completed', id, output } });
+const complete = output => ({ type: 'response.completed', response: { status: 'completed', output } });
 function fixture(responses, settings = {}, warnings = []) {
   const payloads = []; let account = 'synthetic-account';
   const bridge = new DirectBridge({ token: async () => token(account) }, new Http(async (url, request) => {
     if (url.includes('/models?')) return Response.json({ models: [{ slug: 'synthetic', display_name: 'Synthetic', visibility: 'list',
       ...(settings.modelWindow === null ? {} : { context_window: settings.modelWindow ?? WINDOW }),
-      ...(settings.modelPercent === null ? {} : { effective_context_window_percent: settings.modelPercent ?? 95 }) }] });
+      ...(settings.modelPercent == null ? {} : { effective_context_window_percent: settings.modelPercent }) }] });
     payloads.push(JSON.parse(request.body));
     const next = responses.shift();
     assert.ok(next, 'unexpected request');
@@ -50,121 +48,155 @@ async function run(bridge, request) {
     model: request.model, replayState: assembler.replayState } } };
 }
 
-test('a chained turn sends only what it appends and references the id it was established on', async () => {
-  const f = fixture([[complete([reply('First')])], [complete([reply('Second')])]]);
+test('encrypted window survives Harness assembly, JSON persistence, and multiple turns without duplicate output', async () => {
+  const f = fixture([[complete([compact, reply('First')])], [complete([reply('Second')])], [complete([reply('Third')])]]);
   try {
     const first = await run(f.bridge, options([user('Start')]));
     const saved = JSON.parse(JSON.stringify(first.message));
-    assert.equal(saved.source.replayState.response[CONVERSATION_KEY].id, 'resp-1');
-    assert.equal(saved.source.replayState.response[CONVERSATION_KEY].sent, digest(validateInput(options([user('Start')])).input));
-    await run(f.bridge, options([user('Start'), saved, user('Next')]));
-    assert.equal(f.payloads[1].previous_response_id, 'resp-1');
-    assert.deepEqual(f.payloads[1].input, [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Next' }] }]);
-    assert.ok(f.payloads.every(payload => payload.store === true));
-    // Nothing opaque is carried: the record is a digest, not content.
-    assert.ok(!JSON.stringify(saved).includes('opaque'));
+    assert.ok(saved.source.replayState.response[CHECKPOINT_KEY]);
+    const second = await run(f.bridge, options([user('Start'), saved, user('Next')]));
+    await run(f.bridge, options([user('Start'), saved, user('Next'), second.message, user('Again')]));
+    assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 258400 }]);
+    assert.deepEqual(f.payloads[1].input, [compact, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'First' }] },
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Next' }] }]);
+    assert.equal(f.payloads[2].input.length, 5);
+    assert.ok(f.payloads.every(p => p.store === false && !('previous_response_id' in p)));
   } finally { await f.bridge.close(); }
 });
 
-test('tool call history pairs with its executed result across a chained turn', async () => {
+test('tool call after compaction is retained exactly once with its executed result', async () => {
   const call = { type: 'function_call', id: 'tool-item', call_id: 'call-1', name: 'read', arguments: '{}' };
-  const f = fixture([[{ type: 'response.output_item.done', output_index: 0, item: call }, complete(null, 'resp-1')], [complete([reply('Done')], 'resp-2')]]);
+  const f = fixture([[{ type: 'response.output_item.done', output_index: 0, item: compact },
+    { type: 'response.output_item.done', output_index: 1, item: call }, complete(null)], [complete([reply('Done')])]]);
   try {
     const first = await run(f.bridge, options([user('Read')]));
     assert.equal(first.chunks.at(-1).reason.kind, 'tool-calls');
     await run(f.bridge, options([user('Read'), first.message, { role: 'tool', toolCallId: 'call-1', content: [{ type: 'text', text: 'Result' }] }]));
-    assert.deepEqual(f.payloads[1].input.map(value => value.type), ['function_call_output']);
-    assert.equal(f.payloads[1].previous_response_id, 'resp-1');
+    assert.deepEqual(f.payloads[1].input.map(i => i.type), ['compaction', 'function_call', 'function_call_output']);
+    assert.equal(f.payloads[1].input[1].call_id, f.payloads[1].input[2].call_id);
   } finally { await f.bridge.close(); }
 });
 
-test('changed history, instructions, tools, account, expiry, content or a malformed id refuses the chain', async () => {
-  for (const mutation of ['history', 'instructions', 'tools', 'account', 'expired', 'future', 'content', 'model', 'id', 'role']) {
-    const f = fixture([[complete([reply('First')])], [complete([reply('Next')])]]);
+test('changed history, instructions, tools, account, expired or corrupt metadata fall back to bounded full history', async () => {
+  for (const mutation of ['history', 'instructions', 'tools', 'account', 'expired', 'future', 'digest', 'content', 'model']) {
+    const f = fixture([[complete([compact, reply('First')])], [complete([reply('Next')])]]);
     try {
       const first = await run(f.bridge, options([user('Start')]));
       const request = options([user('Start'), first.message, user('Next')]);
-      const record = first.message.source.replayState.response[CONVERSATION_KEY];
+      const cp = first.message.source.replayState.response[CHECKPOINT_KEY];
       if (mutation === 'history') request.messages[0] = user('Edited');
       if (mutation === 'instructions') request.system = 'Changed';
       if (mutation === 'tools') request.tools = [{ name: 'new_tool', parameters: { type: 'object' } }];
       if (mutation === 'account') f.account('another-account');
-      if (mutation === 'expired') record.createdAt -= CONVERSATION_MAX_AGE + 1;
-      if (mutation === 'future') record.createdAt += 60000;
+      if (mutation === 'expired') cp.createdAt -= CHECKPOINT_MAX_AGE + 1;
+      if (mutation === 'future') cp.createdAt += 60000;
+      if (mutation === 'digest') cp.items[0].encrypted_content = 'changed';
       if (mutation === 'content') first.message.content[0].text = 'Edited response';
-      if (mutation === 'model') record.scope = 'other-model-scope';
-      if (mutation === 'id') record.id = '';
-      if (mutation === 'role') request.messages[1].role = 'user';
+      if (mutation === 'model') cp.scope = 'other-model-scope';
       await run(f.bridge, request);
-      // A refused chain is not trusted: the whole history is sent on its own.
-      assert.equal(f.payloads[1].previous_response_id, undefined, mutation);
+      assert.equal(f.payloads[1].input[0].type, 'message', mutation);
       assert.equal(f.payloads[1].input.length, 3, mutation);
-      assert.ok(f.warnings.some(message => message.includes('chain was refused')), mutation);
     } finally { await f.bridge.close(); }
   }
 });
 
-test('a chained turn whose appended part exceeds the wire bound is refused', async () => {
-  const f = fixture([[complete([reply('First')])], [complete([reply('Next')])]]);
-  try {
-    const first = await run(f.bridge, options([user('Start')]));
-    await assert.rejects(run(f.bridge, options([user('Start'), first.message, user('y'.repeat(TEXT_BOUND + 1))])),
-      { code: 'INPUT_UNSUPPORTED' });
-    assert.equal(f.payloads.length, 1);
-  } finally { await f.bridge.close(); }
-});
-
-test('a refused chain with a full history past the wire bounds drops the oldest items to fit', async () => {
-  const f = fixture([[complete([reply('First')])], [complete([reply('Next')])]]);
+test('a covered window past the wire bound is trimmed from the oldest end instead of failing the turn', async () => {
+  const big = 'a'.repeat(250000);
+  const f = fixture([[complete([compact, reply(big)])], [complete([reply('Trimmed')])], [complete([reply('Fitted')])]]);
   try {
     const start = user('x'.repeat(TEXT_BOUND - 10));
     const first = await run(f.bridge, options([start]));
-    const tail = user('y'.repeat(100));
-    const request = options([start, first.message, tail]);
-    request.messages[0] = user('x'.repeat(TEXT_BOUND - 10).replace('x', 'z'));
-    await run(f.bridge, request);
-    assert.ok(f.warnings.some(message => message.includes('chain was refused (PREFIX)')));
+    // The window plus the tail exceeds the bound, but the tail alone fits: the
+    // oldest covered item is dropped and the turn still runs.
+    const tail = user('y'.repeat(TEXT_BOUND - Buffer.byteLength(big) + 1));
+    await run(f.bridge, options([start, first.message, tail]));
     assert.ok(f.warnings.some(message => message.includes('trimmed from the oldest end')));
-    // A trimmed request is not the whole transcript, so nothing is published and
-    // the next turn starts a new conversation.
-    assert.ok(f.warnings.some(message => message.includes('not published (TRIMMED)')));
-    const sent = f.payloads[1].input;
-    assert.equal(sent.some(value => value.content?.[0]?.text === start.content[0].text), false);
-    assert.equal(sent.some(value => value.content?.[0]?.text === tail.content[0].text), true);
+    assert.equal(f.payloads[1].input[0].type, 'compaction');
+    assert.ok(f.payloads[1].input.some(value => value.content?.[0]?.text === tail.content[0].text), 'the uncovered tail is kept');
+    // A refused checkpoint has no window to trim, so the full transcript is
+    // revalidated on its own. Following the official client the oldest item is
+    // dropped to fit the bound rather than failing the turn.
+    f.account('other');
+    const refused = await run(f.bridge, options([start, first.message, user('y'.repeat(100))]));
+    assert.ok(f.warnings.some(message => message.includes('was refused (SCOPE)')));
+    assert.ok(f.warnings.some(message => message.includes('full history was trimmed from the oldest end')));
+    assert.equal(f.payloads[2].input[0].content[0].text, first.message.content[0].text, 'the oldest item is dropped and the rest is sent');
+    assert.equal(refused.message.content[0].text, 'Fitted');
   } finally { await f.bridge.close(); }
 });
 
-test('a full history with nothing left to drop still names the boundary', async () => {
-  const f = fixture([[complete([reply('First')])], [complete([reply('Next')])]]);
-  try {
-    const start = user('x'.repeat(100));
-    const first = await run(f.bridge, options([start]));
-    const request = options([start, first.message, user('y'.repeat(TEXT_BOUND + 1))]);
-    request.messages[0] = user('z'.repeat(100));
-    await assert.rejects(run(f.bridge, request), { code: 'CONVERSATION_UNAVAILABLE' });
-    assert.ok(f.warnings.some(message => message.includes('chain was refused (PREFIX)')));
-  } finally { await f.bridge.close(); }
+const windowBytesOf = values => 2 + values.reduce((total, value) => total + Buffer.byteLength(JSON.stringify(value)) + 1, 0);
+
+test('a window past its bound drops the oldest covered items instead of refusing', async () => {
+  // The bound is derived from the disclosed window, so a window the route can
+  // produce cannot exceed it; the drop is the residual path, matching the official
+  // client removing the oldest history item when the window is exceeded.
+  const limit = requestLimits(WINDOW).checkpointBytes;
+  const big = { type: 'compaction', id: 'cp-1', encrypted_content: 'y'.repeat(1000000) };
+  const many = Array.from({ length: 60 }, (_, index) => reply(`${index} ${'z'.repeat(20000)}`));
+  const plan = { input: [], tools: [] };
+  const capture = new CompactionCapture(limit);
+  const replayState = capture.finish([big, ...many], compactionScope('synthetic-account', 'synthetic', plan), plan,
+    many.map(value => ({ type: 'text', text: value.content[0].text })));
+  assert.ok(replayState);
+  assert.equal(capture.refusal, undefined);
+  assert.ok(capture.trimmed > 0);
+  const items = replayState.response[CHECKPOINT_KEY].items;
+  assert.equal(items[0].type, 'compaction');
+  assert.ok(windowBytesOf(items) <= limit);
+  assert.ok(items.length < many.length + 1);
+  // The persisted digest is computed over the trimmed window, so reuse stays
+  // provable: the stored window is exactly what was published.
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  assert.equal(digest(items), replayState.response[CHECKPOINT_KEY].digest);
 });
 
-test('an image occurrence is never dropped by the bridge; the host offloads and retries', async () => {
-  const image = { type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 32, height: 32 } };
-  const original = { role: 'user', content: [image, { type: 'text', text: 'x'.repeat(TEXT_BOUND - 10) }] };
-  const plan = validateInput(options([original]), true, requestLimits(WINDOW, true));
-  const content = [{ type: 'text', text: 'Description' }];
-  const scope = conversationScope(compactionAccount(token('synthetic-account')), 'synthetic', plan);
-  const record = conversationRecord(scope, 'resp-1', digest(plan.input), contentDigest(content));
-  // The oldest item is an image, so the bridge cannot drop it to fit the bound;
-  // the host owns the attachment store and offloads its oldest images instead.
-  const messages = [{ role: 'user', content: [image, { type: 'text', text: 'y'.repeat(TEXT_BOUND - 10) }] },
-    { role: 'assistant', content, source: { replayState: record } }, user('Next')];
-  const f = fixture([[complete([reply('Continued')])]]);
-  try {
-    await assert.rejects(run(f.bridge, options(messages)), { code: 'CONVERSATION_UNAVAILABLE' });
-    assert.ok(f.warnings.some(message => message.includes('chain was refused (PREFIX)')));
-  } finally { await f.bridge.close(); }
+test('a compacted request past the wire bound drops the oldest window items instead of failing', async () => {
+  const limits = requestLimits(WINDOW);
+  const window = [compact, ...Array.from({ length: 8 }, (_, index) => ({ type: 'message', role: 'assistant',
+    content: [{ type: 'output_text', text: `m${index} ${'a'.repeat(250000)}` }] }))];
+  const tail = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'b'.repeat(200000) }] };
+  const plan = { input: [...window, tail], tools: [], imageBlocks: [], images: new Map() };
+  const result = compactPlan(plan, { end: window.length, imageEnd: 0, items: window }, limits);
+  assert.ok(result.trimmed > 0);
+  assert.ok(result.input.includes(tail), 'the uncovered tail is never dropped');
+  assert.equal(result.input[0].type, 'compaction');
+  const textBytes = result.input.reduce((total, value) => total + (value.type === 'message'
+    ? value.content.reduce((part, block) => part + Buffer.byteLength(block.text), 0) : 0), 0);
+  assert.ok(textBytes <= limits.textBytes);
+  // Nothing is left to drop once only the compaction item remains, so a tail that
+  // exceeds the bound on its own is still refused.
+  const oversizedTail = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'b'.repeat(limits.textBytes + 1) }] };
+  assert.throws(() => compactPlan({ ...plan, input: [compact, oversizedTail] }, { end: 1, imageEnd: 0, items: [compact] }, limits),
+    { code: 'INPUT_UNSUPPORTED' });
 });
 
-test('the marker carries only a count and an unprovable marker never costs the turn', async () => {
+test('a persisted window past the derived bound is refused whole, not trimmed', () => {
+  // Trimming a stored window would change the digest it was proved against, so
+  // the drop applies only to a window being published. A stored window past the
+  // bound is still refused.
+  const limit = requestLimits(WINDOW).checkpointBytes;
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const contentDigest = blocks => createHash('sha256').update(JSON.stringify(blocks.filter(block => block.type === 'text' || block.type === 'tool-call')
+    .map(block => block.type === 'text' ? { type: 'text', text: block.text } : { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments }))).digest('hex');
+  const big = { type: 'compaction', id: 'cp-1', encrypted_content: 'y'.repeat(1000000) };
+  const parts = Array.from({ length: 60 }, (_, index) => ({ type: 'output_text', text: `m${index} ${'z'.repeat(20000)}` }));
+  const items = [big, ...parts.map(part => ({ type: 'message', role: 'assistant', content: [part] }))];
+  assert.ok(windowBytesOf(items) > limit);
+  const blocks = parts.map(part => ({ type: 'text', text: part.text }));
+  const messages = [user('Start'), { role: 'assistant', content: blocks, source: {} }, user('Next')];
+  const plan = validateInput(options(messages), true);
+  const scope = compactionScope({ account: 'one' }, 'model-a', plan);
+  messages[1].source.replayState = { response: { [CHECKPOINT_KEY]: { version: 1, createdAt: Date.now(), scope,
+    prefix: digest(plan.input.slice(0, plan.spans[1].start)), content: contentDigest(blocks), items, digest: digest(items) } } };
+  assert.equal(inspectCheckpoint(messages, plan, scope, Date.now(), limit).refusal, 'WINDOW_BYTES');
+  assert.equal(selectCheckpoint(messages, plan, scope, Date.now(), limit), undefined);
+  // With no disclosed window the fixed floor still applies, and the derived bound
+  // is above the SSE frame limit, so a single item cannot exceed it on a turn.
+  assert.equal(requestLimits(null).checkpointBytes, CHECKPOINT_BYTES);
+});
+
+test('malformed or contradictory checkpoint state withholds the window but keeps the answer', async () => {
   for (const events of [
     [complete([{ ...compact, encrypted_content: '' }, reply('No')])],
     [{ type: 'response.output_item.done', output_index: 0, item: compact }, complete([{ ...compact, encrypted_content: 'different' }, reply('No')])],
@@ -172,38 +204,38 @@ test('the marker carries only a count and an unprovable marker never costs the t
     const f = fixture([events]); const chunks = [];
     try {
       for await (const chunk of f.bridge.stream(options([user('Start')]))) chunks.push(chunk);
-      // The answer is delivered either way; only the marker is withheld.
+      // Replay metadata is optional: an unprovable window never costs the turn.
       assert.equal(chunks.at(-1).reason.kind, 'stop');
-      assert.equal(chunks.at(-1).replayState.response[CHECKPOINT_KEY], undefined);
-      assert.equal(chunks.at(-1).replayState.response[CONVERSATION_KEY].id, 'resp-1');
+      assert.ok(chunks.every(chunk => !chunk.replayState));
       assert.equal(f.warnings.length, 1);
-      assert.ok(f.warnings[0].startsWith('The subscription compaction marker was not published ('));
+      assert.ok(f.warnings[0].startsWith('The subscription compaction checkpoint was not published ('));
     } finally { await f.bridge.close(); }
   }
 });
 
-test('a streamed compaction item the terminal array omits still marks the turn', async () => {
+test('a streamed window the terminal array omits still publishes and reuses a checkpoint', async () => {
   // Observed on the live route: the compaction item and the message arrive as
-  // streamed completed items, while response.completed.response.output omits the
-  // compaction item. The streamed order is the one that must be kept.
+  // streamed completed items, while response.completed.response.output omits
+  // the compaction item. The streamed order is the one that must be kept.
   const textDelta = { type: 'response.output_text.delta', item_id: 'msg-1', content_index: 0, delta: 'Hello' };
   const textDone = { ...textDelta, type: 'response.output_text.done', text: 'Hello' };
   const streamed = [
     { type: 'response.output_item.added', output_index: 0, item: compact },
-    textDelta, textDone,
+    textDelta,
+    textDone,
     { type: 'response.output_item.done', output_index: 0, item: compact },
     { type: 'response.output_item.added', output_index: 1, item: reply('Hello') },
     { type: 'response.output_item.done', output_index: 1, item: reply('Hello') },
-    complete([reply('Hello')], 'resp-1'),
+    complete([reply('Hello')]),
   ];
-  const f = fixture([streamed, [complete([reply('Next')], 'resp-2')]]);
+  const f = fixture([streamed, [complete([reply('Next')])]]);
   try {
     const first = await run(f.bridge, options([user('Start')]));
     const saved = JSON.parse(JSON.stringify(first.message));
-    assert.equal(saved.source.replayState.response[CHECKPOINT_KEY].count, 2);
+    assert.ok(saved.source.replayState.response[CHECKPOINT_KEY]);
     await run(f.bridge, options([user('Start'), saved, user('Next')]));
-    assert.equal(f.payloads[1].previous_response_id, 'resp-1');
-    assert.deepEqual(f.warnings.filter(message => message.includes('marker')), []);
+    assert.equal(f.payloads[1].input[0].type, 'compaction');
+    assert.deepEqual(f.warnings, []);
   } finally { await f.bridge.close(); }
 });
 
@@ -219,59 +251,69 @@ test('an incomplete or unsupported terminal state still fails the turn', async (
   }
 });
 
-test('compaction is always requested without configuration and a plain response publishes no marker', async () => {
+test('compaction is always requested without configuration and a plain response publishes no checkpoint', async () => {
   const f = fixture([[complete([reply('Plain')])], [complete([reply('Again')])]]);
   try {
     const first = await run(f.bridge, options([user('Start')]));
     assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 258400 }]);
-    assert.equal(first.message.source.replayState.response[CHECKPOINT_KEY], undefined);
-    assert.ok(first.message.source.replayState.response[CONVERSATION_KEY]);
+    assert.equal(first.message.source.replayState, undefined);
     await run(f.bridge, options([user('Start')]));
     assert.equal(f.payloads[1].context_management[0].type, 'compaction');
   } finally { await f.bridge.close(); }
 });
 
-test('explicit unsupported parameters retry once with full bounded history', async () => {
-  const rejected = param => Response.json({ error: { code: 'unsupported_parameter', param, message: 'must-not-leak' } }, { status: 400 });
-  for (const param of ['context_management', 'previous_response_id']) {
-    const f = fixture([[complete([compact, reply('First')])], rejected(param), [complete([reply('Fallback')])]]);
-    try {
-      const first = await run(f.bridge, options([user('Start')]));
-      await run(f.bridge, options([user('Start'), first.message, user('Next')]));
-      assert.equal(f.payloads[1].previous_response_id, 'resp-1');
-      // Only the rejected parameter is dropped from the one bounded retry.
-      assert.deepEqual(f.payloads[2].context_management, param === 'context_management' ? undefined : [{ type: 'compaction', compact_threshold: 258400 }]);
-      assert.equal(f.payloads[2].previous_response_id, param === 'previous_response_id' ? undefined : 'resp-1');
-      assert.equal(f.payloads[2].input[0].content[0].text, 'Start');
-      assert.equal(f.payloads[2].input.length, 3);
-    } finally { await f.bridge.close(); }
-  }
-  for (const response of [rejected('previous_response_id'), Response.json({ error: { code: 'unknown', param: 'other' } }, { status: 400 }),
-    rejected('previous_response_id')]) {
-    const f = fixture([response, rejected('context_management')]);
+test('model scope, missing output positions, and multiple compactions retain only a proven last window', () => {
+  const plan = validateInput(options([user('Start')]));
+  const scope = compactionScope({ account: 'one' }, 'model-a', plan);
+  const capture = new CompactionCapture();
+  const blocks = [{ type: 'text', text: 'Old' }, { type: 'text', text: 'Final' }];
+  const replayState = capture.finish([compact, reply('Old'), { ...compact, id: 'cp-2' }, reply('Final')], scope, plan, blocks);
+  assert.equal(replayState.response[CHECKPOINT_KEY].items.length, 2);
+  const messages = [user('Start'), { role: 'assistant', content: blocks, source: { replayState } }, user('Next')];
+  const next = validateInput(options(messages));
+  assert.ok(selectCheckpoint(messages, next, scope));
+  assert.equal(selectCheckpoint(messages, next, compactionScope({ account: 'one' }, 'model-b', plan)), undefined);
+  const incomplete = new CompactionCapture();
+  incomplete.observe({ output_index: 1, item: compact });
+  assert.equal(incomplete.finish(null, scope, plan, blocks), undefined);
+});
+
+test('explicit unsupported compaction parameter retries once with full bounded history', async () => {
+  const rejected = () => Response.json({ error: { code: 'unsupported_parameter', param: 'context_management', message: 'must-not-leak' } }, { status: 400 });
+  const f = fixture([[complete([compact, reply('First')])], rejected(), [complete([reply('Fallback')])]]);
+  try {
+    const first = await run(f.bridge, options([user('Start')]));
+    await run(f.bridge, options([user('Start'), first.message, user('Next')]));
+    assert.equal(f.payloads[1].input[0].type, 'compaction');
+    assert.equal(f.payloads[2].context_management, undefined);
+    assert.equal(f.payloads[2].input[0].content[0].text, 'Start');
+    assert.equal(f.payloads[2].input.length, 3);
+  } finally { await f.bridge.close(); }
+  for (const response of [rejected(), Response.json({ error: { code: 'unknown', param: 'other' } }, { status: 400 }),
+    Response.json({ error: { code: 'unsupported_parameter', param: 'context_management' } }, { status: 429 })]) {
+    const f = fixture([response, rejected()]);
     try {
       await assert.rejects(run(f.bridge, options([user('Start')])), error => !error.message.includes('must-not-leak'));
       assert.ok(f.payloads.length <= 2);
+      if (f.payloads.length === 2) assert.equal(f.payloads[1].context_management, undefined);
     } finally { await f.bridge.close(); }
   }
 });
 
-test('fallback drops the oldest history to fit instead of resending it oversized', async () => {
+test('a rejected parameter is dropped and the retry sends the trimmed full history', async () => {
   const f = fixture([[complete([compact, reply('First')])],
-    Response.json({ error: { code: 'unsupported_parameter', param: 'previous_response_id' } }, { status: 400 }),
-    [complete([reply('Retried')], 'resp-2')]]);
+    Response.json({ error: { code: 'unsupported_parameter', param: 'context_management' } }, { status: 400 }),
+    [complete([reply('Second')])]]);
   try {
     const start = user('x'.repeat(TEXT_BOUND - 10));
-    const tail = user('x'.repeat(100));
     const first = await run(f.bridge, options([start]));
-    await run(f.bridge, options([start, first.message, tail]));
-    assert.ok(f.warnings.some(message => message.includes('trimmed from the oldest end')));
+    const second = await run(f.bridge, options([start, first.message, user('x'.repeat(100))]));
     assert.equal(f.payloads.length, 3);
-    // The retry runs without the rejected id and carries only what still fits.
-    assert.equal(f.payloads[2].previous_response_id, undefined);
-    const sent = f.payloads[2].input;
-    assert.equal(sent.some(value => value.content?.[0]?.text === start.content[0].text), false);
-    assert.equal(sent.some(value => value.content?.[0]?.text === tail.content[0].text), true);
+    assert.ok(f.warnings.some(message => message.includes('full history was trimmed from the oldest end')));
+    // The rejected parameter is not resent, and the oversized oldest item is gone.
+    assert.equal(f.payloads[2].context_management, undefined);
+    assert.equal(f.payloads[2].input[0].content[0].text, 'First');
+    assert.equal(second.message.content[0].text, 'Second');
   } finally { await f.bridge.close(); }
 });
 
@@ -291,44 +333,32 @@ test('cancellation after a completed compaction item never commits replay state'
   } finally { await f.bridge.close(); }
 });
 
-test('unrepresented streamed text is never lost behind a marker', async () => {
+test('unrepresented streamed text is never lost behind a checkpoint', async () => {
   const f = fixture([[{ type: 'response.output_item.done', output_index: 0, item: compact },
     { type: 'response.output_text.delta', item_id: 'msg-1', content_index: 0, delta: 'Tail' }, complete(null)]]);
   try {
     const result = await run(f.bridge, options([user('Start')]));
     assert.equal(result.message.content[0].text, 'Tail');
-    assert.equal(result.message.source.replayState.response[CHECKPOINT_KEY], undefined);
-    assert.ok(result.message.source.replayState.response[CONVERSATION_KEY]);
+    assert.equal(result.message.source.replayState, undefined);
   } finally { await f.bridge.close(); }
 });
 
-test('covered image attachments are not read or resent on a chained turn', async () => {
+test('covered image attachments are not read or resent', async () => {
   const image = { type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 32, height: 32 } };
   const start = { role: 'user', content: [image, { type: 'text', text: 'Describe' }] };
   const plan = validateInput(options([start]));
   const content = [{ type: 'text', text: 'Description' }];
-  const scope = conversationScope(compactionAccount(token('synthetic-account')), 'synthetic', plan);
-  const record = conversationRecord(scope, 'resp-1', digest(plan.input), contentDigest(content));
-  const messages = [start, { role: 'assistant', content, source: { replayState: record } }, user('Next')];
+  const scope = compactionScope({ 'ChatGPT-Account-ID': 'synthetic-account' }, 'synthetic', plan);
+  const replayState = new CompactionCapture().finish([compact, reply('Description')], scope, plan, content);
+  const repeated = [start, { role: 'assistant', content, source: { replayState } }, start];
+  const repeatedPlan = validateInput(options(repeated));
+  assert.equal(compactPlan(repeatedPlan, selectCheckpoint(repeated, repeatedPlan, scope)).imageBlocks.length, 1);
   const f = fixture([[complete([reply('Continued')])]]);
   try {
-    await run(f.bridge, options(messages));
-    // Only the new part is sent, so the covered attachment is never read.
-    assert.equal(f.payloads[0].input.length, 1);
+    await run(f.bridge, options([start, { role: 'assistant', content, source: { replayState } }, user('Next')]));
+    assert.equal(f.payloads[0].input[0].type, 'compaction');
     assert.ok(!JSON.stringify(f.payloads[0]).includes('input_image'));
   } finally { await f.bridge.close(); }
-});
-
-test('a tool call and its executed result are dropped as one unit', () => {
-  const call = { role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'read', arguments: 'x'.repeat(TOOL_BYTES_LIMIT + 1) }] };
-  const result = { role: 'tool', toolCallId: 'call-1', content: [{ type: 'text', text: 'y'.repeat(100) }] };
-  const plan = validateInput(options([call, result, user('z'.repeat(100))]), true, requestLimits(WINDOW, true));
-  const fitted = trimOldest(plan, requestLimits(WINDOW));
-  assert.equal(fitted.trimmed, 2);
-  assert.deepEqual(fitted.input.map(value => value.type), ['message']);
-  assert.equal(fitted.input[0].content[0].text, 'z'.repeat(100));
-  // Dropping the call alone would leave its result orphaned, so the pair is one unit.
-  assert.equal(fitted.input.some(value => value.type === 'function_call_output'), false);
 });
 
 test('undisclosed model capacity omits compaction and a disclosed window uses the ratio', async () => {
@@ -345,6 +375,7 @@ test('a disclosed per-model percent drives the threshold and the bound, absence 
   assert.equal(threshold(272000, 80), 217600);
   for (const percent of [null, undefined, 0, 101, 95.5, -1]) assert.equal(threshold(272000, percent), 258400);
   assert.equal(requestLimits(500000, false, 80).inputBytes, 400000 * 8);
+  assert.equal(requestLimits(500000, false, 80).checkpointBytes, 400000 * 8);
   for (const [modelPercent, expected] of [[80, 217600], [null, 258400]]) {
     const f = fixture([[complete([reply('Plain')])]], { modelPercent });
     try {
@@ -353,10 +384,49 @@ test('a disclosed per-model percent drives the threshold and the bound, absence 
     } finally { await f.bridge.close(); }
   }
   // A disclosed value that is not a usable percent fails closed rather than being
-  // quietly replaced by the shipped ratio.
+  // quietly replaced by the shipped ratio. The live catalog does not disclose one
+  // for this account's models, so the fallback is what runs in practice.
   const malformed = fixture([[complete([reply('Plain')])]], { modelPercent: 0 });
   try { await assert.rejects(run(malformed.bridge, options([user('Start')])), { code: 'PROTOCOL_INVALID' }); }
   finally { await malformed.bridge.close(); }
+});
+
+test('the request carries the stateless shape the subscription route accepts', async () => {
+  const f = fixture([[complete([reply('Plain')])]]);
+  try {
+    await run(f.bridge, options([user('Start')]));
+    // Measured on a real account: this route rejects store true and rejects
+    // previous_response_id, so the stateless shape is the only one it accepts.
+    assert.equal(f.payloads[0].store, false);
+    assert.equal(f.payloads[0].previous_response_id, undefined);
+    assert.equal(f.payloads[0].context_management[0].compact_threshold, 258400);
+  } finally { await f.bridge.close(); }
+});
+
+test('the full history is trimmed from the oldest end, keeping a tool pair as one unit', () => {
+  const call = { role: 'assistant', content: [{ type: 'tool-call', id: 'call-1', name: 'read', arguments: 'x'.repeat(TOOL_BYTES_LIMIT + 1) }] };
+  const result = { role: 'tool', toolCallId: 'call-1', content: [{ type: 'text', text: 'y'.repeat(100) }] };
+  const plan = validateInput(options([call, result, user('z'.repeat(100))]), true, requestLimits(WINDOW, true));
+  const fitted = trimOldest(plan, requestLimits(WINDOW));
+  assert.equal(fitted.trimmed, 2);
+  assert.deepEqual(fitted.input.map(value => value.type), ['message']);
+  assert.equal(fitted.input[0].content[0].text, 'z'.repeat(100));
+  // Dropping the call alone would leave its result orphaned, so the pair is one unit.
+  assert.equal(fitted.input.some(value => value.type === 'function_call_output'), false);
+});
+
+test('an image occurrence is never dropped, and nothing left to drop is still refused', () => {
+  const limits = requestLimits(WINDOW);
+  const retained = requestLimits(WINDOW, true);
+  const image = { type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 32, height: 32 } };
+  const oversized = 'x'.repeat(retained.textBytes - 10);
+  const plan = validateInput(options([{ role: 'user', content: [image, { type: 'text', text: 'Describe' }] }, user(oversized)]), true, retained);
+  // The oldest item carries the image. The host owns the attachment store, so the
+  // bridge offloads its oldest images instead of dropping the item that holds them.
+  assert.throws(() => trimOldest(plan, limits), { code: 'INPUT_UNSUPPORTED' });
+  // With only one item left there is nothing to drop, so the request is still refused.
+  const last = validateInput(options([user(oversized)]), true, retained);
+  assert.throws(() => trimOldest(last, limits), { code: 'INPUT_UNSUPPORTED' });
 });
 
 test('the request byte bound is derived from the same window as the threshold', async () => {
@@ -377,57 +447,19 @@ test('the request byte bound is derived from the same window as the threshold', 
 test('retained transcript limits and parallel conversations remain independent', async () => {
   assert.throws(() => validateInput(options([user('x'.repeat(4 * 1024 * 1024 + 1))]), true), { code: 'INPUT_UNSUPPORTED' });
   assert.throws(() => validateInput(options(Array.from({ length: 4097 }, () => user('x'))), true), { code: 'INPUT_UNSUPPORTED' });
-  const f = fixture([[complete([reply('One')], 'resp-a')], [complete([reply('Two')], 'resp-b')],
+  const f = fixture([[complete([compact, reply('One')])], [complete([{ ...compact, encrypted_content: 'other-opaque' }, reply('Two')])],
     [complete([reply('Continue one')])], [complete([reply('Continue two')])]]);
   try {
     const [one, two] = await Promise.all([run(f.bridge, options([user('One')])), run(f.bridge, options([user('Two')]))]);
-    assert.notEqual(one.message.source.replayState.response[CONVERSATION_KEY].sent, two.message.source.replayState.response[CONVERSATION_KEY].sent);
+    assert.notEqual(one.message.source.replayState.response[CHECKPOINT_KEY].prefix, two.message.source.replayState.response[CHECKPOINT_KEY].prefix);
     await run(f.bridge, options([user('One'), one.message, user('Next')]));
     await run(f.bridge, options([user('Two'), two.message, user('Next')]));
-    assert.equal(f.payloads[2].previous_response_id, 'resp-a');
-    assert.equal(f.payloads[3].previous_response_id, 'resp-b');
+    assert.notEqual(f.payloads[2].input[0].encrypted_content, f.payloads[3].input[0].encrypted_content);
   } finally { await f.bridge.close(); }
 });
 
-test('inspection names every refusal instead of silently trusting a chain', () => {
-  const plan = validateInput(options([user('Start')]));
-  const scope = conversationScope({ account: 'one' }, 'synthetic', plan);
-  const blocks = [{ type: 'text', text: 'Answer' }];
-  const record = { version: 1, createdAt: Date.now(), scope, id: 'resp-1', sent: digest(plan.input), content: contentDigest(blocks) };
-  const messages = [user('Start'), { role: 'assistant', content: blocks, source: { replayState: { response: { [CONVERSATION_KEY]: record } } } }, user('Next')];
-  const next = validateInput(options(messages));
-  assert.equal(inspectConversation(messages, next, scope).id, 'resp-1');
-  assert.deepEqual(inspectConversation([user('Start')], validateInput(options([user('Start')])), scope), {});
-  assert.equal(inspectConversation(messages, next, 'another-scope').refusal, 'SCOPE');
-  assert.equal(inspectConversation(messages, next, scope, Date.now() + CONVERSATION_MAX_AGE + 1).refusal, 'EXPIRED');
-  const edited = JSON.parse(JSON.stringify(messages)); edited[0] = user('Edited');
-  assert.equal(inspectConversation(edited, validateInput(options(edited)), scope).refusal, 'PREFIX');
-  const content = JSON.parse(JSON.stringify(messages)); content[1].content[0].text = 'Changed';
-  assert.equal(inspectConversation(content, next, scope).refusal, 'CONTENT');
-  const future = JSON.parse(JSON.stringify(messages)); future[1].source.replayState.response[CONVERSATION_KEY].createdAt = Date.now() + 60_000;
-  assert.equal(inspectConversation(future, next, scope).refusal, 'METADATA');
-  const opaque = JSON.parse(JSON.stringify(messages)); opaque[1].source.replayState.response[CONVERSATION_KEY].id = '';
-  assert.equal(inspectConversation(opaque, next, scope).refusal, 'ID');
-  // A failure with no stage of its own still reports the generic label.
-  assert.equal(inspectConversation(messages, { ...next, spans: undefined }, scope).refusal, 'INVALID');
-});
-
-test('the appended part is bounded on its own and keeps the covered part out of the request', () => {
-  const limits = requestLimits(WINDOW);
-  const window = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'a'.repeat(300000) }] }];
-  const tail = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'b'.repeat(200000) }] };
-  const plan = { input: [...window, tail], tools: [], imageBlocks: [], images: new Map(), spans: [{ start: 0, end: 1, imageEnd: 0 }] };
-  const result = appendedItems(plan, { end: 1, imageEnd: 0 }, limits);
-  assert.equal(result.input.length, 1);
-  assert.ok(result.input.includes(tail));
-  assert.ok(result.attachments.size === 0);
-  // A tail that exceeds the bound on its own is refused rather than sent oversized.
-  const oversizedTail = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'b'.repeat(limits.textBytes + 1) }] };
-  assert.throws(() => appendedItems({ ...plan, input: [oversizedTail] }, { end: 0, imageEnd: 0 }, limits), { code: 'INPUT_UNSUPPORTED' });
-});
-
-test('public adapter carries the conversation record through the pinned Harness runtime', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-conversation-public-'));
+test('public adapter carries checkpoints through the pinned Harness runtime', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-compaction-public-'));
   const store = new AuthStore(authDirectory({ HOME: root }));
   const originalOpen = Http.prototype.open;
   const ctx = new Context();
@@ -439,7 +471,7 @@ test('public adapter carries the conversation record through the pinned Harness 
       if (url.includes('/models?')) return Response.json({ models: [{ slug: 'synthetic', display_name: 'Synthetic', visibility: 'list', context_window: 272000,
         supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }], default_reasoning_level: 'medium' }] });
       payloads.push(JSON.parse(request.body));
-      return sse([complete(payloads.length === 1 ? [compact, reply('First')] : [reply('Next')], `resp-${payloads.length}`)]);
+      return sse([complete(payloads.length === 1 ? [compact, reply('First')] : [reply('Next')])]);
     };
     ctx.provide('launchEnvironment', { getFrom: key => ['HOME', 'DSH_HOME'].includes(key) ? { value: root } : undefined });
     service = ctx.plugin(LlmRuntime);
@@ -452,7 +484,7 @@ test('public adapter carries the conversation record through the pinned Harness 
     assert.equal(info.reasoning.defaultEffort, 'medium');
     const first = await run(ctx.llm, options([user('Start')]));
     await run(ctx.llm, options([user('Start'), first.message, user('Next')]));
-    assert.equal(payloads[1].previous_response_id, 'resp-1');
+    assert.equal(payloads[1].input[0].type, 'compaction');
     assert.equal(payloads[1].context_management[0].compact_threshold, 258400);
   } finally {
     await fiber?.dispose(); await service?.dispose(); Http.prototype.open = originalOpen;
@@ -464,7 +496,8 @@ test('public adapter carries the conversation record through the pinned Harness 
   }
 });
 
-test('conversation identity survives refresh but separates users within the same account', () => {
+
+test('checkpoint identity survives refresh but separates users within the same account', () => {
   const jwt = (sub, user, exp) => `x.${Buffer.from(JSON.stringify({ sub, exp, 'https://api.openai.com/auth': {
     chatgpt_account_id: 'shared-account', chatgpt_user_id: user } })).toString('base64url')}.x`;
   const first = compactionAccount(jwt('subject-one', 'user-one', 4000000000));

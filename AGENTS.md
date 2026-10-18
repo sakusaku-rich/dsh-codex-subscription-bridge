@@ -14,8 +14,8 @@ Follow [the security requirements](SECURITY.md#required-controls); they are the 
 
 - Never import, read, change, or log Codex credential files.
 - Never accept raw credentials, custom endpoints, or a paid API route.
-- Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, user image blocks, and a bounded conversation id for a chain this bridge established.
-- Store conversation state only in Harness replay metadata, and only as a bounded id plus integrity digests — never as opaque conversation content. A chain the bridge cannot prove is refused and the full history is sent, under the controls in [docs/COMPACTION.md](docs/COMPACTION.md).
+- Never execute tools in the bridge; forward only validated tool definitions, executed tool-call history, and user image blocks.
+- Persist only the bounded compaction window in Harness replay metadata, under the controls in [docs/COMPACTION.md](docs/COMPACTION.md). A window the bridge cannot prove is refused and the full history is sent. Requests are stateless: the route requires `store: false` and rejects `previous_response_id`.
 
 ## Git workflow
 

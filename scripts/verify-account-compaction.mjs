@@ -4,7 +4,6 @@ import { AuthStore, authDirectory } from '../src/auth.js';
 import { DirectBridge } from '../src/direct.js';
 import { BridgeError, failure } from '../src/errors.js';
 import { CHECKPOINT_KEY, threshold, requestLimits } from '../src/compaction.js';
-import { CONVERSATION_KEY } from '../src/conversation.js';
 import { BlockAssembler } from '@deepseek-ai/dsh-llm';
 
 // Owner-authorized real-account measurement only; never part of CI. It reports
@@ -34,15 +33,15 @@ const sent = [];
 const real = new Http();
 const http = new Http(async (url, options) => {
   const response = await real.open(url, options, options.signal);
-  const entry = { compactThreshold: null, store: null, chained: null, inputItems: null, bytes: typeof options.body === 'string' ? Buffer.byteLength(options.body) : 0, status: response.status, events: [] };
+  const entry = { compactThreshold: null, store: null, replayed: null, inputItems: null, bytes: typeof options.body === 'string' ? Buffer.byteLength(options.body) : 0, status: response.status, events: [] };
   if (typeof options.body === 'string') {
-    // Shape and counters only. The conversation id itself is a server identifier
-    // for a stored conversation, so it is recorded as a boolean, never as a value.
+    // Shape and counters only. A window is opaque content, so it is recorded as a
+    // boolean and a count, never as a value.
     try {
       const body = JSON.parse(options.body);
       entry.compactThreshold = body.context_management?.[0]?.compact_threshold ?? null;
       entry.store = body.store ?? null;
-      entry.chained = body.previous_response_id !== undefined;
+      entry.replayed = Array.isArray(body.input) && body.input[0]?.type === 'compaction';
       entry.inputItems = Array.isArray(body.input) ? body.input.length : null;
     } catch { /* shape only */ }
   }
@@ -53,6 +52,29 @@ const http = new Http(async (url, options) => {
     void (async () => {
       try { for await (const event of events(clone.body, AbortSignal.timeout(120_000))) entry.events.push(event.type === 'response.completed' ? `completed:${event.response?.status}` : event.type); }
       catch { entry.events.push('READ_FAILED'); }
+    })();
+  }
+  else if (response.body) {
+    // A rejected request is recorded as the fixed error code, the parameter name
+    // and the body's key names only — never upstream text or values.
+    const clone = response.clone();
+    void (async () => {
+      try {
+        const body = JSON.parse(await clone.text());
+        entry.shape = body && typeof body === 'object' && !Array.isArray(body) ? Object.keys(body).sort() : 'NOT_OBJECT';
+        const detail = body?.error;
+        entry.error = detail && typeof detail === 'object' && !Array.isArray(detail)
+          ? (detail.code ?? detail.type ?? 'NO_CODE') : 'NO_ERROR_OBJECT';
+        entry.param = detail?.param ?? null;
+        // Only which fixed words appear in the message is recorded; the message
+        // text itself never reaches the log.
+        const text = (typeof body?.detail === 'string' ? body.detail : typeof detail?.message === 'string' ? detail.message : '').toLowerCase();
+        entry.matched = ['store', 'storing', 'retention', 'previous_response_id', 'context_management', 'compact',
+          'input', 'model', 'instructions', 'stream', 'unsupported', 'unknown', 'invalid', 'not allowed', 'not supported',
+          'required', 'exceeds', 'too large', 'zdr', 'policy', 'must', 'cannot', 'only', 'false', 'true', 'available',
+          'disabled', 'denied', 'forbidden', 'plan', 'account', 'feature', 'beta', 'enable', 'permission'].filter(name => text.includes(name));
+        entry.messageLength = text.length;
+      } catch { entry.error = 'UNREADABLE'; }
     })();
   }
   return response;
@@ -69,8 +91,9 @@ async function turn(text, label) {
   const chunks = [];
   const firstSent = sent.length;
   const firstWarning = warnings.length;
+  const messages = [...history, { role: 'user', content: [{ type: 'text', text }] }];
   try {
-    for await (const chunk of bridge.stream({ provider: 'codex-subscription', model, messages: [...history, { role: 'user', content: [{ type: 'text', text }] }] })) chunks.push(chunk);
+    for await (const chunk of bridge.stream({ provider: 'codex-subscription', model, messages })) chunks.push(chunk);
   } catch (error) {
     record.failure = failure(error).code;
     turns.push(record);
@@ -80,15 +103,20 @@ async function turn(text, label) {
   const finish = chunks.find(chunk => chunk.type === 'finish');
   record.usage = usage ?? null;
   record.renderedInput = usage === undefined ? null : usage.inputTokens + (usage.cacheReadTokens ?? 0);
+  if (usage !== undefined) {
+    record.cacheRead = usage.cacheReadTokens ?? 0;
+    record.cacheHit = record.renderedInput === 0 ? null : Number((record.cacheRead / record.renderedInput).toFixed(4));
+  }
   record.checkpoint = finish?.replayState?.response?.[CHECKPOINT_KEY] !== undefined;
-  record.chainPublished = finish?.replayState?.response?.[CONVERSATION_KEY] !== undefined;
+  record.checkpointPublished = finish?.replayState?.response?.[CHECKPOINT_KEY] !== undefined;
   // The request this turn produced, matched by order rather than by content.
   const request = sent[firstSent];
-  if (request !== undefined) { record.chained = request.chained; record.inputItems = request.inputItems; }
+  if (request !== undefined) { record.replayed = request.replayed; record.inputItems = request.inputItems; }
   record.warnings = warnings.slice(firstWarning);
   if (record.renderedInput !== null) spent += record.renderedInput;
   const assembler = new BlockAssembler();
   for (const chunk of chunks) assembler.push(chunk);
+  history.push(messages.at(-1));
   history.push({ role: 'assistant', content: assembler.blocks(), source: { kind: 'model', provider: 'codex-subscription', model, replayState: assembler.replayState } });
   turns.push(record);
   return record;
@@ -122,10 +150,10 @@ try {
     if (record.renderedInput) bytesPerToken = record.bytes / record.renderedInput;
   }
   if (turns.some(entry => entry.checkpoint) && spent < tokenBudget) {
-    // A chained follow-up sends only what it appends, so one item is the signal
-    // that the backend conversation was referenced rather than resent.
-    const follow = await turn('Confirm the chain is reused.', 'follow-up');
-    follow.chainConfirmed = follow.chained === true && follow.inputItems === 1;
+    // A reused window replaces the covered prefix, so the follow-up sends the
+    // window plus what it appends instead of the whole transcript.
+    const follow = await turn('Confirm the window is reused.', 'follow-up');
+    follow.replayConfirmed = follow.replayed === true && follow.renderedInput < 20000;
   }
   await new Promise(resolve => setTimeout(resolve, 4000));
   console.log(JSON.stringify({ bytesPerToken: Number(bytesPerToken.toFixed(2)), spent, sent, turns }));

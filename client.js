@@ -182,7 +182,7 @@ window.__ModuleLoader__.load({
       const checkpoint = source?.replayState?.response?.[CHECKPOINT_KEY];
       if (checkpoint === null || typeof checkpoint !== 'object' || Array.isArray(checkpoint)) return null;
       return {
-        items: Number.isSafeInteger(checkpoint.count) && checkpoint.count > 0 ? checkpoint.count : 0,
+        items: Array.isArray(checkpoint.items) ? checkpoint.items.length : 0,
         model: typeof source.model === 'string' ? source.model : '',
       };
     }

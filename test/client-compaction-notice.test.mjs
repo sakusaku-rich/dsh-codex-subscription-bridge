@@ -40,7 +40,7 @@ const ctx = {
   },
 };
 
-const checkpointEvent = ({ seq = 7, key = 'subscriptionCompactionV1', count = 2, model = 'gpt-6-luna' } = {}) => ({
+const checkpointEvent = ({ seq = 7, key = 'subscriptionCompactionV1', items = 2, model = 'gpt-6-luna' } = {}) => ({
   type: 'assistant/message',
   seq,
   time: 1_700_000_000_000,
@@ -51,7 +51,7 @@ const checkpointEvent = ({ seq = 7, key = 'subscriptionCompactionV1', count = 2,
         kind: 'assistant',
         provider: 'codex-subscription',
         model,
-        replayState: { response: { [key]: { version: 1, createdAt: 1, count } } },
+        replayState: { response: { [key]: { version: 1, createdAt: 1, items: Array.from({ length: items }, (_, index) => ({ type: 'compaction', index })) } } },
       },
     },
   },
@@ -87,7 +87,7 @@ test('only a checkpoint-carrying assistant message starts the node', () => {
 
 test('the node state and view node carry the window facts the marker shows', () => {
   const definition = definitions[0];
-  const event = checkpointEvent({ seq: 42, count: 3, model: 'gpt-5.6-terra' });
+  const event = checkpointEvent({ seq: 42, items: 3, model: 'gpt-5.6-terra' });
   const state = definition.start({}, { event });
   assert.equal(state.seq, 42);
   assert.equal(state.items, 3);
