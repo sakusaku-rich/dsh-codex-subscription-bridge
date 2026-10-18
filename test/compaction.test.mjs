@@ -561,3 +561,45 @@ test('checkpoint identity survives refresh but separates users within the same a
   assert.notDeepEqual(first, compactionAccount(jwt('subject-two', 'user-two', 4000000000)));
   assert.throws(() => compactionAccount(jwt({}, 'user', 4000000000)), { code: 'AUTH_REQUIRED' });
 });
+
+const textDelta = { type: 'response.output_text.delta', item_id: 'msg-1', content_index: 0, delta: 'Hello' };
+const textDone = { ...textDelta, type: 'response.output_text.done', text: 'Hello' };
+
+test('an oversized compaction frame streams past the default SSE bound and still publishes its checkpoint', async () => {
+  // The observed failure: the request bound admits a compaction item at
+  // threshold tokens times 8 bytes, so for a 872,000-token window one
+  // encrypted_content can carry well over the parser's default 1 MiB frame.
+  // The framing limits must rise with the window instead of killing the
+  // stream before the gentle capture refusal can apply.
+  const oversized = 'x'.repeat(1.5 * 1024 * 1024);
+  const bigCompact = { ...compact, encrypted_content: oversized };
+  const f = fixture([[textDelta, textDone,
+    { type: 'response.output_item.done', item: bigCompact, output_index: 0 },
+    { type: 'response.output_item.done', item: reply('Hello'), output_index: 1 }, complete([bigCompact, reply('Hello')])]],
+    { modelWindow: 872000 });
+  try {
+    const { chunks } = await run(f.bridge, options([user('Start')]));
+    assert.equal(chunks.at(-1).reason.kind, 'stop');
+    assert.deepEqual(f.payloads[0].context_management, [{ type: 'compaction', compact_threshold: 828400 }]);
+    assert.equal(chunks.at(-1).replayState.response[CHECKPOINT_KEY].items[0].encrypted_content, oversized);
+    assert.deepEqual(f.warnings, []);
+  } finally { await f.bridge.close(); }
+});
+
+test('a compaction item above the capture bound is refused gently while the turn still delivers', async () => {
+  // Between the capture bound (threshold tokens times 8 bytes) and the raised
+  // frame limit, an item costs the next turn its replay window, not this turn
+  // its answer: the checkpoint is refused, the full history is resent.
+  const oversized = 'x'.repeat(2.5 * 1024 * 1024);
+  const bigCompact = { ...compact, encrypted_content: oversized };
+  const f = fixture([[textDelta, textDone,
+    { type: 'response.output_item.done', item: bigCompact, output_index: 0 },
+    { type: 'response.output_item.done', item: reply('Hello'), output_index: 1 }, complete([bigCompact, reply('Hello')])]]);
+  try {
+    const { chunks } = await run(f.bridge, options([user('Start')]));
+    assert.equal(chunks.at(-1).reason.kind, 'stop');
+    assert.equal(chunks.find(chunk => chunk.type === 'block-end').block.text, 'Hello');
+    assert.equal(chunks.at(-1).replayState, undefined);
+    assert.ok(f.warnings.some(message => message.startsWith('The subscription compaction checkpoint was not published (')));
+  } finally { await f.bridge.close(); }
+});

@@ -1,4 +1,4 @@
-import {events} from './sse.js';
+import {events, FRAME_LIMIT} from './sse.js';
 export {events} from './sse.js';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -269,6 +269,16 @@ export class DirectBridge {
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
       scope = compactionScope(compactionAccount(token), options.model, originalPlan);
       compactThreshold = threshold(selected.contextWindow, selected.effectivePercent);
+      // The transport framing must stay above the admitted window, not at it:
+      // one compaction item travels inside a single event frame and repeats in
+      // up to three events (added, done and the terminal echo). The window
+      // estimate is the capture bound, so content the capture refuses gently —
+      // an encoding denser than the estimate — still streams and the turn keeps
+      // its answer; framing fails only past twice the estimate. Without a
+      // threshold no compaction item can appear and the default bounds stand.
+      const itemFrame = compactThreshold === undefined ? undefined : 2 * wireLimits.checkpointBytes;
+      const framing = itemFrame === undefined ? undefined
+        : { frameLimit: itemFrame, totalLimit: 3 * itemFrame + 4 * FRAME_LIMIT };
       const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope, Date.now(), wireLimits.checkpointBytes);
       // A refusal is the model-switch, expiry and edited-history boundary: the
       // opaque state cannot carry over, so the host log names it before the
@@ -348,7 +358,9 @@ export class DirectBridge {
         // Trust the bounded frame/event parser and terminal state, not Content-Type.
         phase = 'SSE_FRAME';
         let rejectedParameter = false;
-        for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller))) {
+        // The retry after a rejected parameter drops the threshold, so it also
+        // drops the raised bounds: no compaction item can arrive on that stream.
+        for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller), compactThreshold === undefined ? undefined : framing)) {
           try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
           if (!CONSUMED_EVENTS.has(event.type) && !TERMINAL_FAILURES.has(event.type)) continue;
           if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
