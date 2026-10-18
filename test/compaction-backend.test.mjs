@@ -70,5 +70,7 @@ test('checkpoint inspection names every refusal instead of silently discarding s
   const digest = clone(messages); digest[1].source.replayState.response.subscriptionCompactionV1.items[0].encrypted_content = 'changed';
   assert.equal(inspectCheckpoint(digest, next, scope).refusal, 'DIGEST');
   const invalid = clone(messages); invalid[1].source.replayState.response.subscriptionCompactionV1.items = [];
-  assert.equal(inspectCheckpoint(invalid, next, scope).refusal, 'INVALID');
+  assert.equal(inspectCheckpoint(invalid, next, scope).refusal, 'WINDOW_SHAPE');
+  // A failure with no stage of its own still reports the generic label.
+  assert.equal(inspectCheckpoint(messages, { ...next, spans: undefined }, scope).refusal, 'INVALID');
 });

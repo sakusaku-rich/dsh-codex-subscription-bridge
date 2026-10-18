@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BlockAssembler } from '@deepseek-ai/dsh-llm';
 import { DirectBridge } from '../src/direct.js';
 import { Http } from '../src/http.js';
-import { CHECKPOINT_KEY, CHECKPOINT_MAX_AGE, CompactionCapture, compactionScope, selectCheckpoint, compactPlan, threshold, requestLimits } from '../src/compaction.js';
+import { CHECKPOINT_KEY, CHECKPOINT_MAX_AGE, CHECKPOINT_BYTES, CompactionCapture, compactionScope, inspectCheckpoint, selectCheckpoint, compactPlan, threshold, requestLimits } from '../src/compaction.js';
 import { validateInput, TEXT_LIMIT, TOOL_BYTES_LIMIT } from '../src/text.js';
 import { Context } from '@deepseek-ai/cordis';
 import { LlmRuntime } from '@deepseek-ai/dsh-llm';
@@ -98,27 +99,101 @@ test('changed history, instructions, tools, account, expired or corrupt metadata
   }
 });
 
-test('covered history may exceed text wire budget but fallback and uncovered tail cannot', async () => {
-  const f = fixture([[complete([compact, reply('First')])], [complete([reply('Next')])]]);
+test('a covered window past the wire bound is trimmed from the oldest end instead of failing the turn', async () => {
+  const big = 'a'.repeat(250000);
+  const f = fixture([[complete([compact, reply(big)])], [complete([reply('Trimmed')])]]);
   try {
     const start = user('x'.repeat(TEXT_BOUND - 10));
     const first = await run(f.bridge, options([start]));
-    const request = options([start, first.message, user('y'.repeat(100))]);
-    await run(f.bridge, request);
+    // The window plus the tail exceeds the bound, but the tail alone fits: the
+    // oldest covered item is dropped and the turn still runs.
+    const tail = user('y'.repeat(TEXT_BOUND - Buffer.byteLength(big) + 1));
+    await run(f.bridge, options([start, first.message, tail]));
+    assert.ok(f.warnings.some(message => message.includes('trimmed from the oldest end')));
     assert.equal(f.payloads[1].input[0].type, 'compaction');
-    await assert.rejects(run(f.bridge, options([start, first.message, user('y'.repeat(TEXT_BOUND))])), { code: 'INPUT_UNSUPPORTED' });
+    assert.ok(f.payloads[1].input.some(value => value.content?.[0]?.text === tail.content[0].text), 'the uncovered tail is kept');
+    // A refused checkpoint has no window to trim, so the full transcript is
+    // revalidated on its own and the turn still fails.
     f.account('other');
-    // A refused checkpoint is the consolidation boundary, not a generic shape error.
-    await assert.rejects(run(f.bridge, request), { code: 'COMPACTION_UNAVAILABLE' });
-    assert.equal(f.payloads.length, 2);
-    assert.deepEqual(f.warnings, ['The encrypted subscription compaction state was refused (SCOPE); resending the bounded local history.']);
+    await assert.rejects(run(f.bridge, options([start, first.message, user('y'.repeat(100))])), { code: 'COMPACTION_UNAVAILABLE' });
+    assert.ok(f.warnings.some(message => message.includes('was refused (SCOPE)')));
   } finally { await f.bridge.close(); }
+});
+
+const windowBytesOf = values => 2 + values.reduce((total, value) => total + Buffer.byteLength(JSON.stringify(value)) + 1, 0);
+
+test('a window past its bound drops the oldest covered items instead of refusing', async () => {
+  // The bound is derived from the disclosed window, so a window the route can
+  // produce cannot exceed it; the drop is the residual path, matching the official
+  // client removing the oldest history item when the window is exceeded.
+  const limit = requestLimits(WINDOW).checkpointBytes;
+  const big = { type: 'compaction', id: 'cp-1', encrypted_content: 'y'.repeat(1000000) };
+  const many = Array.from({ length: 60 }, (_, index) => reply(`${index} ${'z'.repeat(20000)}`));
+  const plan = { input: [], tools: [] };
+  const capture = new CompactionCapture(limit);
+  const replayState = capture.finish([big, ...many], compactionScope('synthetic-account', 'synthetic', plan), plan,
+    many.map(value => ({ type: 'text', text: value.content[0].text })));
+  assert.ok(replayState);
+  assert.equal(capture.refusal, undefined);
+  assert.ok(capture.trimmed > 0);
+  const items = replayState.response[CHECKPOINT_KEY].items;
+  assert.equal(items[0].type, 'compaction');
+  assert.ok(windowBytesOf(items) <= limit);
+  assert.ok(items.length < many.length + 1);
+  // The persisted digest is computed over the trimmed window, so reuse stays
+  // provable: the stored window is exactly what was published.
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  assert.equal(digest(items), replayState.response[CHECKPOINT_KEY].digest);
+});
+
+test('a compacted request past the wire bound drops the oldest window items instead of failing', async () => {
+  const limits = requestLimits(WINDOW);
+  const window = [compact, ...Array.from({ length: 8 }, (_, index) => ({ type: 'message', role: 'assistant',
+    content: [{ type: 'output_text', text: `m${index} ${'a'.repeat(250000)}` }] }))];
+  const tail = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'b'.repeat(200000) }] };
+  const plan = { input: [...window, tail], tools: [], imageBlocks: [], images: new Map() };
+  const result = compactPlan(plan, { end: window.length, imageEnd: 0, items: window }, limits);
+  assert.ok(result.trimmed > 0);
+  assert.ok(result.input.includes(tail), 'the uncovered tail is never dropped');
+  assert.equal(result.input[0].type, 'compaction');
+  const textBytes = result.input.reduce((total, value) => total + (value.type === 'message'
+    ? value.content.reduce((part, block) => part + Buffer.byteLength(block.text), 0) : 0), 0);
+  assert.ok(textBytes <= limits.textBytes);
+  // Nothing is left to drop once only the compaction item remains, so a tail that
+  // exceeds the bound on its own is still refused.
+  const oversizedTail = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'b'.repeat(limits.textBytes + 1) }] };
+  assert.throws(() => compactPlan({ ...plan, input: [compact, oversizedTail] }, { end: 1, imageEnd: 0, items: [compact] }, limits),
+    { code: 'INPUT_UNSUPPORTED' });
+});
+
+test('a persisted window past the derived bound is refused whole, not trimmed', () => {
+  // Trimming a stored window would change the digest it was proved against, so
+  // the drop applies only to a window being published. A stored window past the
+  // bound is still refused.
+  const limit = requestLimits(WINDOW).checkpointBytes;
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const contentDigest = blocks => createHash('sha256').update(JSON.stringify(blocks.filter(block => block.type === 'text' || block.type === 'tool-call')
+    .map(block => block.type === 'text' ? { type: 'text', text: block.text } : { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments }))).digest('hex');
+  const big = { type: 'compaction', id: 'cp-1', encrypted_content: 'y'.repeat(1000000) };
+  const parts = Array.from({ length: 60 }, (_, index) => ({ type: 'output_text', text: `m${index} ${'z'.repeat(20000)}` }));
+  const items = [big, ...parts.map(part => ({ type: 'message', role: 'assistant', content: [part] }))];
+  assert.ok(windowBytesOf(items) > limit);
+  const blocks = parts.map(part => ({ type: 'text', text: part.text }));
+  const messages = [user('Start'), { role: 'assistant', content: blocks, source: {} }, user('Next')];
+  const plan = validateInput(options(messages), true);
+  const scope = compactionScope({ account: 'one' }, 'model-a', plan);
+  messages[1].source.replayState = { response: { [CHECKPOINT_KEY]: { version: 1, createdAt: Date.now(), scope,
+    prefix: digest(plan.input.slice(0, plan.spans[1].start)), content: contentDigest(blocks), items, digest: digest(items) } } };
+  assert.equal(inspectCheckpoint(messages, plan, scope, Date.now(), limit).refusal, 'WINDOW_BYTES');
+  assert.equal(selectCheckpoint(messages, plan, scope, Date.now(), limit), undefined);
+  // With no disclosed window the fixed floor still applies, and the derived bound
+  // is above the SSE frame limit, so a single item cannot exceed it on a turn.
+  assert.equal(requestLimits(null).checkpointBytes, CHECKPOINT_BYTES);
 });
 
 test('malformed or contradictory checkpoint state withholds the window but keeps the answer', async () => {
   for (const events of [
     [complete([{ ...compact, encrypted_content: '' }, reply('No')])],
-    [complete([{ ...compact, encrypted_content: 'x'.repeat(512 * 1024 + 1) }, reply('No')])],
     [{ type: 'response.output_item.done', output_index: 0, item: compact }, complete([{ ...compact, encrypted_content: 'different' }, reply('No')])],
   ]) {
     const f = fixture([events]); const chunks = [];

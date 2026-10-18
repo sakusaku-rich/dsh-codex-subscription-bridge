@@ -242,6 +242,9 @@ export class DirectBridge {
       // replace; the wire window is still validated below under the derived limits.
       const retainedLimits = requestLimits(selected.contextWindow, true);
       const wireLimits = requestLimits(selected.contextWindow);
+      // The persisted window bound comes from the same disclosed window as the
+      // threshold, so a window the route can produce cannot exceed it.
+      capture.limit = wireLimits.checkpointBytes;
       phase = 'INPUT';
       const originalPlan = validateInput({ ...options, messages }, true, retainedLimits);
       let plan = originalPlan;
@@ -253,14 +256,20 @@ export class DirectBridge {
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
       scope = compactionScope(compactionAccount(token), options.model, originalPlan);
       compactThreshold = threshold(selected.contextWindow);
-      const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope);
+      const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope, Date.now(), wireLimits.checkpointBytes);
       // A refusal is the model-switch, expiry and edited-history boundary: the
       // opaque state cannot carry over, so the host log names it before the
       // bounded local history is resent on its own.
       if (checkpoint.refusal !== undefined) this.warn(`The encrypted subscription compaction state was refused (${checkpoint.refusal}); resending the bounded local history.`);
       // A selected checkpoint replaces only its exact covered prefix. Otherwise
       // the retained transcript is revalidated under the window-derived wire limits.
-      if (checkpoint.items !== undefined) plan = compactPlan(originalPlan, checkpoint, wireLimits);
+      if (checkpoint.items !== undefined) {
+        plan = compactPlan(originalPlan, checkpoint, wireLimits);
+        // Dropping the oldest covered items is recovery, not refusal: the turn
+        // still runs on a shorter window, matching the official client's behavior
+        // when the window is exceeded while compacting. The log names the count.
+        if (plan.trimmed > 0) this.warn(`The subscription compaction window was trimmed from the oldest end (${plan.trimmed} items) to fit the request bound.`);
+      }
       else {
         try { plan = validateInput({ ...options, messages }, false, wireLimits); }
         catch (error) {
@@ -358,6 +367,7 @@ export class DirectBridge {
           // A refused checkpoint costs the next turn its replay window, not this
           // turn's answer, so it is logged rather than raised.
           if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
+          if (capture.trimmed > 0) this.warn(`The published subscription compaction window was trimmed from the oldest end (${capture.trimmed} items) to fit its bound.`);
           yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
         } else if (TERMINAL_FAILURES.has(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
         // Any other event is a notification the bridge does not project. It is
