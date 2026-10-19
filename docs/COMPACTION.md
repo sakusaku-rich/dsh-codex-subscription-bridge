@@ -41,11 +41,12 @@ flowchart TD
     Start["New turn"] --> Prepare["Prepare input: see diagram 2"]
     Prepare --> Images["Prepare uncovered images"]
     Images --> Send["Send Responses request"]
-    Send --> Read["Process HTTP response and SSE"]
+    Send --> Backend["Backend generates response and may return compaction"]
+    Backend --> Read["Process HTTP response and SSE"]
     Read --> Result{"Outcome?"}
     Result -->|Completed| Capture["Capture replay metadata: see diagram 3"]
     Result -->|Parameter rejected| Eligible{"Eligible for one retry?"}
-    Eligible -->|Yes| Retry["Omit context_management; prepare full-history input"]
+    Eligible -->|Yes| Retry["Omit context_management; prepare full-history retry via diagram 2 retry entry"]
     Retry --> Images
     Eligible -->|No| Failed["Turn failed: no new window"]
     Result -->|Other failure| Failed
@@ -73,18 +74,23 @@ flowchart TD
     Warn --> Full
     Usable -->|No| Full
     Retry["Parameter-rejection retry"] --> Full
-    Replay --> Fits{"Within wire budgets?"}
-    Full --> Fits
-    Fits -->|Yes| Ready["Input ready: return to diagram 1"]
-    Fits -->|No| Droppable{"Permitted old items remain?"}
-    Droppable -->|Yes| Drop["Drop oldest permitted unit"]
-    Drop --> Fits
-    Droppable -->|No| Failed["Turn failed: no new window"]
+    Replay --> ReplayFits{"Within wire budgets?"}
+    ReplayFits -->|Yes| Ready["Input ready: return to image preparation in diagram 1"]
+    ReplayFits -->|No| ReplayDrop{"Removable item after compaction item?"}
+    ReplayDrop -->|Yes| DropOutput["Drop oldest output item after compaction item"]
+    DropOutput --> ReplayFits
+    ReplayDrop -->|No| Failed["Turn failed: no new window"]
+    Full --> FullFits{"Within wire budgets?"}
+    FullFits -->|Yes| Ready
+    FullFits -->|No| FullDrop{"Can the oldest history unit be dropped?"}
+    FullDrop -->|Yes| DropHistory["Drop oldest history unit"]
+    DropHistory --> FullFits
+    FullDrop -->|No| Failed
 ```
 
 - **Window selection:** a usable context window is a disclosed safe integer of at least 2048 tokens. The newest saved window must pass scope, covered-prefix, assistant-content, age, shape and digest checks. Developer instructions remain separate, and the uncovered tail may contain new messages. A refusal falls back to full history; older windows are not searched.
 - **Replay path:** only output items following the compaction item may be removed to fit wire budgets. The compaction item, developer instructions and uncovered tail remain.
-- **Full-history path:** trimming runs only when budgets are exceeded. It drops the oldest history units, keeping a tool call and its executed result together, and never drops an image occurrence.
+- **Full-history path:** trimming runs only when budgets are exceeded. It drops the oldest history units, keeping a tool call and its executed result together, and never drops an image occurrence. It does not skip a protected oldest item to delete newer items: an image at the oldest end blocks further trimming. The final remaining input item is never dropped.
 - **Failure boundary:** exhausted trimming reports `INPUT_UNSUPPORTED`, except that the full-history path after an explicit checkpoint refusal maps that error to `COMPACTION_UNAVAILABLE`. Retained-history validation can fail before trimming starts.
 
 Trimming deletes content without creating a summary. It enforces resource budgets, not the backend's token ceiling. A request that fits these budgets can still fail with `CONTEXT_LIMIT`.
@@ -93,9 +99,7 @@ Trimming deletes content without creating a summary. It enforces resource budget
 
 ```mermaid
 flowchart TD
-    Response{"Response completed successfully?"}
-    Response -->|No| Failed["Turn failed: no new window"]
-    Response -->|Yes| Compact{"Compaction requested and returned?"}
+    Response["Successfully completed response"] --> Compact{"Compaction requested and returned?"}
     Compact -->|No| Unchanged["Turn succeeded: no new window"]
     Compact -->|Yes| Build["Build and validate window candidate"]
     Build --> Valid{"Candidate provable and within budget?"}
@@ -103,7 +107,7 @@ flowchart TD
     Refuse --> Unchanged
     Valid -->|Yes| Bind["Attach replay bindings and timestamp"]
     Bind --> Save["Emit replayState for Harness to persist"]
-    Save --> Saved["Turn succeeded: new window saved"]
+    Save --> Saved["Turn succeeded: replay metadata published"]
 ```
 
 While streaming the answer, the bridge observes completed output items. After successful completion, candidate validation checks their order, any terminal compaction echo, agreement with delivered assistant content, and the item allowlist. The candidate starts at the last compaction item; oldest following output items may be removed to fit the checkpoint budget, but the compaction item stays. An invalid or unprovable candidate is withheld without turning the delivered answer into a failure.
