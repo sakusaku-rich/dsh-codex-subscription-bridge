@@ -60,7 +60,7 @@ Any configuration key fails with `CONFIG_INVALID`, and no tokens, endpoints, or 
 
 ## Compaction
 
-Harness condenses history locally, and the bridge also asks the subscription backend to condense server-side. The backend requires `store: false` and rejects `previous_response_id`, so the bridge keeps no server-side conversation: each turn sends the input it can prove, replaying the bounded compaction window it captured for a turn it can prove, and a turn whose response published a compaction is marked "Server-side compaction" in that turn's work details, with the model and the number of items the backend compacted. [Compaction design, research and limits](docs/COMPACTION.md) records the request shape, the window binding, the wire bounds, the oldest-end recovery, and the differences deliberately not closed.
+Harness condenses history locally, and the bridge also asks the subscription backend to condense server-side over a stateless request form (`store: false`), so no server-side conversation is kept. A turn whose response published a compaction is marked "Server-side compaction" in that turn's work details, with the model and the number of items the backend compacted. [Compaction design, research and limits](docs/COMPACTION.md) records the stateless request shape, the window binding, the wire bounds, the oldest-end recovery, and the differences deliberately not closed.
 
 To let Codex own condensation for this provider instead, enable the agent preset this package ships. It is inserted disabled, so installing the package changes nothing until you add this to the profile's `cordis.patch.yml` and restart Harness:
 
@@ -79,7 +79,7 @@ Before enabling it, know that:
 
 ## What the provider sends and enforces
 
-- Requests are sent with `store: false`, which is what this backend accepts; the bridge keeps no server-side conversation and replays only the bounded compaction window it captured for a turn it can prove. A window that cannot be proven is refused and the full bounded history is sent. Each model advertises the reasoning levels the backend discloses for it (for example `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) together with any disclosed default, so Harness offers the effort selector; the chosen id is forwarded verbatim.
+- Requests are stateless (`store: false`): the bridge keeps no server-side conversation and replays the bounded compaction window it can prove. [The compaction design](docs/COMPACTION.md#state-and-validation) records what happens when a window cannot be proven. Each model advertises the reasoning levels the backend discloses for it (for example `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) together with any disclosed default, so Harness offers the effort selector; the chosen id is forwarded verbatim.
 - Harness tool definitions are validated and forwarded, and executed tool-call history is forwarded as `function_call`/`function_call_output` items; the bridge never executes tools itself.
 - User message images are sent as `input_image` data URLs. Oversized requests fail with `IMAGE_OFFLOAD_REQUIRED` so the Harness host can offload its oldest images and retry, and image blocks in other roles are rejected.
 - `temperature` (finite, 0–2) is validated and forwarded; `maxTokens` (safe integer, 1–1,000,000) is accepted as an advisory budget but deliberately not forwarded; `stop` sequences are rejected with a fixed `UNSUPPORTED_OPTION` error.
