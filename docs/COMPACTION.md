@@ -20,6 +20,69 @@ Server-side compaction is always requested; the adapter has no configuration key
 
 With a disclosed context window of at least 2048 tokens, the request includes `context_management: [{ type: 'compaction', compact_threshold: floor(contextWindow × effectivePercent) }]`. `effectivePercent` is the per-model value the catalog discloses as `effective_context_window_percent`; the shipped 95% is the fallback for a model that discloses no usable percent, and a disclosed value that is not a usable percent fails closed rather than being quietly replaced. 95% is the value observed on this account, so the shipped ratio matches it today without being a measurement of every model. The backend compares its own rendered token count against the number sent here, and the byte bound below is a guard, not a token guarantee. The backend has no default threshold of its own: a request carrying no `context_management` was measured past the disclosed window and completed without a compaction item, so compaction runs only when the bridge sends a threshold. Without a usable disclosed window, ordinary bounded requests continue without cloud compaction. No user-supplied threshold, destination, credentials, API-key access, or standalone compact endpoint is introduced, and the request is sent with `store: false`. The live catalog does not disclose a percent for this account's models, so the shipped fallback is what runs in practice.
 
+## Turn processing flow
+
+The diagrams describe the bridge's request and replay-metadata paths. Harness local condensation is a separate host operation; the [opt-in preset](#replacing-local-condensation-opt-in) suppresses its automatic condensation for this provider, but does not change these paths or the host token meter.
+
+### Build and send the request
+
+```mermaid
+flowchart TD
+    Start["New turn: project offloaded images to text placeholders"] --> Catalog["Fetch the selected model's live catalog entry"]
+    Catalog --> Limits["Derive retained, wire and checkpoint budgets"]
+    Limits --> Validate["Validate retained history, tools and request options"]
+    Validate --> Auth["Obtain dedicated token and compute account/model/instruction/tool scope"]
+    Auth --> Threshold{"Usable disclosed context window?"}
+    Threshold -->|Yes| Inspect["Derive compaction threshold; inspect newest persisted window"]
+    Threshold -->|No| Ordinary["Omit context_management; do not reuse a window"]
+    Inspect --> Reusable{"Window passes binding, age, shape and digest checks?"}
+    Reusable -->|Yes| Replay["Replace covered prefix with window; keep developer instructions and uncovered tail"]
+    Reusable -->|No candidate| Full["Use full validated local history"]
+    Reusable -->|Refused| Warn["Log fixed refusal label"]
+    Warn --> Full
+    Ordinary --> Full
+    Replay --> FitReplay["Fit wire budgets by dropping oldest covered output items; keep compaction item and uncovered tail"]
+    Full --> FitFull["Fit wire budgets by dropping oldest history units; keep tool call/result units together and never drop an image occurrence"]
+    FitReplay --> Ready{"Fits applicable budgets?"}
+    FitFull --> Ready
+    Ready -->|No permitted drop remains| Fail["Fail the turn; never send an oversized fallback"]
+    Ready -->|Yes| Images["Prepare uncovered images and enforce image/offload budgets"]
+    Images --> Send["POST Responses with store: false; include context_management only when a threshold is available"]
+    Send --> Reject{"Explicit context_management rejection on first attempt, before host output?"}
+    Reject -->|Yes| Retry["Drop context_management; rebuild bounded full history and retry once"]
+    Retry --> FitFull
+    Reject -->|No| Response["Validate HTTP status and consume bounded SSE"]
+    Response --> Capture["On successful completion, follow the replay-metadata flow below"]
+```
+
+The retry requires `unsupported_parameter` or `unknown_parameter` naming `context_management`, read from a structured HTTP 400/422 error body or an SSE terminal error. Other failures do not authorize it. Cancellation, deadlines, authentication errors, invalid input, image preparation failures and fatal HTTP/SSE errors terminate their path; these cross-cutting exits are omitted from the diagram. An image-budget failure can request host-owned offloading through `IMAGE_OFFLOAD_REQUIRED` rather than silently dropping an image.
+
+The wire-budget checks count text/tool history separately from the checkpoint and image budgets; they are not a token count or a single serialized-body size check. Exhausted trimming reports `INPUT_UNSUPPORTED`, except that the full-history path after an explicit checkpoint refusal maps that error to `COMPACTION_UNAVAILABLE`.
+
+### Capture the next window
+
+```mermaid
+flowchart TD
+    Events["Observe completed SSE output items while delivering text and tool calls"] --> Completed{"Response completed successfully?"}
+    Completed -->|No: failed, cancelled or incomplete| NoWindow["Publish no new window"]
+    Completed -->|Yes| Compact{"Compaction was requested and output contains a compaction item?"}
+    Compact -->|No| Finish["Finish normally without new replay metadata"]
+    Compact -->|Yes| Prove["Reconcile output order, terminal compaction item and delivered assistant content"]
+    Prove --> Normalize["Allowlist window items from the last compaction item onward"]
+    Normalize --> Bound["Trim oldest following output items if necessary; retain the compaction item"]
+    Bound --> Valid{"Window can be proven and fits its checkpoint budget?"}
+    Prove -->|Contradiction or unprovable content| Refuse["Withhold window and log fixed refusal label; preserve delivered answer"]
+    Normalize -->|Invalid item| Refuse
+    Valid -->|No| Refuse
+    Refuse --> Finish
+    Valid -->|Yes| Bind["Bind window to scope, original input digest, assistant content digest and creation time"]
+    Bind --> Publish["Emit replayState in finish; Harness persists it on the assistant message"]
+    Publish --> Marker["Client derives Server-side compaction marker from persisted metadata"]
+    Publish --> Next["Next turn validates the window again before reusing its covered prefix"]
+```
+
+A reuse-only turn publishes no new window or marker. Withholding a new window does not erase older metadata, but the next turn must still validate the newest available candidate; it never trusts a refused candidate or searches older windows as a fallback. Trimming removes content without creating a summary, whereas backend compaction returns opaque summarized state.
+
 ## Replacing local condensation (opt-in)
 
 A profile can let this package's engine own condensation by enabling the agent preset it ships, `preset-codex-subscription`. The engine extends the host's stock engine and returns without condensing whenever the durable request belongs to `codex-subscription`; every other provider is delegated to the stock implementation unchanged, so the composition is scoped to this provider in behavior even though the preset is selected per session. [The installation guide](INSTALL.md) records the enable step, the post-mount checks and the failure modes.
