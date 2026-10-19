@@ -1,28 +1,81 @@
 # Subscription server-side compaction
 
-## Decision and research
+## Overview
 
-The bridge implements inline server-side compaction on its existing fixed subscription Responses endpoint, and replays the bounded compaction window it captured for a turn it can prove. Harness local summarization stays in place by default; an opt-in agent preset replaces it for this provider alone, so Codex can own condensation without changing the stock installation.
+When a conversation on this provider grows long, the subscription backend can condense older history into one encrypted item. The bridge asks for that condensation whenever the model discloses a usable context window. It saves the returned item and replays it on later turns instead of resending the older history. The summary is opaque: the bridge cannot read it, so it echoes the item as received.
 
-The baseline `ea7abda40362be71080d36b527283304159b2958` did not send `context_management`, rejected compaction output items, and did not emit replay metadata. Its existing compaction evidence was for Harness text summarization.
+Harness local summarization stays enabled by default. An optional preset replaces it for this provider alone, so Codex can own condensation without changing the stock installation. See [Optional preset](#optional-preset).
 
-[OpenAI's compaction guide](https://developers.openai.com/api/docs/guides/compaction) describes inline `context_management`, encrypted output items, and stateless input-array chaining with `store: false`. That public API documentation is not a guarantee of subscription endpoint availability. The [reference plugin v2.5.9](https://github.com/WSL043/dsh-codex-subscription/blob/v2.5.9/src/subscription-compaction.js) uses this mechanism on `/backend-api/codex/responses`. A real subscription session has since confirmed both halves: the backend issued an encrypted compaction item once the request passed the then-shipped 32,768-token threshold, and the next request that echoed it back was priced at 11,787 input tokens instead of the 38,612 the same transcript had just cost. See [the verification record](VERIFICATION.md).
+## Default behavior
 
-The bridge follows the stateless form. The subscription backend requires `store: false` and rejects `previous_response_id` — measured on a real account — so there is no server-side conversation to reference, and every turn sends the input the bridge can prove with the compaction window echoed back in the input array. A stateful form would keep the prefix unchanged across compaction, which is the only capability this backend cannot provide; what that costs is recorded under [state and validation](#state-and-validation) below.
+- Compaction is always requested. The adapter has no configuration keys for it.
+- Every request is stateless: it is sent with `store: false`, and the endpoint rejects `previous_response_id`.
+- When the model discloses a usable context window, the request asks the backend to condense at 95% of that window. A per-model percent from the model catalog replaces that ratio when disclosed.
+- Without a usable disclosed window, ordinary bounded requests continue. No compaction item can appear, because the backend compacts only when the bridge sends a threshold.
+- Keep Harness local summarization enabled. The host and the bridge can both condense; neither blocks the other.
 
-[Reference issue #152](https://github.com/WSL043/dsh-codex-subscription/issues/152) was closed without eliminating duplicate summaries. Its maintainer reported that suppressing local pressure compaction let the retained transcript grow beyond the model window, making model-switch recovery fail. Those experiments are the maintainer's evidence, not measurements from this implementation.
+## What you see in chat
 
-Harness 0.2.0-rc.2 has the necessary [replay envelope](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/packages/llm/llm/src/assembler.ts), but its [token meter](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/packages/llm/token-meter/src/index.ts) can prefer the full history estimate over a smaller provider usage report. Therefore cloud checkpoints and local summaries can both run by default: the meter prices the retained local surface, so the host still reaches its own threshold even when the wire request is compacted. This implementation does not patch the meter, change another provider, or inflate the model's disclosed window. The opt-in backend below replaces the host's automatic condensation for this provider only; eliminating duplicate summarization in the default composition would need host recovery work, such as bounded chunked summarization.
+- A turn whose response published a compaction window shows a `Server-side compaction` marker in that turn's work-details disclosure.
+- The marker names the model and the size of the saved window, for example `encrypted window, 5 items · gpt-5.1`.
+- It sits in the turn's work-details disclosure, like the chat's own local-condensation marker, so it follows the transcript-view setting.
+- The marker is derived on the client from the assistant message's `replayState`. It needs no session event.
+- A turn that compacted nothing publishes no marker. A window the bridge cannot prove leaves the turn unmarked.
+- Refusals are not durable in the session. They appear in the host log.
 
-## Enablement and request shape
+## Optional preset
 
-Server-side compaction is always requested; the adapter has no configuration keys. Route compatibility cannot be checked locally, so the request is issued unconditionally and an explicit unsupported-parameter rejection falls back once to the original bounded request (see below).
+A profile can let this package's engine own condensation by enabling the preset it ships, `preset-codex-subscription`.
 
-With a disclosed context window of at least 2048 tokens, the request includes `context_management: [{ type: 'compaction', compact_threshold: floor(contextWindow × effectivePercent) }]`. `effectivePercent` is the per-model value the catalog discloses as `effective_context_window_percent`; the shipped 95% is the fallback for a model that discloses no usable percent, and a disclosed value that is not a usable percent fails closed rather than being quietly replaced. 95% is the value observed on this account, so the shipped ratio matches it today without being a measurement of every model. The backend compares its own rendered token count against the number sent here, and the byte bound below is a guard, not a token guarantee. The backend has no default threshold of its own: a request carrying no `context_management` was measured past the disclosed window and completed without a compaction item, so compaction runs only when the bridge sends a threshold. Without a usable disclosed window, ordinary bounded requests continue without cloud compaction. No user-supplied threshold, destination, credentials, API-key access, or standalone compact endpoint is introduced, and the request is sent with `store: false`. The live catalog does not disclose a percent for this account's models, so the shipped fallback is what runs in practice.
+- The engine extends the host's stock engine. For `codex-subscription` requests it returns without condensing; every other provider is delegated unchanged.
+- The preset is not enabled by default. Installing the package must not add a selectable preset to every profile.
+- Enabling it is a profile patch with an id-keyed override. [The installation guide](INSTALL.md) records the step, the post-mount checks and the failure modes.
 
-## Turn processing flow
+The pinned Harness fixes where that engine has to live:
 
-The diagrams describe the bridge's request and replay-metadata paths. Harness local condensation is a separate host operation; the [opt-in preset](#replacing-local-condensation-opt-in) suppresses its automatic condensation for this provider, but does not change these paths or the host token meter.
+- The bundle disables the top-level `compaction-basic` and `command-compact` rows and declares the backend inside each agent preset, in an isolated `compaction` group.
+- A profile patch can override an existing row by id, but cannot add one without an `insert:` list, and cannot address an entry nested in a preset's `plugins` list at all.
+- A preset is a complete declaration, so the shipped patch restates the standard composition with that one child's engine replaced.
+- `scripts/sync-preset.mjs` derives the copy from the pinned Harness, so a Harness bump shows up as a small reviewable diff. Profile verification runs the script's `--check` mode, because a release that reshapes the `compaction` group would otherwise let double summarization return silently.
+
+Enabling it accepts a coupling the bridge otherwise avoids:
+
+- The module subclasses a host-internal class. If that package disappears, the preset fails its activation audit and stops composing.
+- If the reconciled method changes shape, the override silently degrades to the stock behavior instead of breaking.
+- While the replacement is mounted, no local summary bounds the transcript, so the refusal and wire-budget behavior below is the only remaining recovery path.
+
+## Limitations and recovery
+
+- Reuse is exact. A saved window is reused only when the current transcript is exactly the input it was captured on plus the assistant answer it describes.
+- Anything that changes history invalidates the window: a model or account change, message edits, local summarization, image offload changes, changed tools or instructions. The window also expires after 24 hours.
+- Only the newest window is considered. Older windows are not searched as a fallback.
+- A refused window is not an error. The turn falls back to the full bounded history.
+- When the full history does not fit, the bridge drops the oldest items until the request fits. Trimming deletes content; a dropped item carries no summary.
+- An image occurrence is never dropped. The host offloads its oldest images instead.
+- When nothing is left to drop, the turn fails. Start a new conversation.
+- A request that fits the bridge's byte budgets can still exceed the backend's token ceiling. That rejection is reported as `CONTEXT_LIMIT`.
+- Even with local summarization enabled, the host measures tokens, not bytes, so it may not condense before the bridge's byte limits bite. Recovery independent of the retained transcript remains an open limitation.
+
+---
+
+The rest of this page is technical background.
+
+## How it works
+
+The bridge issues the compaction request unconditionally. Route compatibility cannot be checked locally, so an explicit unsupported-parameter rejection falls back once to the original bounded request. See [Trimming and fallback](#trimming-and-fallback).
+
+### Request shape and threshold
+
+- With a disclosed safe-integer context window of at least 2048 tokens, the request includes `context_management: [{ type: 'compaction', compact_threshold: floor(contextWindow × ratio) }]`.
+- `ratio` is the catalog's `effective_context_window_percent` divided by 100. A disclosed value that is not a usable percent fails closed rather than being quietly replaced.
+- The shipped fallback is `ratio = 0.95`. That is the value observed on this account, so the shipped ratio matches it today without being a measurement of every model. The live catalog discloses no percent for this account's models, so the fallback is what runs in practice.
+- The backend compares its own rendered token count against the threshold sent. The byte bounds below are a resource guard, not a token guarantee.
+- The backend has no default threshold of its own: a request carrying no `context_management` was measured past the disclosed window and completed without a compaction item, so compaction runs only when the bridge sends a threshold.
+- No user-supplied threshold, destination, credentials, API-key access, or standalone compact endpoint is introduced.
+
+### Turn processing flow
+
+The diagrams describe the bridge's request and replay-metadata paths. Harness local condensation is a separate host operation; the [opt-in preset](#optional-preset) suppresses its automatic condensation for this provider, but does not change these paths or the host token meter.
 
 The diagrams use these terms:
 
@@ -34,7 +87,7 @@ The diagrams use these terms:
 | Uncovered tail | Messages added after that covered prefix. |
 | Budgets | Separate limits for retained history, wire text/tool history, checkpoints and images; not a token count or a single serialized-body size limit. |
 
-### 1. Turn overview
+#### 1. Turn overview
 
 ```mermaid
 flowchart TD
@@ -52,13 +105,12 @@ flowchart TD
     Result -->|Other failure| Failed
 ```
 
-Every request uses `store: false`. The first attempt includes `context_management` only when the selected model discloses a usable context window. HTTP errors and SSE terminal errors are processed before deciding whether to retry.
+- Every request uses `store: false`. The first attempt includes `context_management` only when the model discloses a usable context window.
+- HTTP errors and SSE terminal errors are processed before the retry decision.
+- A retry is eligible only on the first attempt, before anything has been delivered to the host, for a structured `unsupported_parameter` or `unknown_parameter` rejection naming `context_management`. The rejection must come from an HTTP 400/422 error body or an SSE terminal error. The retry takes diagram 2's full-history path, including its budget checks; it never reuses a window or sends the rejected parameter again.
+- Cancellation, deadlines, authentication errors and invalid input can fail the turn at the relevant stage; those exits are omitted from the diagram. Image preparation enforces its own budgets; `IMAGE_OFFLOAD_REQUIRED` asks Harness to offload images and retry. That is separate from the parameter-rejection retry.
 
-A retry is eligible only on the first attempt, before anything has been delivered to the host, for `unsupported_parameter` or `unknown_parameter` naming `context_management`. The rejection must come from a structured HTTP 400/422 error body or an SSE terminal error. The retry uses diagram 2's full-history path, including its budget checks; it never reuses a window or sends the rejected parameter again.
-
-Cancellation, deadlines, authentication errors and invalid input can fail the turn at the relevant stage; those cross-cutting exits are omitted. Image preparation also enforces its own budgets: `IMAGE_OFFLOAD_REQUIRED` asks Harness to offload images and retry, rather than silently dropping them. This host-owned image retry is separate from the parameter-rejection retry shown above.
-
-### 2. Select input and fit the budgets
+#### 2. Select input and fit the budgets
 
 ```mermaid
 flowchart TD
@@ -89,13 +141,11 @@ flowchart TD
 ```
 
 - **Window selection:** a usable context window is a disclosed safe integer of at least 2048 tokens. The newest saved window must pass scope, covered-prefix, assistant-content, age, shape and digest checks. Developer instructions remain separate, and the uncovered tail may contain new messages. A refusal falls back to full history; older windows are not searched.
-- **Replay path:** only output items following the compaction item may be removed to fit wire budgets. The compaction item, developer instructions and uncovered tail remain.
+- **Replay path:** only output items following the compaction item may be removed to fit the wire budgets. The compaction item, developer instructions and uncovered tail remain.
 - **Full-history path:** trimming runs only when budgets are exceeded. It drops the oldest history units, keeping a tool call and its executed result together, and never drops an image occurrence. It does not skip a protected oldest item to delete newer items: an image at the oldest end blocks further trimming. The final remaining input item is never dropped.
-- **Failure boundary:** exhausted trimming reports `INPUT_UNSUPPORTED`, except that the full-history path after an explicit checkpoint refusal maps that error to `COMPACTION_UNAVAILABLE`. Retained-history validation can fail before trimming starts.
+- **Failure boundary:** exhausted trimming reports `INPUT_UNSUPPORTED`, except that the full-history path after an explicit window refusal reports `COMPACTION_UNAVAILABLE`. Retained-history validation can fail before trimming starts.
 
-Trimming deletes content without creating a summary. It enforces resource budgets, not the backend's token ceiling. A request that fits these budgets can still fail with `CONTEXT_LIMIT`.
-
-### 3. Capture the next replay window
+#### 3. Capture the next replay window
 
 ```mermaid
 flowchart TD
@@ -110,50 +160,68 @@ flowchart TD
     Save --> Saved["Turn succeeded: replay metadata published"]
 ```
 
-While streaming the answer, the bridge observes completed output items. After successful completion, candidate validation checks their order, any terminal compaction echo, agreement with delivered assistant content, and the item allowlist. The candidate starts at the last compaction item; oldest following output items may be removed to fit the checkpoint budget, but the compaction item stays. An invalid or unprovable candidate is withheld without turning the delivered answer into a failure.
+- While streaming the answer, the bridge observes completed output items. After successful completion, candidate validation checks their order, any terminal compaction echo, agreement with delivered assistant content, and the item allowlist.
+- The candidate starts at the last compaction item. Oldest following output items may be removed to fit the checkpoint budget; the compaction item stays.
+- An invalid or unprovable candidate is withheld. The answer has already been delivered, so the refusal only costs the next turn's replay.
+- Harness persists the window on the assistant message. The client derives the marker from that metadata, and the next turn validates the window again before reuse.
+- A reuse-only turn publishes no new window or marker. Withholding a new window does not erase older metadata, but the next turn still validates the newest available candidate and never searches older windows after a refusal.
 
-A saved window binds to account/model/instruction/tool scope, the original input digest, the assistant-content digest and a creation time. Harness persists it on the assistant message. The client derives the `Server-side compaction` marker from that metadata, and the next turn validates the window again before reuse.
+## Replay validation and resource limits
 
-A reuse-only turn publishes no new window or marker. Withholding a new window does not erase older metadata, but the next turn still validates the newest available candidate and never searches older windows after a refusal. Backend compaction returns opaque summarized state; unlike trimming, it does not merely delete the oldest input items.
-
-## Replacing local condensation (opt-in)
-
-A profile can let this package's engine own condensation by enabling the agent preset it ships, `preset-codex-subscription`. The engine extends the host's stock engine and returns without condensing whenever the durable request belongs to `codex-subscription`; every other provider is delegated to the stock implementation unchanged, so the composition is scoped to this provider in behavior even though the preset is selected per session. [The installation guide](INSTALL.md) records the enable step, the post-mount checks and the failure modes.
-
-The pinned Harness fixes where that engine has to live. Its `@deepseek-ai/dsh-web-app` bundle disables the top-level `compaction-basic` and `command-compact` rows and declares the backend inside each agent preset instead, in an isolated `compaction` group; a profile patch can override an existing row by id but cannot add one without an `insert:` list, and it cannot address an entry nested in a preset's `plugins` list at all. A preset is a complete declaration, so `presets/codex-subscription.patch.yml` restates the shipped standard composition with that one child's engine replaced. [The verification record](VERIFICATION.md) has the composition evidence and the `insert:` detail.
-
-That row is inserted **disabled**: installing the package must not add a selectable preset to every profile, and a profile enables it with an id-keyed override in the profile patch. The Plugins page lists the row but locks its switch, because the Host unlocks only rows it can address through that patch. `scripts/sync-preset.mjs` derives the copy from the pinned Harness, so a Harness bump shows up as a small reviewable diff instead of an edit to a hand-maintained file; the profile verification path runs its `--check` mode, because a release that reshapes the `compaction` group would otherwise let double summarization return silently.
-
-This is deliberately not enabled by default. The module subclasses a host-internal class, which is a compatibility dependency the bridge otherwise avoids: if that package disappears the preset fails its activation audit and stops composing, and if the reconciled method changes shape the override silently degrades to the stock behavior instead of breaking. Operators who enable it accept that coupling; the default installation keeps the stock backend and the duplicate summarization described above.
-
-While the replacement is mounted, no local summary bounds the transcript, so the refusal and wire-budget behavior below is the only remaining recovery path.
-
-### What the chat shows
-
-The issuing turn carries a `Server-side compaction` marker naming the model and the number of output items the backend compacted. It sits in the turn's work-details disclosure, like the chat's own local-condensation marker, so it follows the transcript-view setting rather than showing while every other detail is folded. It is derived entirely on the client from the assistant message's `replayState`, so it needs no session event: a turn that compacted nothing publishes no marker, and an unprovable marker leaves the turn unmarked. Refusals themselves stay in the host log, since a refusal is not durable in the session.
-
-## State and validation
+### State and validation
 
 - Only successfully completed responses can publish replay metadata. Cancelled, failed, malformed and incomplete responses cannot publish a window.
 - A window holds the allowlisted, bounded wire items the backend returned for the turn that compacted — including opaque encrypted content — plus the digests that bind those items to the transcript. Nothing outside the item allowlist is persisted, and the window is bounded by the same derived value the request bound uses.
-- A turn reuses a window only when the current transcript is exactly the input the window was captured on plus the assistant answer that window describes. A divergence is refused rather than trusted and the turn sends the full bounded history.
+- A turn reuses a window only when the current transcript is exactly the input the window was captured on plus the assistant answer that window describes. A divergence is refused rather than trusted, and the turn sends the full bounded history.
 - The streamed completed items remain the authoritative output order for the marker. The live backend omits items from `response.completed.response.output` — observed as a missing index once a real compaction was issued — so positional agreement with that array is not required. A terminal compaction item that exists and disagrees with the streamed one is still treated as a contradiction.
-- An unprovable window or marker is never published, and never fails the turn: the answer has already been delivered by then, so the first refusal label is logged. Refusals name their own stage (`SHAPE`, `METADATA`, `EXPIRED`, `SCOPE`, `PREFIX`, `CONTENT`, `DIGEST`, `INVALID`, and the marker stages `ITEM_*`, `MSG_*`, `SUM_*`, `WINDOW_SHAPE`, `WINDOW_BYTES`, `NO_ORDER`, `OBSERVE_DUPLICATE`, `COMPACTION_MISMATCH`, `CONTENT_MISMATCH`) from a bridge-owned vocabulary, so no response value reaches the log.
+- An unprovable window or marker is never published and never fails the turn. The answer has already been delivered, so the first refusal label is logged. Refusals name their own stage from a bridge-owned vocabulary (`SHAPE`, `METADATA`, `EXPIRED`, `SCOPE`, `PREFIX`, `CONTENT`, `DIGEST`, `INVALID`, and the marker stages `ITEM_*`, `MSG_*`, `SUM_*`, `WINDOW_SHAPE`, `WINDOW_BYTES`, `NO_ORDER`, `OBSERVE_DUPLICATE`, `COMPACTION_MISMATCH`, `CONTENT_MISMATCH`), so no response value reaches the log.
 - Harness stores the window in the assistant message's `source.replayState.response.subscriptionCompactionV1`. The normal transcript stays intact. No separate bridge state file or process-global cache exists.
-- The window binds to a hash of dedicated account routing headers and available subject/user claims, model, developer instructions and tool definitions, plus the exact input and assistant-content digests. The newest window must match; older windows are not searched as a fallback. Refresh with unchanged account routing does not itself invalidate it. Account/model changes, edits, local summarization, image offload changes and changed tools/instructions invalidate it.
-- Windows expire after 24 hours, a conservative local policy, not a claimed backend expiration guarantee. Future timestamps and malformed or digest-mismatched metadata are rejected. Hashes detect inconsistency, not malicious forgery by trusted same-user code.
+- The window binds to a hash of dedicated account routing headers and available subject/user claims, model, developer instructions and tool definitions, plus the exact input and assistant-content digests. The newest window must match; older windows are not searched as a fallback. Refresh with unchanged account routing does not itself invalidate it. Account/model changes, edits, local summarization, image offload changes and changed tools or instructions invalidate it.
+- Windows expire after 24 hours. That is a conservative local policy, not a claimed backend expiration guarantee. Future timestamps and malformed or digest-mismatched metadata are rejected. Hashes detect inconsistency, not malicious forgery by trusted same-user code.
 
-## Bounds and fallback
+### Bounds
 
-The retained-history first pass allows at most 4096 messages, 4 MiB of text and 16 MiB of tool call/result text, so the local transcript stays bounded while a window is replayed inside the wire request. The wire request is bounded by the same window and the same percent the threshold comes from — the threshold expressed in bytes at a conservative 8 bytes per token, with the original 256 KiB text, 2 MiB tool-history and 1024-item bounds as the floor when no window is disclosed — so a request can reach the threshold instead of being refused before the backend has a chance to compact. The bound is a resource limit for one request, not a guard against rejection: the backend compacts a request whose measured count is past the model window, so a request past the window in the bridge's byte estimate is sent as it is. The model catalog lookup runs before validation because the bound depends on the disclosed window. Text and tool-history parts are each bounded by the derived value and the combined input is bounded by it too; the derived value is a guard, not a token guarantee. A full history that cannot fit under the derived bound is trimmed from the oldest end, as [the fallback](#bounds-and-fallback) below describes.
+The budgets are byte and item counts, not token counts. The derived value is the threshold expressed in bytes at a conservative 8 bytes per token. Every turn sends the input the bridge can prove, so every turn's input is bounded. The model catalog lookup runs before validation, because the bounds depend on the disclosed window.
 
-Every turn's input is bounded by the bridge, because the backend holds no conversation. A reused window replaces only its exact covered prefix; the uncovered tail is the live conversation, and the compaction item itself is what makes the window replayable. Covered images are not read or resent; uncovered images use the existing attachment and offload budgets. Output items are capped at 128 for the marker. The SSE frame and aggregate stream bounds rise with the admitted window when compaction is requested: one event frame may carry twice the checkpoint bound, because a single compaction item travels inside one frame and repeats in up to three events (`response.output_item.added`, `.done` and the `response.completed` echo), and the aggregate stream bound admits those three occurrences plus the fixed frame defaults as margin. An item past the capture bound but inside the raised frame limit is refused gently — the checkpoint is withheld, the refusal is logged and the next turn resends the full history — instead of killing the stream mid-answer; a frame past the raised limit still fails the turn. Without a derived threshold no compaction item can appear, and the fixed frame, aggregate, timeout, admission and cancellation bounds stand unchanged.
+| Budget | Retained history (first pass) | Wire request |
+| --- | --- | --- |
+| Items | 4096 | 1024 |
+| Text bytes | max(derived, 4 MiB) | max(derived, 256 KiB) |
+| Tool call/result bytes | max(derived, 16 MiB) | max(derived, 2 MiB) |
+| Text and tool combined | max(derived, 20 MiB) | max(derived, 2.25 MiB) |
 
-When no window is reusable, the full local transcript is the remaining input. Following the official client, the bridge drops the oldest history items until the request fits instead of failing the turn; a tool call and its executed result are dropped as one unit so no result is left orphaned, and an image occurrence is never dropped because the host owns the attachment store and offloads its oldest images instead. The number of dropped items is named in the host log. This trimming enforces the resource bound; it is not what keeps the request inside the model window, because the backend compacts a request past the window. Trimming deletes what it drops, so a dropped item carries no summary — that is the difference from compaction, and it is why trimming runs only when the request exceeds the resource bound. When nothing is left to drop, the turn fails with `COMPACTION_UNAVAILABLE` rather than reporting the generic shape error, and limits are never raised silently. An HTTP 400/422 with a bounded structured error naming `context_management` with `unsupported_parameter` or `unknown_parameter` permits exactly one retry with ordinary, fully validated history and without the rejected parameter, and the same structured rejection read from an SSE error event permits it when nothing has been delivered to the host yet. There is no retry after partial output, arbitrary 400 errors, quota/authentication failures, network ambiguity or stream failure. An unrecognized rejection is a safe fixed failure, not an automatic retry with potentially oversized history. Measured on this backend, the structured rejection arrives in the SSE error event (`code`, `param`, `type`), not in the HTTP error body, which carries `{ detail }`; the HTTP-body path did not fire in that run, so both shapes are read. A structured `context_length_exceeded` terminal error is reported as `CONTEXT_LIMIT` rather than the generic upstream failure, because the request byte bound can admit a request past the backend's enforced ceiling for content that tokenizes denser than the assumed ratio. Only fixed codes and the fixed parameter name are read; upstream message text is never kept.
+When no usable window is disclosed, the derived value equals the combined floor, so text and tool are each bounded by the combined floor too.
 
-Keep Harness local summarization enabled. Even that does not guarantee it runs before this bridge's byte limits, because the host measures tokens, not UTF-8 bytes. Long-lived recovery independent of the retained transcript remains an explicitly unresolved limitation.
+| Budget | Value |
+| --- | --- |
+| Replay window items | at most 128 |
+| Per item, and the window total | at most max(derived, 512 KiB) |
+| SSE frame, with compaction requested | at most 2 × window bound |
+| SSE aggregate, with compaction requested | at most 3 × frame + 4 MiB |
+| SSE frame / aggregate without a threshold | 1 MiB / 4 MiB (fixed) |
+| Marker output indices | at most 128 |
 
-## Differences deliberately not closed
+- The wire bound is a resource limit for one request, not a guard against rejection. The backend compacts a request whose measured count is past the model window, so a request past the window in the bridge's byte estimate is sent as it is.
+- A reused window replaces only its exact covered prefix; the uncovered tail is the live conversation. The compaction item itself is what makes the window replayable.
+- Covered images are not read or resent; uncovered images use the existing attachment and offload budgets.
+- One compaction item travels inside one event frame and repeats in up to three events (`response.output_item.added`, `.done` and the `response.completed` echo). The raised frame and aggregate bounds admit those occurrences. An item past the capture bound but inside the raised frame limit is refused gently: the checkpoint is withheld, the refusal is logged and the next turn resends the full history. A frame past the raised limit still fails the turn.
+- Without a threshold no compaction item can appear, and the fixed frame, aggregate, timeout, admission and cancellation bounds stand unchanged.
+
+### Trimming and fallback
+
+- Trimming deletes what it drops and creates no summary. It enforces the resource bounds, not the backend's token ceiling. The number of dropped items is named in the host log.
+- When nothing is left to drop, the turn fails with `INPUT_UNSUPPORTED`, and the limits are never raised silently. Only the full-history path after an explicit window refusal reports that failure as `COMPACTION_UNAVAILABLE`.
+- There is no retry after partial output, arbitrary 400 errors, quota or authentication failures, network ambiguity or stream failure. An unrecognized rejection is a safe fixed failure, not an automatic retry with potentially oversized history.
+- Measured on this backend, the structured rejection arrives in the SSE error event (`code`, `param`, `type`); the HTTP error body carries `{ detail }`. Both shapes are read, because the HTTP-body path did not fire in the measured run.
+- A structured `context_length_exceeded` terminal error is reported as `CONTEXT_LIMIT` rather than the generic upstream failure. The request byte bound can admit a request past the backend's enforced ceiling, because bytes are an estimate of tokens.
+
+## Design background
+
+### Why the request is stateless
+
+The subscription backend requires `store: false` and rejects `previous_response_id` — measured on a real account — so there is no server-side conversation to reference. Every turn sends the input the bridge can prove, with the compaction window echoed back in the input array. A stateful form would keep the prefix unchanged across compaction. That is the only capability this backend cannot provide, and what that costs is recorded under [differences deliberately not closed](#differences-deliberately-not-closed).
+
+### Differences deliberately not closed
 
 These are recorded as differences, not as gaps to close.
 
@@ -166,12 +234,22 @@ These are recorded as differences, not as gaps to close.
 - The client addresses history by position (`beforeTurnId`, `excludeTurns`, `HistoryPosition`) and can fork a thread. That is outside [the scope](SCOPE.md).
 - The client's `auto_compact_fallback_buffer_tokens` exists because it measures its own estimate. The bridge leaves the count to the backend, so there is no position to put a buffer in.
 
-## Verification and remaining work
+### Decision and research
 
-Synthetic tests cover public Harness runtime dispatch, its actual block assembler, JSON persistence/replay, window reuse replacing only its covered prefix, post-compaction tool results, history/account/model/instruction/tool/expiry/content/digest invalidation, terminal contradictions, missing tail items, cancellation, covered images, wire budgets, oldest-end trimming with tool-call pairs kept as one unit and an image occurrence never dropped, the per-model percent and its fallback, the stateless request shape, and the narrowly scoped parameter-rejection retry. `test/compaction-backend.test.mjs` pins the host engine class and checks that the opt-in backend skips only this provider, delegates every other provider, survives a missing provider or session, and names each refusal label. The packaged modules are included in the normal tarball composition checks.
+The baseline `ea7abda40362be71080d36b527283304159b2958` did not send `context_management`, rejected compaction output items, and did not emit replay metadata. Its existing compaction evidence was for Harness text summarization.
 
-Automated tests make no real authentication or subscription calls. A manually driven Desktop session confirmed real checkpoint issuance and reuse on a dedicated login; [the verification record](VERIFICATION.md#real-account-evidence-and-limits) is the single list of what is confirmed and what is still open. The opt-in backend is checked at the module boundary against the pinned `@deepseek-ai/dsh-compaction-basic`, and its preset row is checked for shape, composition and drift. The enabled preset has since been exercised on a real account with an artificially low trigger: a subscription backend past its threshold raised no local compaction, the same preset on another provider ran the stock engine, and `/compact` still condensed. Automatic pressure at the shipped bridge ratio (258,400 tokens for the 272,000-token Codex window) is now observed on a real account; [the verification record](VERIFICATION.md#window-ratio-pressure-on-a-real-account-2026-10-18) is the measurement.
+[OpenAI's compaction guide](https://developers.openai.com/api/docs/guides/compaction) describes inline `context_management`, encrypted output items, and stateless input-array chaining with `store: false`. That public API documentation is not a guarantee of subscription endpoint availability. The [reference plugin v2.5.9](https://github.com/WSL043/dsh-codex-subscription/blob/v2.5.9/src/subscription-compaction.js) uses this mechanism on `/backend-api/codex/responses`. A real subscription session has since confirmed both halves: the backend issued an encrypted compaction item once the request passed the then-shipped 32,768-token threshold, and the next request that echoed it back was priced at 11,787 input tokens instead of the 38,612 the same transcript had just cost. See [the verification record](VERIFICATION.md).
 
-Measured on a real account, the subscription backend rejects `store: true` and rejects `previous_response_id`, so the stateful path is not available on this backend and the stateless form is the only shape it accepts. The live catalog discloses no `effective_context_window_percent` for this account's models, so the shipped fallback is what runs. Measured on a real account, the backend has no default compaction threshold of its own: a request carrying no `context_management` completed past the disclosed window without a compaction item, so the threshold the bridge sends is what makes compaction happen. Still unverified: whether that rejection is endpoint-wide or this account's storage policy, and what the official client uses when `auto_compact_token_limit` is null — the configuration reference says "unset uses model defaults", the config schema carries no default, and the catalog returns null for every model on this account, so the null branch is not readable from the binary. Measured on a real account, the interval between firings is about 231,000 tokens of new content and the firing point is the threshold itself. The bridge does not read `max_context_window`: it cannot express a token ceiling in bytes, and the disclosed value does not match the enforced ceiling, so reading it would change no decision. [The verification record](VERIFICATION.md) is the single list of what is confirmed and what is still open.
+[Reference issue #152](https://github.com/WSL043/dsh-codex-subscription/issues/152) was closed without eliminating duplicate summaries. Its maintainer reported that suppressing local pressure compaction let the retained transcript grow beyond the model window, making model-switch recovery fail. Those experiments are the maintainer's evidence, not measurements from this implementation.
 
-After separate authorization, use an isolated profile and dedicated login for a bounded service experiment: verify issuance then reuse, cancellation and a local summary, with a fixed request/token budget and a stop condition. Record only sanitized counters and size measurements, never opaque checkpoints, credentials, account identifiers or raw authenticated responses. Because the compaction request is now always issued, that evidence should also decide whether reliance on the always-on default is justified, rather than synthetic success alone.
+Harness 0.2.0-rc.2 has the necessary [replay envelope](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/packages/llm/llm/src/assembler.ts), but its [token meter](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/packages/llm/token-meter/src/index.ts) can prefer the full history estimate over a smaller provider usage report. Cloud checkpoints and local summaries can therefore both run by default: the meter prices the retained local surface, so the host still reaches its own threshold even when the wire request is compacted. This implementation does not patch the meter, change another provider, or inflate the model's disclosed window. Eliminating duplicate summarization in the default composition would need host recovery work, such as bounded chunked summarization.
+
+## Verification
+
+- Synthetic tests cover public Harness runtime dispatch, its actual block assembler, JSON persistence/replay, window reuse replacing only its covered prefix, post-compaction tool results, history/account/model/instruction/tool/expiry/content/digest invalidation, terminal contradictions, missing tail items, cancellation, covered images, wire budgets, oldest-end trimming with tool-call pairs kept as one unit and an image occurrence never dropped, the per-model percent and its fallback, the stateless request shape, and the narrowly scoped parameter-rejection retry.
+- `test/compaction-backend.test.mjs` pins the host engine class and checks that the opt-in backend skips only this provider, delegates every other provider, survives a missing provider or session, and names each refusal label. The packaged modules are included in the normal tarball composition checks.
+- Automated tests make no real authentication or subscription calls. [The verification record](VERIFICATION.md#real-account-evidence-and-limits) is the single list of what is confirmed and what is still open.
+- A manually driven Desktop session confirmed real checkpoint issuance and reuse on a dedicated login. The enabled preset has since been exercised on a real account with an artificially low trigger: a subscription backend past its threshold raised no local compaction, the same preset on another provider ran the stock engine, and `/compact` still condensed. Automatic pressure at the shipped bridge ratio (258,400 tokens for the 272,000-token Codex window) is now observed on a real account; [the verification record](VERIFICATION.md#window-ratio-pressure-on-a-real-account-2026-10-18) is the measurement. The interval between firings is about 231,000 tokens of new content, and the firing point is the threshold itself.
+- The bridge does not read `max_context_window`: it cannot express a token ceiling in bytes, and the disclosed value does not match the enforced ceiling, so reading it would change no decision.
+- Still unverified: whether the `store: true` and `previous_response_id` rejections are endpoint-wide or this account's storage policy, and what the official client uses when `auto_compact_token_limit` is null. The configuration reference says "unset uses model defaults", the config schema carries no default, and the catalog returns null for every model on this account, so the null branch is not readable from the binary.
+- After separate authorization, use an isolated profile and dedicated login for a bounded service experiment: verify issuance then reuse, cancellation and a local summary, with a fixed request/token budget and a stop condition. Record only sanitized counters and size measurements, never opaque checkpoints, credentials, account identifiers or raw authenticated responses. Because the compaction request is now always issued, that evidence should also decide whether reliance on the always-on default is justified, rather than synthetic success alone.
