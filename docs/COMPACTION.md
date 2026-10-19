@@ -24,64 +24,93 @@ With a disclosed context window of at least 2048 tokens, the request includes `c
 
 The diagrams describe the bridge's request and replay-metadata paths. Harness local condensation is a separate host operation; the [opt-in preset](#replacing-local-condensation-opt-in) suppresses its automatic condensation for this provider, but does not change these paths or the host token meter.
 
-### Build and send the request
+The diagrams use these terms:
+
+| Term | Meaning |
+| --- | --- |
+| Local history | The conversation Harness retains, including messages not sent on this turn. |
+| Replay window | A saved compaction item and the following allowlisted output items. |
+| Covered prefix | The older history a validated replay window replaces. |
+| Uncovered tail | Messages added after that covered prefix. |
+| Budgets | Separate limits for retained history, wire text/tool history, checkpoints and images; not a token count or a single serialized-body size limit. |
+
+### 1. Turn overview
 
 ```mermaid
 flowchart TD
-    Start["New turn: project offloaded images to text placeholders"] --> Catalog["Fetch the selected model's live catalog entry"]
-    Catalog --> Limits["Derive retained, wire and checkpoint budgets"]
-    Limits --> Validate["Validate retained history, tools and request options"]
-    Validate --> Auth["Obtain dedicated token and compute account/model/instruction/tool scope"]
-    Auth --> Threshold{"Usable disclosed context window?"}
-    Threshold -->|Yes| Inspect["Derive compaction threshold; inspect newest persisted window"]
-    Threshold -->|No| Ordinary["Omit context_management; do not reuse a window"]
-    Inspect --> Reusable{"Window passes binding, age, shape and digest checks?"}
-    Reusable -->|Yes| Replay["Replace covered prefix with window; keep developer instructions and uncovered tail"]
-    Reusable -->|No candidate| Full["Use full validated local history"]
+    Start["New turn"] --> Prepare["Prepare input: see diagram 2"]
+    Prepare --> Images["Prepare uncovered images"]
+    Images --> Send["Send Responses request"]
+    Send --> Read["Process HTTP response and SSE"]
+    Read --> Result{"Outcome?"}
+    Result -->|Completed| Capture["Capture replay metadata: see diagram 3"]
+    Result -->|Parameter rejected| Eligible{"Eligible for one retry?"}
+    Eligible -->|Yes| Retry["Omit context_management; prepare full-history input"]
+    Retry --> Images
+    Eligible -->|No| Failed["Turn failed: no new window"]
+    Result -->|Other failure| Failed
+```
+
+Every request uses `store: false`. The first attempt includes `context_management` only when the selected model discloses a usable context window. HTTP errors and SSE terminal errors are processed before deciding whether to retry.
+
+A retry is eligible only on the first attempt, before anything has been delivered to the host, for `unsupported_parameter` or `unknown_parameter` naming `context_management`. The rejection must come from a structured HTTP 400/422 error body or an SSE terminal error. The retry uses diagram 2's full-history path, including its budget checks; it never reuses a window or sends the rejected parameter again.
+
+Cancellation, deadlines, authentication errors and invalid input can fail the turn at the relevant stage; those cross-cutting exits are omitted. Image preparation also enforces its own budgets: `IMAGE_OFFLOAD_REQUIRED` asks Harness to offload images and retry, rather than silently dropping them. This host-owned image retry is separate from the parameter-rejection retry shown above.
+
+### 2. Select input and fit the budgets
+
+```mermaid
+flowchart TD
+    Start["Project offloaded images to text"] --> Catalog["Fetch live model entry and derive budgets"]
+    Catalog --> Validate["Validate retained history and request options"]
+    Validate --> Scope["Obtain token and compute replay scope"]
+    Scope --> Usable{"Usable context window?"}
+    Usable -->|Yes| Inspect["Inspect newest saved replay window"]
+    Inspect --> Reusable{"Window reusable?"}
+    Reusable -->|Yes| Replay["Use window plus uncovered tail"]
+    Reusable -->|No candidate| Full["Use full local history"]
     Reusable -->|Refused| Warn["Log fixed refusal label"]
     Warn --> Full
-    Ordinary --> Full
-    Replay --> FitReplay["Fit wire budgets by dropping oldest covered output items; keep compaction item and uncovered tail"]
-    Full --> FitFull["Fit wire budgets by dropping oldest history units; keep tool call/result units together and never drop an image occurrence"]
-    FitReplay --> Ready{"Fits applicable budgets?"}
-    FitFull --> Ready
-    Ready -->|No permitted drop remains| Fail["Fail the turn; never send an oversized fallback"]
-    Ready -->|Yes| Images["Prepare uncovered images and enforce image/offload budgets"]
-    Images --> Send["POST Responses with store: false; include context_management only when a threshold is available"]
-    Send --> Reject{"Explicit context_management rejection on first attempt, before host output?"}
-    Reject -->|Yes| Retry["Drop context_management; rebuild bounded full history and retry once"]
-    Retry --> FitFull
-    Reject -->|No| Response["Validate HTTP status and consume bounded SSE"]
-    Response --> Capture["On successful completion, follow the replay-metadata flow below"]
+    Usable -->|No| Full
+    Retry["Parameter-rejection retry"] --> Full
+    Replay --> Fits{"Within wire budgets?"}
+    Full --> Fits
+    Fits -->|Yes| Ready["Input ready: return to diagram 1"]
+    Fits -->|No| Droppable{"Permitted old items remain?"}
+    Droppable -->|Yes| Drop["Drop oldest permitted unit"]
+    Drop --> Fits
+    Droppable -->|No| Failed["Turn failed: no new window"]
 ```
 
-The retry requires `unsupported_parameter` or `unknown_parameter` naming `context_management`, read from a structured HTTP 400/422 error body or an SSE terminal error. Other failures do not authorize it. Cancellation, deadlines, authentication errors, invalid input, image preparation failures and fatal HTTP/SSE errors terminate their path; these cross-cutting exits are omitted from the diagram. An image-budget failure can request host-owned offloading through `IMAGE_OFFLOAD_REQUIRED` rather than silently dropping an image.
+- **Window selection:** a usable context window is a disclosed safe integer of at least 2048 tokens. The newest saved window must pass scope, covered-prefix, assistant-content, age, shape and digest checks. Developer instructions remain separate, and the uncovered tail may contain new messages. A refusal falls back to full history; older windows are not searched.
+- **Replay path:** only output items following the compaction item may be removed to fit wire budgets. The compaction item, developer instructions and uncovered tail remain.
+- **Full-history path:** trimming runs only when budgets are exceeded. It drops the oldest history units, keeping a tool call and its executed result together, and never drops an image occurrence.
+- **Failure boundary:** exhausted trimming reports `INPUT_UNSUPPORTED`, except that the full-history path after an explicit checkpoint refusal maps that error to `COMPACTION_UNAVAILABLE`. Retained-history validation can fail before trimming starts.
 
-The wire-budget checks count text/tool history separately from the checkpoint and image budgets; they are not a token count or a single serialized-body size check. Exhausted trimming reports `INPUT_UNSUPPORTED`, except that the full-history path after an explicit checkpoint refusal maps that error to `COMPACTION_UNAVAILABLE`.
+Trimming deletes content without creating a summary. It enforces resource budgets, not the backend's token ceiling. A request that fits these budgets can still fail with `CONTEXT_LIMIT`.
 
-### Capture the next window
+### 3. Capture the next replay window
 
 ```mermaid
 flowchart TD
-    Events["Observe completed SSE output items while delivering text and tool calls"] --> Completed{"Response completed successfully?"}
-    Completed -->|No: failed, cancelled or incomplete| NoWindow["Publish no new window"]
-    Completed -->|Yes| Compact{"Compaction was requested and output contains a compaction item?"}
-    Compact -->|No| Finish["Finish normally without new replay metadata"]
-    Compact -->|Yes| Prove["Reconcile output order, terminal compaction item and delivered assistant content"]
-    Prove --> Normalize["Allowlist window items from the last compaction item onward"]
-    Normalize --> Bound["Trim oldest following output items if necessary; retain the compaction item"]
-    Bound --> Valid{"Window can be proven and fits its checkpoint budget?"}
-    Prove -->|Contradiction or unprovable content| Refuse["Withhold window and log fixed refusal label; preserve delivered answer"]
-    Normalize -->|Invalid item| Refuse
-    Valid -->|No| Refuse
-    Refuse --> Finish
-    Valid -->|Yes| Bind["Bind window to scope, original input digest, assistant content digest and creation time"]
-    Bind --> Publish["Emit replayState in finish; Harness persists it on the assistant message"]
-    Publish --> Marker["Client derives Server-side compaction marker from persisted metadata"]
-    Publish --> Next["Next turn validates the window again before reusing its covered prefix"]
+    Response{"Response completed successfully?"}
+    Response -->|No| Failed["Turn failed: no new window"]
+    Response -->|Yes| Compact{"Compaction requested and returned?"}
+    Compact -->|No| Unchanged["Turn succeeded: no new window"]
+    Compact -->|Yes| Build["Build and validate window candidate"]
+    Build --> Valid{"Candidate provable and within budget?"}
+    Valid -->|No| Refuse["Withhold window; log fixed refusal label"]
+    Refuse --> Unchanged
+    Valid -->|Yes| Bind["Attach replay bindings and timestamp"]
+    Bind --> Save["Emit replayState for Harness to persist"]
+    Save --> Saved["Turn succeeded: new window saved"]
 ```
 
-A reuse-only turn publishes no new window or marker. Withholding a new window does not erase older metadata, but the next turn must still validate the newest available candidate; it never trusts a refused candidate or searches older windows as a fallback. Trimming removes content without creating a summary, whereas backend compaction returns opaque summarized state.
+While streaming the answer, the bridge observes completed output items. After successful completion, candidate validation checks their order, any terminal compaction echo, agreement with delivered assistant content, and the item allowlist. The candidate starts at the last compaction item; oldest following output items may be removed to fit the checkpoint budget, but the compaction item stays. An invalid or unprovable candidate is withheld without turning the delivered answer into a failure.
+
+A saved window binds to account/model/instruction/tool scope, the original input digest, the assistant-content digest and a creation time. Harness persists it on the assistant message. The client derives the `Server-side compaction` marker from that metadata, and the next turn validates the window again before reuse.
+
+A reuse-only turn publishes no new window or marker. Withholding a new window does not erase older metadata, but the next turn still validates the newest available candidate and never searches older windows after a refusal. Backend compaction returns opaque summarized state; unlike trimming, it does not merely delete the oldest input items.
 
 ## Replacing local condensation (opt-in)
 
