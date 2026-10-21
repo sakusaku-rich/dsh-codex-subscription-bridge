@@ -27,7 +27,8 @@ const messages = Object.freeze({
 });
 const diagnostics = new Set([
   'INPUT', 'COMPACTION', 'HTTP_REQUEST', 'HTTP_JSON_BODY', 'MODEL_CATALOG', 'AUTH_REFRESH',
-  'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_EVENT_TYPE',
+  'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_FRAME:FRAME', 'SSE_FRAME:TOTAL', 'SSE_FRAME:EVENTS',
+  'SSE_EVENT_TYPE',
   'SSE_TEXT_DELTA', 'SSE_TEXT_COMPLETION',
   'SSE_OUTPUT_ITEM', 'SSE_TOOL_CALL', 'SSE_TERMINAL', 'SSE_INCOMPLETE',
   'TOOL_INPUT', 'IMAGE_PREPARE', 'IMAGE_OFFLOAD', 'STOP', 'TEMPERATURE', 'MAX_TOKENS',
@@ -54,6 +55,12 @@ export class BridgeError extends Error {
     this.offloadImages = extras !== null && typeof extras === 'object' &&
       Number.isSafeInteger(extras.offloadImages) && extras.offloadImages > 0 ? extras.offloadImages : undefined;
     this.resetMinutes = resetMinutes;
+    // Structured SSE resource-limit numbers stay out of the fixed message: the
+    // label above names the bound, and the owner's log receives the numbers.
+    this.sseCount = extras !== null && typeof extras === 'object' &&
+      Number.isSafeInteger(extras.sseCount) && extras.sseCount > 0 ? extras.sseCount : undefined;
+    this.sseLimit = extras !== null && typeof extras === 'object' &&
+      Number.isSafeInteger(extras.sseLimit) && extras.sseLimit > 0 ? extras.sseLimit : undefined;
   }
 }
 /** Reconstruct from fixed code/label allowlists; never trust a mutable message. */
@@ -61,7 +68,8 @@ export function classified(error, diagnostic) {
   const safe = error instanceof BridgeError ? error : undefined;
   return new BridgeError(safe ? safe.code : 'UPSTREAM_FAILED',
     safe && diagnostics.has(safe.diagnostic) ? safe.diagnostic : diagnostic,
-    safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes } : undefined);
+    safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes,
+      sseCount: safe.sseCount, sseLimit: safe.sseLimit } : undefined);
 }
 export const failure = (error) => {
   const safe = classified(error);
