@@ -1,4 +1,4 @@
-import {events, FRAME_LIMIT} from './sse.js';
+import {events, FRAME_LIMIT, EVENT_LIMIT_CAP} from './sse.js';
 export {events} from './sse.js';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -277,8 +277,16 @@ export class DirectBridge {
       // its answer; framing fails only past twice the estimate. Without a
       // threshold no compaction item can appear and the default bounds stand.
       const itemFrame = compactThreshold === undefined ? undefined : 2 * wireLimits.checkpointBytes;
+      // The event count rises with the framing bounds: a long answer streams
+      // many small deltas — including reasoning deltas the bridge does not
+      // forward — and the default 4096-event count fails such a turn before
+      // any text is delivered. The count sizes from the same admitted window
+      // at a conservative 128-byte event envelope estimate, so the admitted
+      // byte budget bounds the count too; the aggregate byte limit stays the
+      // hard backstop for streams of smaller events.
       const framing = itemFrame === undefined ? undefined
-        : { frameLimit: itemFrame, totalLimit: 3 * itemFrame + 4 * FRAME_LIMIT };
+        : { frameLimit: itemFrame, totalLimit: 3 * itemFrame + 4 * FRAME_LIMIT,
+            eventLimit: Math.min(EVENT_LIMIT_CAP, Math.ceil(itemFrame / 128)) };
       const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope, Date.now(), wireLimits.checkpointBytes);
       // A refusal is the model-switch, expiry and edited-history boundary: the
       // opaque state cannot carry over, so the host log names it before the
@@ -432,7 +440,15 @@ export class DirectBridge {
         if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
         return;
       }
-    } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }
+    } catch (error) {
+      if (controller.timedOut) throw new BridgeError('TIMEOUT');
+      if (controller.signal.aborted) throw new BridgeError('ABORTED');
+      const failed = classified(error, phase);
+      // A resource-limit failure carries only structured numbers; the owner's
+      // log names the bound they hit, with no request or response content.
+      if (failed.sseLimit !== undefined) this.warn(`${failed.message} (${failed.sseCount} of ${failed.sseLimit} in the admitted window.)`);
+      throw failed;
+    }
     finally { controller.abort(); controller.removeBodyAbort?.(); await this.track(Promise.resolve(response?.body?.cancel()).catch(() => {}), controller); controller.release(); }
   }
   /** Read referenced image versions and enforce the aggregate offload budget. */
