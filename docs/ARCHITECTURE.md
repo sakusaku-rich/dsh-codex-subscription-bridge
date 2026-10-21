@@ -83,7 +83,7 @@ The following bounds are enforced.
 | Owned operations | 4 concurrent, including cancellation cleanup |
 | Deadlines | Discovery 30 seconds, turn 120 seconds, JSON request timeout 15 seconds |
 | JSON/event frames | 1 MiB |
-| Aggregate SSE | 4 MiB aggregate, 4096 frames |
+| Aggregate SSE | 4 MiB aggregate, 4096 frames; with a disclosed compaction window the frames and the count rise with the framing limits, the count sized at a 128-byte envelope estimate and capped at 65536 |
 | Output text | 128 blocks, 256 KiB |
 | Input messages | 1024, at most 64 blocks per non-tool message |
 | Tool passthrough | 256 definitions, 256 KiB aggregate, 64-character names in `[A-Za-z0-9_-]`, 8 KiB descriptions, 64 KiB JSON object parameters, 256-byte `call_id` values, 2 MiB tool outputs, 128 tool-update entries |

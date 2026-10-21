@@ -198,13 +198,16 @@ When no usable window is disclosed, the derived value equals the combined floor,
 | Per item, and the window total | at most max(derived, 512 KiB) |
 | SSE frame, with compaction requested | at most 2 × window bound |
 | SSE aggregate, with compaction requested | at most 3 × frame + 4 MiB |
+| SSE event count, with compaction requested | at most 65536, derived from the frame bound |
 | SSE frame / aggregate without a threshold | 1 MiB / 4 MiB (fixed) |
+| SSE event count without a threshold | 4096 (fixed) |
 | Marker output indices | at most 128 |
 
 - The wire bound is a resource limit for one request, not a guard against rejection. The backend compacts a request whose measured count is past the model window, so a request past the window in the bridge's byte estimate is sent as it is.
 - A reused window replaces only its exact covered prefix; the uncovered tail is the live conversation. The compaction item itself is what makes the window replayable.
 - Covered images are not read or resent; uncovered images use the existing attachment and offload budgets.
 - One compaction item travels inside one event frame and repeats in up to three events (`response.output_item.added`, `.done` and the `response.completed` echo). The raised frame and aggregate bounds admit those occurrences. An item past the capture bound but inside the raised frame limit is refused gently: the checkpoint is withheld, the refusal is logged and the next turn resends the full history. A frame past the raised limit still fails the turn.
+- The event count rises with the same admitted window. A long answer streams many small deltas — including reasoning deltas the bridge does not forward — and the default 4096-event count fails such a turn before any text is delivered. The count sizes from the frame bound at a conservative 128-byte event envelope estimate — smaller events, such as a 10-byte `data: {}\n\n` keepalive-shaped frame, are bounded by the aggregate byte limit instead — capped at 65536. Without a threshold the default 4096-event count stands unchanged.
 - Without a threshold no compaction item can appear, and the fixed frame, aggregate, timeout, admission and cancellation bounds stand unchanged.
 
 ### Trimming and fallback
