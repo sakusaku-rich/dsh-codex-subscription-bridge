@@ -38,6 +38,6 @@ test('the pnpm finder never falls back to the caller PATH', { timeout: 120_000 }
   });
   if (result.status === 0) {
     assert.notEqual(result.stdout.trim(), systemPnpm, 'the finder resolved the PATH pnpm instead of the bundled one');
-    assert.match(result.stdout.trim(), /DeepSeek Harness\.app\/Contents\/Resources\/runtime\/pnpm/u);
+    assert.match(result.stdout.trim(), /DeepSeek Harness\.app\/Contents\/Resources\/runtime\/primary-runtime\/dependencies\/pnpm/u);
   }
 });

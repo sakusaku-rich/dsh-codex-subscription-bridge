@@ -34,12 +34,15 @@ try {
   for await (const chunk of ctx.llm.stream({ provider: 'codex-subscription', model: 'synthetic', messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic prompt' }] }] })) chunks.push(chunk);
   assert.equal(chunks.at(-1).reason.kind, 'stop');
   // Exercise the authenticated carrier's exact Fetch seam used by Desktop IPC.
-  const { HostConnectionService } = await host('dsh-client-connection');
+  // The 0.2.1-rc.2 handler resolves the caller's Peer instead of assuming one, so
+  // the fixture supplies the owner principal the real admission would carry.
+  const { HostConnectionService, Peer } = await host('dsh-client-connection');
   const connection = new HostConnectionService(ctx, [], { isAuthenticated: () => true });
+  const peer = new Peer(ctx, { principal: { kind: 'owner' } });
   await new Promise(resolve => setImmediate(resolve));
   const endpoint = 'codex-subscription-auth/status';
   const request = new Request('http://127.0.0.1/api/' + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId: 'fixture', method: endpoint, payload: { clientId: '11111111-1111-4111-8111-111111111111' } }) });
-  const response = await connection.createSharedFetchHandler('/api').fetch(request);
+  const response = await connection.createSharedFetchHandler('/api').fetch(request, peer);
   const result = await response.json();
   assert.equal(result.result.ok, true); assert.equal(result.result.value.local.auth, 'stored');
   assert.equal(JSON.stringify(result).includes('synthetic'), false);

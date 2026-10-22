@@ -17,7 +17,7 @@ assertNodeVersion(); assertPlatform();
 
 const DESKTOP_APP = '/Applications/DeepSeek Harness.app';
 const EXECUTABLE = join(DESKTOP_APP, 'Contents/MacOS/DeepSeek Harness');
-const BUNDLED_PNPM = join(DESKTOP_APP, 'Contents/Resources/runtime/pnpm/bin/pnpm.cjs');
+const BUNDLED_PNPM = join(DESKTOP_APP, 'Contents/Resources/runtime/primary-runtime/dependencies/pnpm/bin/pnpm.cjs');
 
 try {
   await access(BUNDLED_PNPM);
