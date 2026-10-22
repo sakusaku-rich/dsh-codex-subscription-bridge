@@ -31,12 +31,20 @@ test('real Harness service registers the guarded provider and disposes it', asyn
   await new Promise((resolve) => setImmediate(resolve));
   try {
     assert.deepEqual(ctx.llm.listProviders(), [{ id: 'codex-subscription', name: 'Codex (ChatGPT subscription)' }]);
+    // The settings page reads the authentication posture from the directory, not
+    // from provider info, so the entry is asserted as the bridge declares it.
+    assert.deepEqual(ctx.llm.listConfigurableProviders(), [{
+      provider: 'codex-subscription', displayName: 'Codex (ChatGPT subscription)',
+      settingsNs: 'llm-codex-subscription', settingsPath: [], declared: false,
+      nativeAuth: { env: [], oauth: true },
+    }]);
     await assert.rejects(ctx.llm.listModels('codex-subscription'), { code: 'AUTH_REQUIRED' });
     const chunks = [];
     for await (const chunk of ctx.llm.stream({ provider: 'codex-subscription', model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic message' }] }] })) chunks.push(chunk);
     assert.equal(chunks.at(-1).reason.failure.code, 'AUTH_REQUIRED');
   } finally { await fiber.dispose(); }
   assert.deepEqual(ctx.llm.listProviders(), []);
+  assert.deepEqual(ctx.llm.listConfigurableProviders(), []);
   await service.dispose(); await rm(root, { recursive: true, force: true });
 });
 test('plugin rejects credential and safety override configuration', () => {

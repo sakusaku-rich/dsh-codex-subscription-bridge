@@ -56,10 +56,21 @@ export function apply(ctx, config = {}) {
     warn: message => ctx.logger?.warn?.(message),
   });
   ctx.effect(() => { const unregister = ctx.llm.registerAdapter([PROVIDER], adapter);
+    // The settings page describes a route only through the configurable-provider
+    // directory, so the bridge declares its own entry with the authentication it
+    // performs: no credential reference, no endpoint environment, and a stored
+    // OAuth sign-in as the only way to authenticate. The bridge still owns no
+    // configurable settings, so the entry carries no endpoint facts and any
+    // non-empty config stays refused above.
+    const directory = ctx.llm.registerConfigurableProviders([{
+      provider: PROVIDER, displayName: 'Codex (ChatGPT subscription)',
+      settingsNs: 'llm-codex-subscription', settingsPath: [], declared: false,
+      nativeAuth: { env: [], oauth: true },
+    }]);
     let active = true;
     installAuthUi(ctx, adapter.bridge.auth, () => {
       adapter.bridge.cache = undefined;
       if (active) unregister.replace([PROVIDER]);
     });
-    return async () => { active = false; unregister(); await adapter.bridge.close(); }; }, 'codex-subscription: register direct adapter');
+    return async () => { active = false; unregister(); directory(); await adapter.bridge.close(); }; }, 'codex-subscription: register direct adapter');
 }
