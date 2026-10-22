@@ -14,7 +14,7 @@ Whether connecting a ChatGPT subscription through this adapter is permitted unde
 
 - A ChatGPT subscription with Codex backend access.
 - Device-code sign-in enabled for the account or workspace.
-- macOS on Apple Silicon with Node 22.23.3 for the standalone CLI/SDK/Web provider. The version is pinned by `.node-version` and `.nvmrc`. Linux, Windows, Intel macOS, and other runtimes are rejected before authentication.
+- macOS on Apple Silicon with Node 22.23.3 for the standalone CLI/SDK/Web provider. The version is pinned by `.node-version` and `.nvmrc`. Linux, Windows and other runtimes are rejected before authentication. Intel macOS passes the platform gate but is not independently verified.
 - DeepSeek Harness Desktop 0.2.0-rc.2 is additionally supported only with its exact Electron 44.0.0 / Node 24.18.1 host pair. See [the support matrix](docs/INSTALL.md#support-and-prerequisites).
 - An installed DeepSeek Harness Desktop 0.2.0-rc.2 to add the bridge to, or a released, integrity-verified artifact to prepare a new isolated profile from. A Desktop profile additionally requires the verified Desktop host pair.
 
@@ -80,7 +80,7 @@ A turn whose response published a compaction is marked "Server-side compaction" 
 
 [Compaction design, research and limits](docs/COMPACTION.md) records the stateless request shape, the window binding, the wire bounds, the oldest-end recovery, and the differences deliberately not closed.
 
-To let Codex own condensation for this provider instead, enable the agent preset this package ships. It is inserted disabled. Installing the package therefore changes nothing until you add this to the profile's `cordis.patch.yml` and restart Harness:
+To let Codex own condensation for this provider instead, enable the agent preset this package ships. It is inserted disabled. Installing the package therefore adds no selectable preset and changes no compaction behavior until you add this to the profile's `cordis.patch.yml` and restart Harness:
 
 ```yaml
 - id: preset-codex-subscription
