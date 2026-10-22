@@ -17,9 +17,9 @@ test('the shipped preset mirrors the standard composition and is inserted disabl
   assert.equal(lines.filter(line => line === '        order: 9').length, 1, 'ordered after the shipped presets');
   assert.ok(lines.includes('        name: Codex subscription'), 'the roster needs a name');
   assert.ok(lines.some(line => line.startsWith('        description: ')), 'the roster needs a description');
-  assert.equal(childIds.length, 19, 'the pinned standard composition has 19 children');
+  assert.equal(childIds.length, 22, 'the pinned standard composition has 22 children');
   assert.equal(childIds[0], 'persona');
-  assert.equal(childIds.at(-1), 'tool-plugin-manager');
+  assert.equal(childIds.at(-1), 'tool-plugin-market');
   assert.ok(childIds.every(id => /^[a-z0-9-]+$/u.test(id)), 'child ids stay printable');
 });
 
