@@ -184,6 +184,21 @@ test('image input is read through the attachment service and sent as data URLs',
   assert.deepEqual(pricing.priceImages([{ attachment: ref, offloaded: true }])[0], { visualTokens: 0, text: pricing.priceImages([{ attachment: ref, offloaded: true }])[0].text });
   await bridge.close();
 });
+test('the reported request-image target is the same projection the serializer uses', async () => {
+  const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, completed)));
+  const ref = { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 3 };
+  assert.deepEqual(bridge.imageRequestTarget('codex-subscription', 'test-model', { ...ref, width: 1024, height: 768 }),
+    { width: 1024, height: 768, maxBytes: 1048576 });
+  // Past the pixel budget the long-edge step recomputes from the source, so the
+  // target is not the pixel-budget projection alone.
+  assert.deepEqual(bridge.imageRequestTarget('codex-subscription', 'test-model', { ...ref, width: 8000, height: 1000 }),
+    { width: 4096, height: 512, maxBytes: 1048576 });
+  assert.throws(() => bridge.imageRequestTarget('codex-subscription', 'test-model', null), { code: 'PROTOCOL_INVALID' });
+  for (const image of [{ width: 0, height: 10 }, { width: 10, height: 1.5 }, { width: 2 ** 53, height: 1 }]) {
+    assert.throws(() => bridge.imageRequestTarget('codex-subscription', 'test-model', image), { code: 'UNSUPPORTED_CONTENT', diagnostic: 'IMAGE_TARGET' });
+  }
+  await bridge.close();
+});
 test('missing attachment service and aggregate offload budgets fail with fixed labels', async () => {
   const ref = { attachmentId: `sha256:${'cd'.repeat(32)}`, mediaType: 'image/png', bytes: 16 * 1024 * 1024, width: 1024, height: 768 };
   const messages = [{ role: 'user', content: [{ type: 'image', attachment: { ...ref, attachmentId: `sha256:${'ef'.repeat(32)}`, bytes: 3 } }] }];

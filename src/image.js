@@ -1,9 +1,11 @@
 // Image request targeting for the subscription endpoint.
 //
 // `requestImageDimensions` and `longEdgeDimensions` are ported from
-// @deepseek-ai/dsh-attachment 0.2.0-rc.2 (MIT License). DeepSeek imports that
+// @deepseek-ai/dsh-attachment 0.2.1-rc.2 (MIT License). DeepSeek imports that
 // package directly, but vendoring these two pure functions avoids a new host
-// resolution dependency while keeping the identical projection math.
+// resolution dependency while keeping the identical projection math. Both
+// functions were re-read against the pinned package on 2026-10-23 and are
+// unchanged from the earlier port.
 
 export const REQUEST_IMAGE_PIXEL_BUDGET = 4 * 1024 * 1024;
 export const REQUEST_IMAGE_LONG_EDGE = 4096;

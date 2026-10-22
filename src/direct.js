@@ -476,6 +476,15 @@ export class DirectBridge {
       return { visualTokens: estimateVisionTokens(target.width, target.height), text: requestImageHandleText(ref, target, this.imageAccess(ref)) };
     }) };
   }
+  /** Report the projection the request serializer uses, so host consumers measure the same image. */
+  imageRequestTarget(_provider, model, image) {
+    string(model);
+    const ref = object(image);
+    if (!Number.isSafeInteger(ref.width) || ref.width < 1 || !Number.isSafeInteger(ref.height) || ref.height < 1) {
+      throw new BridgeError('UNSUPPORTED_CONTENT', 'IMAGE_TARGET');
+    }
+    return requestImageTarget(ref.width, ref.height);
+  }
   close() {
     this.closing ??= this.shutdown();
     return this.closing;

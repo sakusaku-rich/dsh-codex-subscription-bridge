@@ -39,6 +39,9 @@ class SubscriptionAdapter extends LlmAdapter {
     catch (error) { const safe = failure(error); yield { type: 'finish', reason: { kind: safe.code === 'ABORTED' ? 'aborted' : 'error', failure: safe } }; }
   }
   imageRequestPricing(provider, model) { return this.bridge.imageRequestPricing(provider, model); }
+  // The host measures and renders the request image through this hook, so it has
+  // to return the same projection the bridge's serializer uses.
+  imageRequestTarget(provider, model, image) { return this.bridge.imageRequestTarget(provider, model, image); }
 }
 export function apply(ctx, config = {}) {
   assertNodeVersion(); assertPlatform();
