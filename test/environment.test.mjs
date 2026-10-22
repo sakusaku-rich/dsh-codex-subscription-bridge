@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authenticationEnvironment } from '../src/environment.js';
+import { authenticationEnvironment } from '../lib/environment.js';
 test('project and user dotenv locations cannot replace inherited authentication home', () => {
   const ctx = { get() { return { getFrom(name, sources) {
     assert.deepEqual(sources, ['process']);
@@ -15,7 +15,7 @@ test('malformed launch snapshots fail closed', () => {
   assert.throws(() => authenticationEnvironment({ get: () => ({}) }), { code: 'CONFIG_INVALID' });
 });
 test('Desktop uses launcher-owned Harness home for its separate credential store', async () => {
-  const { authDirectory } = await import('../src/auth.js');
+  const { authDirectory } = await import('../lib/auth.js');
   assert.equal(authDirectory({ HOME: '/synthetic/shell-home', DSH_HOME: '/synthetic/desktop-harness' }, '44.7.0'), '/synthetic/desktop-harness/.dsh-codex-subscription-bridge');
   assert.equal(authDirectory({ HOME: '/synthetic/home', DSH_HOME: '/synthetic/harness' }, null), '/synthetic/home/.dsh-codex-subscription-bridge');
   assert.throws(() => authDirectory({ HOME: '/synthetic/home', DSH_HOME: 'relative' }, '44.7.0'), { code: 'CONFIG_INVALID' });

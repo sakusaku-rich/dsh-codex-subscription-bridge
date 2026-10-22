@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, readFile, symlink, chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { DirectBridge, events } from '../src/direct.js';
-import { AuthStore, claims } from '../src/auth.js';
-import { BridgeError, failure } from '../src/errors.js';
-import { Http, BASE, ISSUER } from '../src/http.js';
+import { DirectBridge, events } from '../lib/direct.js';
+import { AuthStore, claims } from '../lib/auth.js';
+import { BridgeError, failure } from '../lib/errors.js';
+import { Http, BASE, ISSUER } from '../lib/http.js';
 const jwt = (exp = Math.floor(Date.now() / 1000) + 3600, account = 'synthetic-account') => `x.${Buffer.from(JSON.stringify({ exp, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
 const tokens = (exp) => ({ access_token: jwt(exp), refresh_token: 'synthetic-refresh-secret' });
 const model = { slug: 'test-model', display_name: 'Test', visibility: 'list', supported_in_api: false };
@@ -342,8 +342,8 @@ test('paused stream deadlines cancel its reader and release request capacity', a
 test('refresh serialization also holds across separate Node processes', () => fixture(async root => {
   const { execFile } = await import('node:child_process'); const { promisify } = await import('node:util');
   const store = new AuthStore(join(root, 'auth')); await store.transaction(() => store.write(tokens(1)));
-  const code = `import {AuthStore} from ${JSON.stringify(new URL('../src/auth.js', import.meta.url).href)};
-import {Http} from ${JSON.stringify(new URL('../src/http.js', import.meta.url).href)};
+  const code = `import {AuthStore} from ${JSON.stringify(new URL('../lib/auth.js', import.meta.url).href)};
+import {Http} from ${JSON.stringify(new URL('../lib/http.js', import.meta.url).href)};
 import {appendFile} from 'node:fs/promises';
 const store=new AuthStore(${JSON.stringify(join(root, 'auth'))},new Http(async()=>{await appendFile(${JSON.stringify(join(root, 'refresh-count'))},'refresh\\n');await new Promise(resolve=>setTimeout(resolve,50));return Response.json(${JSON.stringify(tokens())});}));
 await store.token();`;
@@ -432,7 +432,7 @@ test('accepting empty deltas still refuses invalid types and oversized deltas', 
   }
 });
 test('diagnostics use fixed allowlisted labels and discard mutable upstream messages', async () => {
-  const { BridgeError, failure } = await import('../src/errors.js');
+  const { BridgeError, failure } = await import('../lib/errors.js');
   const unsafe = new BridgeError('PROTOCOL_INVALID', 'synthetic-secret'); unsafe.message = 'synthetic-secret';
   assert.equal(failure(unsafe).message.includes('synthetic-secret'), false);
   assert.equal(failure(new Error('synthetic-secret')).message.includes('synthetic-secret'), false);

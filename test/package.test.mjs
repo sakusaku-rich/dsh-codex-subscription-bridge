@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Context } from '@deepseek-ai/cordis';
 import { LlmRuntime } from '@deepseek-ai/dsh-llm';
-import * as plugin from '../src/index.js';
+import * as plugin from '../lib/index.js';
 
 /**
  * Environment for a child that must run this package in isolation.
@@ -56,7 +56,8 @@ test('tarball installs and composes in an isolated Harness service fixture', asy
   const temp = await mkdtemp(join(tmpdir(), 'dsh-subscription-fixture-'));
   try {
     const metadata = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temp, '--cache', join(temp, 'cache')], { encoding: 'utf8' }))[0];
-    assert.ok(metadata.files.some((file) => file.path === 'src/index.js'));
+    assert.ok(metadata.files.some((file) => file.path === 'lib/index.js'));
+    assert.ok(metadata.files.some((file) => file.path === 'lib/types/index.d.ts'));
     assert.ok(metadata.files.some((file) => file.path === 'cordis.patch.yml'));
     assert.ok(metadata.files.some((file) => file.path === 'LICENSE'));
     assert.equal(metadata.files.some((file) => /^(test|work)\//u.test(file.path) || (file.path.startsWith('node_modules/') && !file.path.startsWith('node_modules/undici/'))), false);
@@ -97,7 +98,7 @@ test('the plugin selects its store from the environment it is handed', async () 
     await mkdir(handed, { mode: 0o700 });
     const code = `import {Context} from '@deepseek-ai/cordis';
 import {LlmRuntime} from '@deepseek-ai/dsh-llm';
-import * as plugin from ${JSON.stringify(resolve('src/index.js'))};
+import * as plugin from ${JSON.stringify(resolve('lib/index.js'))};
 const ctx = new Context(); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
 await new Promise(resolve => setImmediate(resolve));
 try { await ctx.llm.listModels('codex-subscription'); console.log('NONE'); }

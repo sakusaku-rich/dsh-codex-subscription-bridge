@@ -81,7 +81,7 @@ test('the package ships the preset as a second bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   assert.deepEqual(manifest.dsh.bundle.patch, ['./cordis.patch.yml', './presets/codex-subscription.patch.yml']);
   assert.ok(manifest.files.includes('presets'), 'the artifact ships');
-  assert.equal(manifest.exports['./compaction'], './src/compaction-engine.js');
+  assert.equal(manifest.exports['./compaction'], './lib/compaction-engine.js');
   assert.equal(manifest.scripts['preset:sync'], 'node scripts/sync-preset.mjs');
   assert.equal(manifest.scripts['preset:check'], 'node scripts/sync-preset.mjs --check');
 });

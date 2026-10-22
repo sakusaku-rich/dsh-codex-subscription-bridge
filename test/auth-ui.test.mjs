@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AuthUiController, installAuthUi } from '../src/auth-ui.js';
-import { BridgeError } from '../src/errors.js';
+import { AuthUiController, installAuthUi } from '../lib/auth-ui.js';
+import { BridgeError } from '../lib/errors.js';
 const owner = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
 const tick = () => new Promise(resolve => setImmediate(resolve));

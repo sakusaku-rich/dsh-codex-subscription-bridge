@@ -10,9 +10,9 @@ test('public adapter uses dedicated OAuth and direct HTTPS with synthetic respon
     const driver = `import assert from 'node:assert/strict';
 import {Context} from ${JSON.stringify(new URL('../node_modules/@deepseek-ai/cordis/lib/index.js', import.meta.url).href)};
 import {LlmRuntime} from ${JSON.stringify(new URL('../node_modules/@deepseek-ai/dsh-llm/lib/index.js', import.meta.url).href)};
-import * as plugin from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)};
-import {AuthStore,authDirectory} from ${JSON.stringify(new URL('../src/auth.js', import.meta.url).href)};
-import {Http} from ${JSON.stringify(new URL('../src/http.js', import.meta.url).href)};
+import * as plugin from ${JSON.stringify(new URL('../lib/index.js', import.meta.url).href)};
+import {AuthStore,authDirectory} from ${JSON.stringify(new URL('../lib/auth.js', import.meta.url).href)};
+import {Http} from ${JSON.stringify(new URL('../lib/http.js', import.meta.url).href)};
 const token='x.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic'}})).toString('base64url')+'.x';
 const store=new AuthStore(authDirectory(process.env));await store.transaction(()=>store.write({access_token:token,refresh_token:'synthetic'}));
 Http.prototype.open=async url=>url.includes('/models?')?Response.json({models:[{slug:'synthetic-model',display_name:'Synthetic',visibility:'list',context_window:272000}]}):new Response('data: '+JSON.stringify({type:'response.output_text.delta',item_id:'item',content_index:0,delta:'Synthetic response'})+'\\n\\ndata: '+JSON.stringify({type:'response.completed',response:{status:'completed'}})+'\\n\\n',{headers:{'content-type':'text/event-stream'}});

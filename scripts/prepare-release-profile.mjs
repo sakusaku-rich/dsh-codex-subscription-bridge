@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, symlink, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { isAbsolute, join, dirname, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertNodeVersion, assertPlatform } from '../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../lib/runtime.js';
 import { assetName, createDigest, digestMatches, expectedDigest, parseChecksums, releaseTag, sha256Hex } from './lib/release.mjs';
 
 assertNodeVersion(); assertPlatform();
@@ -130,7 +130,7 @@ const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 // supplies its own PATH; the standalone one reuses the prepared runtime's Node.
 const launchEnv = desktop === undefined ? env : { ...env, PATH: '/usr/bin:/bin' };
 const environment = Object.entries(launchEnv).map(([key, value]) => `${key}=${quote(value)}`).join(' ');
-const authPath = quote(join(profile, `node_modules/${PLUGIN_NAME}/src/auth-cli.js`));
+const authPath = quote(join(profile, `node_modules/${PLUGIN_NAME}/lib/auth-cli.js`));
 // The Web surface gets an auth helper because it runs the plugin from its own
 // runtime. The Desktop surface does not: the plugin imports host peers that only
 // the application's profile boot resolves, so a helper launched outside the

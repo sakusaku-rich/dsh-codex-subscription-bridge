@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSubscriptionCompactionEngine, ownsSubscriptionCompaction } from '../src/compaction-owner.js';
-import { CompactionCapture, CHECKPOINT_MAX_AGE, compactionScope, inspectCheckpoint } from '../src/compaction.js';
-import { validateInput } from '../src/text.js';
+import { createSubscriptionCompactionEngine, ownsSubscriptionCompaction } from '../lib/compaction-owner.js';
+import { CompactionCapture, CHECKPOINT_MAX_AGE, compactionScope, inspectCheckpoint } from '../lib/compaction.js';
+import { validateInput } from '../lib/text.js';
 
 const user = text => ({ role: 'user', content: [{ type: 'text', text }] });
 const compact = { type: 'compaction', id: 'cp-1', encrypted_content: 'synthetic-opaque-checkpoint' };
@@ -37,7 +37,7 @@ test('the opt-in backend skips local condensation for its provider and delegates
 
 test('the shipped backend extends the pinned host engine and inherits its plugin contract', async () => {
   const { BasicCompactionEngine } = await import('@deepseek-ai/dsh-compaction-basic');
-  const { default: Engine } = await import('../src/compaction-engine.js');
+  const { default: Engine } = await import('../lib/compaction-engine.js');
   assert.equal(typeof Engine, 'function');
   assert.equal(Engine.prototype instanceof BasicCompactionEngine, true);
   // Cordis resolves `inject` and `Config` through the class prototype chain.

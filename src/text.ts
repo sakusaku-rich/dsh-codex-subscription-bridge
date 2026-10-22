@@ -1,5 +1,133 @@
 import { BridgeError } from './errors.js';
-import { REQUEST_IMAGE_ATTACHMENT_MAX_BYTES, requestImageTarget } from './image.js';
+import { REQUEST_IMAGE_ATTACHMENT_MAX_BYTES, requestImageTarget, type ImageDimensions } from './image.js';
+
+/** A durable image reference, as the bridge reads it after validation. */
+export type ImageRef = {
+  attachmentId: string;
+  mediaType: string;
+  bytes: number;
+  width: number;
+  height: number;
+  name?: string;
+};
+
+/** An unvalidated content block in a request message. */
+export type ContentBlock = {
+  type: string;
+  text?: string;
+  attachmentId?: string;
+  attachment?: ImageRef;
+  offloaded?: unknown;
+  id?: string;
+  name?: string;
+  arguments?: string;
+};
+
+/** The producer metadata the bridge reads on a tool-result message. */
+export type MessageSource = { kind?: string; callId?: string } | null;
+
+/** An unvalidated request message. */
+export type RequestMessageInput = {
+  role: string;
+  content: readonly ContentBlock[];
+  toolCallId?: string;
+  source?: MessageSource;
+};
+
+/** Harness generate options for this provider, as the bridge reads them. */
+export type GenerateInput = {
+  provider: string;
+  model: string;
+  messages: readonly RequestMessageInput[];
+  system?: string;
+  temperature?: unknown;
+  maxTokens?: unknown;
+  stop?: unknown;
+  reasoningEffort?: unknown;
+  tools?: unknown;
+  toolHistory?: unknown;
+  signal?: AbortSignal;
+};
+
+/** A content part of a validated wire message item. */
+export type WirePart = {
+  type: string;
+  text?: string;
+  image_url?: string;
+  attachmentId?: string;
+};
+
+/** One validated tool-call wire item, kept apart so its call id stays readable. */
+export type FunctionCallItem = Extract<WireItem, { type: 'function_call' }>;
+
+/** A validated Responses wire item. */
+export type WireItem = {
+  type: 'message';
+  role: string;
+  content: WirePart[];
+} | {
+  type: 'function_call';
+  call_id: string;
+  name: string;
+  arguments: string;
+} | {
+  type: 'function_call_output';
+  call_id: string;
+  output: string;
+} | {
+  type: 'compaction';
+  id?: string;
+  encrypted_content: string;
+} | {
+  type: 'reasoning';
+  id: string;
+  summary: WirePart[];
+  encrypted_content?: string;
+};
+
+/** A validated tool declaration for the Responses wire. */
+export type WireTool = {
+  type: 'function';
+  name: string;
+  description?: string;
+  strict: boolean;
+  parameters: Record<string, unknown>;
+};
+
+/** Byte and message bounds admitted for one request. */
+export type RequestLimits = {
+  inputBytes: number;
+  textBytes: number;
+  toolBytes: number;
+  messageLimit: number;
+};
+
+/** What one wire input contributes against the bounds. */
+export type Measured = {
+  textBytes: number;
+  toolBytes: number;
+  attachments: Set<string>;
+};
+
+/** One request message's span in the wire items and image blocks. */
+export type RequestSpan = { start: number; end: number; imageEnd: number };
+
+/** One durable attachment with the request version the serializer uses for it. */
+export type RequestImageEntry = { ref: ImageRef; target: ImageDimensions };
+
+/** The validated request plan. */
+export type RequestPlan = {
+  input: WireItem[];
+  tools: WireTool[] | undefined;
+  reasoning: { effort: string } | undefined;
+  temperature: number | undefined;
+  images: Map<string, RequestImageEntry>;
+  imageBlocks: ContentBlock[];
+  spans: RequestSpan[];
+};
+
+/** The shared byte counter, checked against the admitted bounds. */
+type BytesRef = { text: number; tool: number; limits: RequestLimits };
 
 export const PROVIDER = 'codex-subscription';
 export const TEXT_LIMIT = 256 * 1024;
@@ -31,9 +159,9 @@ const ATTACHMENT_ID = /^sha256:[0-9a-f]{64}$/;
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
 
 /** Count what a wire input contributes against a bound. */
-export function measure(input) {
+export function measure(input: readonly WireItem[]): Measured {
   let textBytes = 0, toolBytes = 0;
-  const attachments = new Set();
+  const attachments = new Set<string>();
   for (const value of input) {
     if (value.type === 'message') for (const part of value.content) {
       if (typeof part.text === 'string') textBytes += Buffer.byteLength(part.text);
@@ -45,7 +173,7 @@ export function measure(input) {
   return { textBytes, toolBytes, attachments };
 }
 
-export const fits = (limits, input, measured) => input.length <= limits.messageLimit &&
+export const fits = (limits: RequestLimits, input: readonly WireItem[], measured: Measured): boolean => input.length <= limits.messageLimit &&
   measured.textBytes <= limits.textBytes && measured.toolBytes <= limits.toolBytes &&
   measured.textBytes + measured.toolBytes <= limits.inputBytes;
 
@@ -59,10 +187,13 @@ export const REASONING_LEVEL_LIMIT = 16;
 export const REASONING_LEVEL_ID = /^[a-z][a-z0-9_-]{0,31}$/;
 const REASONING_DESCRIPTION_LIMIT = 512;
 /** Display names for the levels Codex currently discloses; others are title-cased. */
-const REASONING_LEVEL_NAMES = Object.freeze({
+const REASONING_LEVEL_NAMES: Readonly<Record<string, string>> = Object.freeze({
   minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High',
   xhigh: 'Extra high', max: 'Max', ultra: 'Ultra',
 });
+
+/** One validated disclosed level. */
+export type ReasoningLevel = { id: string; name: string; description?: string };
 
 /**
  * Project one catalog entry's `supported_reasoning_levels` into declared efforts.
@@ -73,23 +204,27 @@ const REASONING_LEVEL_NAMES = Object.freeze({
  * @param value - the entry's `supported_reasoning_levels` field.
  * @returns detached efforts in disclosure order, or `undefined` when unusable.
  */
-export function reasoningLevels(value) {
+export function reasoningLevels(value: unknown): ReasoningLevel[] | undefined {
   if (!Array.isArray(value) || value.length === 0 || value.length > REASONING_LEVEL_LIMIT) return undefined;
-  const seen = new Set();
-  const levels = [];
+  const seen = new Set<string>();
+  const levels: ReasoningLevel[] = [];
   for (const item of value) {
-    const id = item?.effort;
+    const entry = item as Record<string, unknown>;
+    const id = entry?.effort;
     if (typeof id !== 'string' || !REASONING_LEVEL_ID.test(id) || seen.has(id)) return undefined;
     seen.add(id);
-    const description = typeof item.description === 'string' && item.description.length <= REASONING_DESCRIPTION_LIMIT
-      ? item.description : undefined;
+    const description = typeof entry.description === 'string' && entry.description.length <= REASONING_DESCRIPTION_LIMIT
+      ? entry.description : undefined;
     levels.push({ id, name: REASONING_LEVEL_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1),
       ...(description === undefined ? {} : { description }) });
   }
   return levels;
 }
 
-function reasoningEffort(value) {
+/** A validated effort choice, forwarded to the endpoint. */
+export type ReasoningEffort = { effort: string };
+
+function reasoningEffort(value: unknown): ReasoningEffort | undefined {
   // The host offers only levels this adapter declared from the backend's own
   // disclosure, and dispatch rechecks the choice against it, so the id travels
   // verbatim after a bounded local shape check.
@@ -98,7 +233,7 @@ function reasoningEffort(value) {
   return { effort: value };
 }
 
-function requestTemperature(value) {
+function requestTemperature(value: unknown): number | undefined {
   // Forwarded verbatim as the Responses `temperature` field, like the
   // official subscription adapter. The Responses API documents 0..2.
   if (value === undefined) return undefined;
@@ -108,31 +243,33 @@ function requestTemperature(value) {
   return value;
 }
 
-function requestMaxTokens(value) {
+function requestMaxTokens(value: unknown): void {
   // Accepted and shape-checked but not forwarded: the official subscription
   // adapter omits `max_output_tokens` on this endpoint, so a turn token budget
   // stays advisory. Values that the runtime itself would reject are still
   // refused so a caller cannot mistake silence for acceptance.
   if (value === undefined) return;
-  if (!Number.isSafeInteger(value) || value < 1 || value > 1_000_000) {
+  // `Number.isSafeInteger` does not narrow, so the guard asserts the checked type.
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > 1_000_000) {
     throw new BridgeError('INPUT_UNSUPPORTED', 'MAX_TOKENS');
   }
 }
 
-function validateToolHistory(value) {
+function validateToolHistory(value: unknown): void {
   // The Harness runtime sends the complete current tool list on every request
   // for providers without incremental tool updates; history content is never
   // serialized. Validation is purely defensive against oversized inputs.
   if (value === undefined) return;
-  if (!value || typeof value !== 'object' || !Array.isArray(value.tools) || value.tools.length > TOOL_LIMIT ||
-      !Array.isArray(value.updates) || value.updates.length > TOOL_UPDATE_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED', 'TOOL_INPUT');
+  const history = value as Record<string, unknown>;
+  if (!history || typeof history !== 'object' || !Array.isArray(history.tools) || history.tools.length > TOOL_LIMIT ||
+      !Array.isArray(history.updates) || history.updates.length > TOOL_UPDATE_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED', 'TOOL_INPUT');
 }
 
-function serializeTools(value) {
+function serializeTools(value: unknown): WireTool[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || value.length > TOOL_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED', 'TOOL_INPUT');
-  const names = new Set();
-  const tools = [];
+  const names = new Set<string>();
+  const tools: WireTool[] = [];
   for (const tool of value) {
     if (!tool || typeof tool !== 'object' || Array.isArray(tool)) throw new BridgeError('INPUT_UNSUPPORTED', 'TOOL_INPUT');
     // The Harness runtime strips `deferLoading` for providers without incremental
@@ -153,7 +290,7 @@ function serializeTools(value) {
   return tools;
 }
 
-function serializeImage(block, images, imageBlocks) {
+function serializeImage(block: ContentBlock, images: Map<string, RequestImageEntry>, imageBlocks: ContentBlock[]): void {
   // The stream layer projects offloaded occurrences into text placeholders
   // before validation; one arriving here means the projection was skipped.
   if (block.offloaded === true) throw new BridgeError('INPUT_UNSUPPORTED');
@@ -176,7 +313,7 @@ function serializeImage(block, images, imageBlocks) {
 // One shared byte counter so the combined request bound and the per-part bound
 // are checked against the same measurement. Text overflow stays the shape
 // failure it was; tool payload overflow stays a bound breach.
-function addBytes(bytesRef, kind, size) {
+function addBytes(bytesRef: BytesRef, kind: 'text' | 'tool', size: number): void {
   bytesRef[kind] += size;
   if (bytesRef[kind] > bytesRef.limits[kind === 'text' ? 'textBytes' : 'toolBytes']) {
     throw new BridgeError(kind === 'text' ? 'INPUT_UNSUPPORTED' : 'LIMIT_EXCEEDED');
@@ -184,7 +321,7 @@ function addBytes(bytesRef, kind, size) {
   if (bytesRef.text + bytesRef.tool > bytesRef.limits.inputBytes) throw new BridgeError('LIMIT_EXCEEDED');
 }
 
-export function defaultLimits(retained = false) {
+export function defaultLimits(retained = false): RequestLimits {
   return {
     inputBytes: retained ? RETAINED_INPUT_BYTES_FLOOR : INPUT_BYTES_FLOOR,
     textBytes: retained ? RETAINED_TEXT_LIMIT : TEXT_LIMIT,
@@ -193,7 +330,7 @@ export function defaultLimits(retained = false) {
   };
 }
 
-function serializeToolCall(block, calls, pendingCalls, bytesRef) {
+function serializeToolCall(block: ContentBlock, calls: Set<string>, pendingCalls: FunctionCallItem[], bytesRef: BytesRef): void {
   if (typeof block.id !== 'string' || block.id.length === 0 || block.id.length > CALL_ID_LIMIT ||
       typeof block.name !== 'string' || block.name.length === 0 || Buffer.byteLength(block.name) > TOOL_NAME_LIMIT ||
       typeof block.arguments !== 'string' || calls.has(block.id)) throw new BridgeError('INPUT_UNSUPPORTED');
@@ -201,13 +338,13 @@ function serializeToolCall(block, calls, pendingCalls, bytesRef) {
   pendingCalls.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: block.arguments });
 }
 
-function serializeToolResult(message, calls, results, bytesRef) {
+function serializeToolResult(message: RequestMessageInput, calls: Set<string>, results: Set<string>, bytesRef: BytesRef): WireItem {
   const callId = message.toolCallId ?? message.source?.callId;
   if (typeof callId !== 'string' || callId.length === 0 || callId.length > CALL_ID_LIMIT ||
       !calls.has(callId) || results.has(callId)) throw new BridgeError('INPUT_UNSUPPORTED');
   if (message.source !== undefined && (message.source === null || typeof message.source !== 'object' ||
       message.source.kind !== 'tool')) throw new BridgeError('INPUT_UNSUPPORTED');
-  const text = [];
+  const text: string[] = [];
   for (const block of message.content) {
     if (!block || block.type !== 'text' || typeof block.text !== 'string') throw new BridgeError('UNSUPPORTED_CONTENT');
     text.push(block.text);
@@ -219,18 +356,18 @@ function serializeToolResult(message, calls, results, bytesRef) {
 }
 
 /**
-* Validate one request and derive the Responses wire items for it.
-* @param options - Harness generate options for this provider.
-* @param retained - Apply larger bounded transcript limits before checkpoint selection.
-*   The caller must still validate the selected wire window or the ordinary fallback.
+ * Validate one request and derive the Responses wire items for it.
+ * @param options - Harness generate options for this provider.
+ * @param retained - Apply larger bounded transcript limits before checkpoint selection.
+ *   The caller must still validate the selected wire window or the ordinary fallback.
  * @param limits - Byte and message bounds for this request, derived from the disclosed
  *   window when one is available and otherwise the fixed floor.
-* @returns a plan: `input` wire items with image placeholders, `tools` wire
-*   declarations, `reasoning` effort mapping, a validated `temperature` when
-*   the request carries one, and per-attachment image entries
-*   with their durable references, request targets, and original blocks.
-*/
-export function validateInput(options, retained = false, limits = defaultLimits(retained)) {
+ * @returns a plan: `input` wire items with image placeholders, `tools` wire
+ *   declarations, `reasoning` effort mapping, a validated `temperature` when
+ *   the request carries one, and per-attachment image entries
+ *   with their durable references, request targets, and original blocks.
+ */
+export function validateInput(options: GenerateInput, retained = false, limits: RequestLimits = defaultLimits(retained)): RequestPlan {
   if (options.provider !== PROVIDER || !Array.isArray(options.messages) || options.messages.length > limits.messageLimit || !options.messages.length) {
     throw new BridgeError('INPUT_UNSUPPORTED');
   }
@@ -243,20 +380,20 @@ export function validateInput(options, retained = false, limits = defaultLimits(
   const reasoning = reasoningEffort(options.reasoningEffort);
   const tools = serializeTools(options.tools);
   validateToolHistory(options.toolHistory);
-  const bytesRef = { text: 0, tool: 0, limits };
-  const spans = [];
-  const input = [];
-  const images = new Map();
-  const imageBlocks = [];
-  const calls = new Set();
-  const results = new Set();
+  const bytesRef: BytesRef = { text: 0, tool: 0, limits };
+  const spans: RequestSpan[] = [];
+  const input: WireItem[] = [];
+  const images = new Map<string, RequestImageEntry>();
+  const imageBlocks: ContentBlock[] = [];
+  const calls = new Set<string>();
+  const results = new Set<string>();
   if (options.system !== undefined) {
     if (typeof options.system !== 'string') throw new BridgeError('INPUT_UNSUPPORTED');
     addBytes(bytesRef, 'text', Buffer.byteLength(options.system));
     input.push({ type: 'message', role: 'developer', content: [{ type: 'input_text', text: options.system }] });
   }
   for (const message of options.messages) {
-    const span = { start: input.length, end: input.length, imageEnd: imageBlocks.length };
+    const span: RequestSpan = { start: input.length, end: input.length, imageEnd: imageBlocks.length };
     spans.push(span);
     if (!message || !Array.isArray(message.content) ||
         !['system', 'developer', 'user', 'assistant', 'tool'].includes(message.role)) throw new BridgeError('INPUT_UNSUPPORTED');
@@ -266,8 +403,8 @@ export function validateInput(options, retained = false, limits = defaultLimits(
       span.end = input.length;
       continue;
     }
-    const content = [];
-    const pendingCalls = [];
+    const content: WirePart[] = [];
+    const pendingCalls: FunctionCallItem[] = [];
     const total = () => content.length + pendingCalls.length;
     for (const block of message.content) {
       if (!block || typeof block !== 'object' || Array.isArray(block)) throw new BridgeError('INPUT_UNSUPPORTED');
@@ -280,7 +417,7 @@ export function validateInput(options, retained = false, limits = defaultLimits(
         if (message.role !== 'user') throw new BridgeError('UNSUPPORTED_CONTENT', 'IMAGE_PREPARE');
         if (total() >= BLOCK_LIMIT) throw new BridgeError('INPUT_UNSUPPORTED');
         serializeImage(block, images, imageBlocks);
-        content.push({ type: 'input_image', image_url: '', attachmentId: block.attachment.attachmentId });
+        content.push({ type: 'input_image', image_url: '', attachmentId: block.attachment!.attachmentId });
       } else if (block.type === 'tool-call') {
         if (message.role !== 'assistant') throw new BridgeError('INPUT_UNSUPPORTED');
         serializeToolCall(block, calls, pendingCalls, bytesRef);

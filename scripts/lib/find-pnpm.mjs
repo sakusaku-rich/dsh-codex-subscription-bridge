@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertNodeVersion, assertPlatform } from '../../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../../lib/runtime.js';
 
 /**
  * Resolve the pnpm entry point bundled with the installed Desktop.

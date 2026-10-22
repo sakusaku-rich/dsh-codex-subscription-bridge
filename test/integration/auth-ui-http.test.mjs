@@ -23,10 +23,10 @@ test('packaged auth routes retain browser trust and the existing Gateway', { tim
 import assert from 'node:assert/strict';
 import {runProfile} from ${JSON.stringify(url(join(repo, 'verification/runtime/node_modules/@deepseek-ai/dsh/lib/profile-boot.js')))};
 import {createLaunchEnvironmentSnapshot} from ${JSON.stringify(url(join(repo, 'verification/runtime/node_modules/@deepseek-ai/dsh-launch-environment/lib/index.js')))};
-import {BridgeError} from ${JSON.stringify(url(join(profile, 'node_modules/dsh-codex-subscription-bridge/src/errors.js')))};
+import {BridgeError} from ${JSON.stringify(url(join(profile, 'node_modules/dsh-codex-subscription-bridge/lib/errors.js')))};
 const {ctx,shutdown}=await runProfile({profile:'auth-ui-test',patchFiles:[],args:['--host','127.0.0.1','--port','0','--no-open'],environment:createLaunchEnvironmentSnapshot([{source:'process',values:process.env}])});
 await ctx.get('loader').await();
-const {AuthStore}=await import(${JSON.stringify(url(join(profile, 'node_modules/dsh-codex-subscription-bridge/src/auth.js')))});
+const {AuthStore}=await import(${JSON.stringify(url(join(profile, 'node_modules/dsh-codex-subscription-bridge/lib/auth.js')))});
 let approve;
 AuthStore.prototype.login=async function(announce,signal){
  announce({url:'https://auth.openai.com/codex/device',code:'SYNTHETIC-CODE'});

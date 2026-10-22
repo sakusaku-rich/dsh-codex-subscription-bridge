@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, copyFile, access, stat } from 'node
 import { createReadStream } from 'node:fs';
 import { isAbsolute, join, dirname, basename, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertNodeVersion, assertPlatform } from '../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../lib/runtime.js';
 import { assetName, createDigest, digestMatches, expectedDigest, parseChecksums, releaseTag, sha256Hex } from './lib/release.mjs';
 
 /**

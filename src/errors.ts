@@ -1,4 +1,5 @@
-const messages = Object.freeze({
+/** Fixed message vocabulary for every failure the bridge can report. */
+const messages: Readonly<Record<string, string>> = Object.freeze({
   AUTH_REQUIRED: 'A dedicated subscription login is required. Open ChatGPT subscription in Harness settings or run dsh-codex-subscription-auth login.',
   AUTH_STORE_INVALID: 'The dedicated authentication store is invalid or insecure.',
   AUTH_BUSY: 'The authentication store is busy. A crashed owner may require manual lock recovery.',
@@ -25,7 +26,7 @@ const messages = Object.freeze({
   ABORTED: 'The conversation was cancelled.',
   CLOSED: 'The bridge is closed.',
 });
-const diagnostics = new Set([
+const diagnostics: Set<string | undefined> = new Set([
   'INPUT', 'COMPACTION', 'HTTP_REQUEST', 'HTTP_JSON_BODY', 'MODEL_CATALOG', 'AUTH_REFRESH',
   'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_FRAME:FRAME', 'SSE_FRAME:TOTAL', 'SSE_FRAME:EVENTS',
   'SSE_EVENT_TYPE',
@@ -35,14 +36,32 @@ const diagnostics = new Set([
 ]);
 // Longest reset hint the classifier may derive, in minutes (one week).
 const RESET_MINUTES_LIMIT = 10080;
+/** Structured extras a BridgeError may carry; every field is re-validated here. */
+export interface ErrorExtras {
+  resetMinutes?: number | undefined;
+  offloadImages?: number | undefined;
+  sseCount?: number | undefined;
+  sseLimit?: number | undefined;
+}
+/** An unvalidated parsed JSON object; each field stays unknown until checked. */
+export type JsonObject = Record<string, unknown>;
 export class BridgeError extends Error {
-  constructor(code, diagnostic, extras) {
+  code: string;
+  diagnostic: string | undefined;
+  offloadImages: number | undefined;
+  resetMinutes: number | undefined;
+  sseCount: number | undefined;
+  sseLimit: number | undefined;
+  /** Failing stage in the compaction vocabulary; set by compaction.ts. */
+  stage: string | undefined;
+  constructor(code: string, diagnostic?: string, extras?: ErrorExtras) {
     const safeCode = Object.hasOwn(messages, code) ? code : 'UPSTREAM_FAILED';
     const label = diagnostics.has(diagnostic) ? diagnostic : undefined;
     // A reset hint is a validated integer count, not upstream text, so it can
     // join the fixed message without leaking request or response content.
+    // `Number.isSafeInteger` does not narrow, so each guard asserts the checked type.
     const resetMinutes = extras !== null && typeof extras === 'object' &&
-      Number.isSafeInteger(extras.resetMinutes) && extras.resetMinutes >= 1 && extras.resetMinutes <= RESET_MINUTES_LIMIT
+      Number.isSafeInteger(extras.resetMinutes) && (extras.resetMinutes as number) >= 1 && (extras.resetMinutes as number) <= RESET_MINUTES_LIMIT
       ? extras.resetMinutes : undefined;
     super(messages[safeCode] + (resetMinutes !== undefined
       ? ` Try again in about ${resetMinutes} minute${resetMinutes === 1 ? '' : 's'}.` : '') + (label ? ` [${label}]` : ''));
@@ -53,25 +72,25 @@ export class BridgeError extends Error {
     // oldest conversation images and retry the request; it stays out of the
     // fixed message so no request detail leaks into error text.
     this.offloadImages = extras !== null && typeof extras === 'object' &&
-      Number.isSafeInteger(extras.offloadImages) && extras.offloadImages > 0 ? extras.offloadImages : undefined;
+      Number.isSafeInteger(extras.offloadImages) && (extras.offloadImages as number) > 0 ? extras.offloadImages : undefined;
     this.resetMinutes = resetMinutes;
     // Structured SSE resource-limit numbers stay out of the fixed message: the
     // label above names the bound, and the owner's log receives the numbers.
     this.sseCount = extras !== null && typeof extras === 'object' &&
-      Number.isSafeInteger(extras.sseCount) && extras.sseCount > 0 ? extras.sseCount : undefined;
+      Number.isSafeInteger(extras.sseCount) && (extras.sseCount as number) > 0 ? extras.sseCount : undefined;
     this.sseLimit = extras !== null && typeof extras === 'object' &&
-      Number.isSafeInteger(extras.sseLimit) && extras.sseLimit > 0 ? extras.sseLimit : undefined;
+      Number.isSafeInteger(extras.sseLimit) && (extras.sseLimit as number) > 0 ? extras.sseLimit : undefined;
   }
 }
 /** Reconstruct from fixed code/label allowlists; never trust a mutable message. */
-export function classified(error, diagnostic) {
+export function classified(error: unknown, diagnostic?: string): BridgeError {
   const safe = error instanceof BridgeError ? error : undefined;
   return new BridgeError(safe ? safe.code : 'UPSTREAM_FAILED',
     safe && diagnostics.has(safe.diagnostic) ? safe.diagnostic : diagnostic,
     safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes,
       sseCount: safe.sseCount, sseLimit: safe.sseLimit } : undefined);
 }
-export const failure = (error) => {
+export const failure = (error: unknown): { code: string; message: string; offloadImages?: number } => {
   const safe = classified(error);
   return { code: safe.code, message: safe.message,
     ...(safe.offloadImages === undefined ? {} : { offloadImages: safe.offloadImages }) };
@@ -82,24 +101,33 @@ export const failure = (error) => {
  * so the fixed messages above remain the only user-visible text.
  */
 const FIELD_LIMIT = 256;
-export function errorFields(error) {
+/** The fixed fields recognized in a subscription error body. */
+export interface ErrorFields {
+  code?: string;
+  type?: string;
+  param?: string;
+}
+export function errorFields(error: unknown): ErrorFields {
   if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
-  const field = value => typeof value === 'string' && Buffer.byteLength(value) <= FIELD_LIMIT ? value : '';
-  return { code: field(error.code), type: field(error.type), param: field(error.param) };
+  // The guard above proves an object; its fields stay unknown until `field` checks them.
+  const body = error as JsonObject;
+  const field = (value: unknown): string => typeof value === 'string' && Buffer.byteLength(value) <= FIELD_LIMIT ? value : '';
+  return { code: field(body.code), type: field(body.type), param: field(body.param) };
 }
 // The only parameter the bridge may drop and resend without.
 export const REJECTED_PARAMETER = 'context_management';
-const PARAM_REJECTION_CODES = new Set(['unsupported_parameter', 'unknown_parameter']);
-export const parameterRejection = fields => fields.param === REJECTED_PARAMETER && PARAM_REJECTION_CODES.has(fields.code);
+const PARAM_REJECTION_CODES: Set<string | undefined> = new Set(['unsupported_parameter', 'unknown_parameter']);
+export const parameterRejection = (fields: ErrorFields): boolean => fields.param === REJECTED_PARAMETER && PARAM_REJECTION_CODES.has(fields.code);
 // Structured context-limit codes the subscription endpoint reports.
-const CONTEXT_LIMIT_CODES = new Set(['context_length_exceeded']);
-export const classifyErrorFields = fields => new BridgeError(
+const CONTEXT_LIMIT_CODES: Set<string | undefined> = new Set(['context_length_exceeded']);
+export const classifyErrorFields = (fields: ErrorFields): BridgeError => new BridgeError(
   CONTEXT_LIMIT_CODES.has(fields.code || fields.type) ? 'CONTEXT_LIMIT' : 'UPSTREAM_FAILED', 'SSE_TERMINAL');
-export function object(value) {
+export function object(value: unknown): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BridgeError('PROTOCOL_INVALID');
-  return value;
+  // The guard above proves a non-array object; the fields themselves stay unknown.
+  return value as JsonObject;
 }
-export function string(value, max = 256) {
+export function string(value: unknown, max = 256): string {
   if (typeof value !== 'string' || value.length === 0 || Buffer.byteLength(value) > max) throw new BridgeError('PROTOCOL_INVALID');
   return value;
 }

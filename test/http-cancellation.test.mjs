@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Http,BASE} from '../src/http.js';
+import {Http,BASE} from '../lib/http.js';
 test('caller abort during JSON body reading is preserved after headers', async () => {
   const controller = new AbortController(); let cancelled = false;
   const http = new Http(async (_, options) => new Response(new ReadableStream({

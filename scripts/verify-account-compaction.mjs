@@ -1,9 +1,9 @@
-import { Http } from '../src/http.js';
-import { events } from '../src/sse.js';
-import { AuthStore, authDirectory } from '../src/auth.js';
-import { DirectBridge } from '../src/direct.js';
-import { BridgeError, failure } from '../src/errors.js';
-import { CHECKPOINT_KEY, threshold, requestLimits } from '../src/compaction.js';
+import { Http } from '../lib/http.js';
+import { events } from '../lib/sse.js';
+import { AuthStore, authDirectory } from '../lib/auth.js';
+import { DirectBridge } from '../lib/direct.js';
+import { BridgeError, failure } from '../lib/errors.js';
+import { CHECKPOINT_KEY, threshold, requestLimits } from '../lib/compaction.js';
 import { BlockAssembler } from '@deepseek-ai/dsh-llm';
 
 // Owner-authorized real-account measurement only; never part of CI. It reports

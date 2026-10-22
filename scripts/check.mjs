@@ -10,3 +10,7 @@ for (const directory of trees) {
     if (result.status !== 0) process.exit(1);
   }
 }
+// The syntax walk above only covers plain JavaScript, so the TypeScript sources
+// are checked by the compiler itself; `--noEmit` keeps this a check-only step.
+const compiled = spawnSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--noEmit'], { stdio: 'inherit' });
+if (compiled.status !== 0) process.exit(1);

@@ -2,7 +2,7 @@ import { readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { join, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertNodeVersion, assertPlatform } from '../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../lib/runtime.js';
 assertNodeVersion(); assertPlatform();
 const args = process.argv.slice(2);
 if (args.length !== 2 || args[0] !== '--directory' || !isAbsolute(args[1] ?? '') || /[\x00\r\n]/u.test(args[1])) throw new Error('Run npm run prepare:desktop -- --directory <absolute new directory>.');

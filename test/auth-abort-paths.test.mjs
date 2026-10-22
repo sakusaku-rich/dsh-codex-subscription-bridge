@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {AuthStore} from '../src/auth.js';
-import {Http,readJson} from '../src/http.js';
+import {AuthStore} from '../lib/auth.js';
+import {Http,readJson} from '../lib/http.js';
 test('login polling body cancellation is ABORTED and cannot replace the stored login', async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-login-abort-'));const controller=new AbortController();
  try{const store=new AuthStore(join(root,'auth'),new Http(async(url,options)=>{

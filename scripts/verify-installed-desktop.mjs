@@ -23,7 +23,7 @@ try {
   const { ctx, shutdown } = await runProfile({ environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: process.env }]), profile: 'desktop', resolvedProfile: { profile: loadProfileDirectory('dsh', profile, anchor), installAnchor: anchor }, patchFiles: [], args: [] });
   await ctx.get('loader').await();
   assert.ok(ctx.llm.listProviders().some(item => item.id === 'codex-subscription'));
-  const module = part => import(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/src', part + '.js')).href);
+  const module = part => import(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/lib', part + '.js')).href);
   const { AuthStore, authDirectory } = await module('auth'); const { Http } = await module('http');
   const store = new AuthStore(authDirectory(process.env));
   const token = 'x.' + Buffer.from(JSON.stringify({ exp: Date.now() / 1000 + 3600, 'https://api.openai.com/auth': { chatgpt_account_id: 'synthetic' } })).toString('base64url') + '.x';

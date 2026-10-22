@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {events} from '../src/sse.js';
+import {events} from '../lib/sse.js';
 const collect=async(body,signal=new AbortController().signal)=>{const result=[];for await(const value of events(body,signal))result.push(value);return result};
 test('incremental framing preserves split UTF-8, multiline data and mixed newline delimiters',async()=>{
  const bytes=Buffer.from('data: {"type":"test",\r\ndata: "text":"Hello 🌍"}\r\n\n: comment\n\ndata: {"type":"second"}\n\r\n');
