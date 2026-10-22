@@ -19,7 +19,7 @@ test('the opt-in backend owns only this bridge provider', () => {
   assert.equal(ownsSubscriptionCompaction(null), false);
 });
 
-test('the opt-in backend skips local condensation for its provider and delegates every other route', async () => {
+test('the opt-in backend skips local condensation for its provider and delegates every other provider', async () => {
   const calls = [];
   class Base { async compactIfNeeded(...args) { calls.push(args); return { kind: 'delegated' }; } }
   const engine = Object.create(createSubscriptionCompactionEngine(Base).prototype);
@@ -29,7 +29,7 @@ test('the opt-in backend skips local condensation for its provider and delegates
   const other = route('openrouter');
   assert.deepEqual(await engine.compactIfNeeded(other, 'context-overflow', signal), { kind: 'delegated' });
   assert.deepEqual(calls, [[other, 'context-overflow', signal]]);
-  // A request with no session or route must never throw out of the host hook.
+  // A request with no session or routed target must never throw out of the host hook.
   assert.deepEqual(await engine.compactIfNeeded({ session: {} }, 'pressure', undefined), { kind: 'delegated' });
   assert.deepEqual(await engine.compactIfNeeded(undefined, 'pressure', undefined), { kind: 'delegated' });
   assert.equal(calls.length, 3);
@@ -70,5 +70,7 @@ test('checkpoint inspection names every refusal instead of silently discarding s
   const digest = clone(messages); digest[1].source.replayState.response.subscriptionCompactionV1.items[0].encrypted_content = 'changed';
   assert.equal(inspectCheckpoint(digest, next, scope).refusal, 'DIGEST');
   const invalid = clone(messages); invalid[1].source.replayState.response.subscriptionCompactionV1.items = [];
-  assert.equal(inspectCheckpoint(invalid, next, scope).refusal, 'INVALID');
+  assert.equal(inspectCheckpoint(invalid, next, scope).refusal, 'WINDOW_SHAPE');
+  // A failure with no stage of its own still reports the generic label.
+  assert.equal(inspectCheckpoint(messages, { ...next, spans: undefined }, scope).refusal, 'INVALID');
 });

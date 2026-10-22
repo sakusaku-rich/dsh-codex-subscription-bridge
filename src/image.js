@@ -1,4 +1,4 @@
-// Image request targeting for the subscription route.
+// Image request targeting for the subscription endpoint.
 //
 // `requestImageDimensions` and `longEdgeDimensions` are ported from
 // @deepseek-ai/dsh-attachment 0.2.0-rc.2 (MIT License). DeepSeek imports that
@@ -60,7 +60,7 @@ export function longEdgeDimensions(width, height, longEdge) {
 * Request-image target for one attachment, mirroring the DeepSeek adapter
 * composition: pixel-budget projection first, then a long-edge recomputation
 * from the source dimensions when the projection still exceeds 4096 pixels.
-* The pixel budget matches the Codex route policy in
+* The pixel budget matches the Codex image policy in
 * @deepseek-ai/dsh-llm-pi-ai; the long-edge step is a conservative addition
 * not present in that adapter.
 * @param width - positive source width.
@@ -75,7 +75,7 @@ export function requestImageTarget(width, height) {
 }
 
 /**
-* Approximate subscription-route vision cost with the OpenAI high-detail tile
+* Approximate the subscription vision cost with the OpenAI high-detail tile
 * formula (512px tiles, 85 base plus 170 per tile). This is a conservative
 * host-budgeting hint only; the subscription backend's real accounting is not
 * verified.
@@ -88,7 +88,7 @@ export function estimateVisionTokens(width, height) {
 }
 
 /**
-* Serialize one request image as a data URL the Responses route accepts.
+* Serialize one request image as a data URL the Responses endpoint accepts.
 * @param mediaType - attachment media type.
 * @param base64 - exact base64 request-image payload.
 * @returns the data URL wire value.

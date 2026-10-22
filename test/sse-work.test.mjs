@@ -27,3 +27,47 @@ test('frame-byte and frame-count limits remain enforced at their boundaries',asy
  await assert.rejects(collect(new Response(prefix+'x'.repeat(limit)+suffix+'\n\n').body),{code:'LIMIT_EXCEEDED'});
  await assert.rejects(collect(new Response('data: {}\n\n'.repeat(4097)).body),{code:'LIMIT_EXCEEDED'});
 });
+const collectWith=async(body,limits)=>{const result=[];for await(const value of events(body,new AbortController().signal,undefined,limits))result.push(value);return result};
+const frame=text=>new Response(text+'\r\n\r\n').body;
+test('a raised frame limit admits one oversized event and stays bounded itself',async()=>{
+ const raised=1024*1024+65536;const prefix='data: {"type":"test","text":"';const suffix='"}';
+ const text=length=>prefix+'x'.repeat(length-Buffer.byteLength(prefix+suffix))+suffix;
+ assert.equal((await collectWith(frame(text(raised-64)),{frameLimit:raised})).length,1);
+ assert.equal((await collectWith(frame(text(raised)),{frameLimit:raised})).length,1);
+ await assert.rejects(collectWith(frame(text(raised+1)),{frameLimit:raised}),{code:'LIMIT_EXCEEDED'});
+ // Passing no limits object keeps the default bounds for the same payload.
+ await assert.rejects(collectWith(frame(text(raised-64)),undefined),{code:'LIMIT_EXCEEDED'});
+});
+test('a raised total limit admits more framed bytes while the default stays enforced',async()=>{
+ const prefix='data: {"type":"test","text":"';const suffix='"}';
+ const one=length=>{const text=prefix+'x'.repeat(length-Buffer.byteLength(prefix+suffix))+suffix;return text+'\r\n\r\n'};
+ const body=lengths=>new Response(lengths.map(one).join('')).body;
+ const raised={frameLimit:1024*1024+65536};
+ assert.equal((await collectWith(body([1100000,1100000,1100000]),raised)).length,3);
+ await assert.rejects(collectWith(body([1100000,1100000,1100000,1100000]),raised),{code:'LIMIT_EXCEEDED'});
+ assert.equal((await collectWith(body([1100000,1100000,1100000,1100000]),{...raised,totalLimit:6*1024*1024})).length,4);
+});
+test('a raised event limit admits more events while the default stays enforced',async()=>{
+ const raised={frameLimit:8*1024*1024,totalLimit:64*1024*1024,eventLimit:65536};
+ const smallDeltas=10000;
+ assert.equal((await collectWith(new Response('data: {}\n\n'.repeat(smallDeltas)).body,raised)).length,smallDeltas);
+ // A raised event count alone also lifts the bound, within the default totals.
+ assert.equal((await collectWith(new Response('data: {}\n\n'.repeat(smallDeltas)).body,{eventLimit:16384})).length,smallDeltas);
+ // Raised framing alone keeps the default count: the 4097th event fails with
+ // the fixed label and the structured numbers name the bound.
+ await assert.rejects(collectWith(new Response('data: {}\n\n'.repeat(4097)).body,{frameLimit:8*1024*1024,totalLimit:64*1024*1024}),
+  error=>{assert.equal(error.code,'LIMIT_EXCEEDED');assert.match(error.message,/SSE_FRAME:EVENTS/);assert.equal(error.sseCount,4097);assert.equal(error.sseLimit,4096);return true});
+ // Default limits reject the same stream of small deltas outright.
+ await assert.rejects(collectWith(new Response('data: {}\n\n'.repeat(smallDeltas)).body,undefined),
+  error=>{assert.equal(error.code,'LIMIT_EXCEEDED');assert.match(error.message,/SSE_FRAME:EVENTS/);return true});
+});
+test('framing limits only raise: lowering or corrupting them is a programming error',async()=>{
+ for(const limits of [{frameLimit:1024*1024-1},{frameLimit:1.5},{frameLimit:'big'},{totalLimit:4*1024*1024-1},
+   {eventLimit:4096-1},{eventLimit:1.5},{eventLimit:'big'},{eventLimit:65536+1}]){
+  await assert.rejects(collectWith(frame('data: {}'),limits),error=>{assert.equal(error.code,undefined);assert.match(error.message,/framing limits/);return true});
+ }
+ // Limits exactly at the defaults or the cap are valid, and no limits object means defaults.
+ assert.equal((await collectWith(frame('data: {}'),{frameLimit:1024*1024,totalLimit:4*1024*1024,eventLimit:4096})).length,1);
+ assert.equal((await collectWith(frame('data: {}'),{eventLimit:65536})).length,1);
+ assert.equal((await collectWith(frame('data: {}'),undefined)).length,1);
+});

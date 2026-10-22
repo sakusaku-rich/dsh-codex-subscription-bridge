@@ -21,7 +21,7 @@ class SubscriptionAdapter extends LlmAdapter {
     if (provider !== PROVIDER) throw new BridgeError('INPUT_UNSUPPORTED');
     try { const models = await this.bridge.listModels(signal); const found = models.find(entry => entry.id === model);
       if (!found) throw new BridgeError('MODEL_UNAVAILABLE');
-      // The exact-route context is the adapter-declared window the host's
+      // The context exposed here is the adapter-declared window the host's
       // compaction requires; an undisclosed window stays omitted. Reasoning is
       // declared only from the backend's own disclosure, which is what makes the
       // host's effort selector available.

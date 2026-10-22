@@ -11,7 +11,7 @@ const HARNESS_VERSION = '0.2.0-rc.2';
 const PLUGIN_NAME = 'dsh-codex-subscription-bridge';
 // The verification baseline is a fixed leaf set. `overrides` in this script
 // pins the same security-fixed versions the committed verification runtime uses.
-const LEAF_VERSIONS = [['@modelcontextprotocol/client', '2.2.0'], ['@modelcontextprotocol/core', '2.2.0'], ['fflate', '0.8.3']];
+const LEAF_VERSIONS = [['@modelcontextprotocol/client', '2.3.1'], ['@modelcontextprotocol/core', '2.3.1'], ['fflate', '0.8.3']];
 const INSTALL_TIMEOUT = 300_000;
 
 const usage = 'Run node scripts/prepare-release-profile.mjs --directory <absolute new directory> --artifact <downloaded tgz> --checksums <downloaded SHA256SUMS> --tag <vX.Y.Z> --npm-cli <absolute npm-cli.js> --surface <web|desktop>. Its parent must exist.';

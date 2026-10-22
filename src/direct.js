@@ -1,23 +1,25 @@
-import {events} from './sse.js';
+import {events, FRAME_LIMIT, EVENT_LIMIT_CAP} from './sse.js';
 export {events} from './sse.js';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { BridgeError, classified, object, string } from './errors.js';
+import { BridgeError, classified, errorFields, parameterRejection, classifyErrorFields, object, string } from './errors.js';
 import { validateInput, PROVIDER, TOOL_NAME_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, reasoningLevels } from './text.js';
 import { REQUEST_IMAGE_OFFLOAD_MAX_BYTES, REQUEST_IMAGE_OFFLOAD_BYTE_QUANTUM, estimateVisionTokens, imageDataUrl, requestImageTarget } from './image.js';
 import { offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload } from '@deepseek-ai/dsh-llm';
 import { Http, BASE, classifyStatusError, readJson } from './http.js';
 import { accountHeaders, compactionAccount } from './auth.js';
-import { CompactionCapture, compactionScope, inspectCheckpoint, compactPlan, threshold } from './compaction.js';
+import { CompactionCapture, PERCENT_MAX, threshold, requestLimits } from './compaction.js';
+import { compactionScope, inspectCheckpoint, compactPlan, trimOldest } from './compaction.js';
+import { digest, contentDigest } from './hashes.js';
 
 const { name, version } = createRequire(import.meta.url)('../package.json');
 
 /**
  * Stream events the bridge consumes. Everything else in the stream is a
- * notification: it may announce route state, progress, or parts of an item
+ * notification: it may announce backend state, progress, or parts of an item
  * this bridge does not project, and it carries nothing the bridge renders.
  *
- * The subscription route is a live, evolving Responses surface, and the
+ * The subscription backend is a live, evolving Responses surface, and the
  * reference implementation bundled with the verified Harness
  * (`@earendil-works/pi-ai`, `api/openai-responses-shared.js`) dispatches this
  * same event set and has no catch-all that fails an unknown event: only
@@ -37,7 +39,7 @@ const CONSUMED_EVENTS = new Set([
   'response.output_text.delta', 'response.output_text.done',
   'response.output_item.added', 'response.output_item.done', 'response.completed',
 ]);
-// Terminal failures and refusals are fatal: they mean the route reported that
+// Terminal failures and refusals are fatal: they mean the backend reported that
 // it could not produce the answer, which must not be reported as success.
 const TERMINAL_FAILURES = new Set(['error', 'response.failed', 'response.incomplete', 'response.refusal.delta', 'response.refusal.done']);
 function headers(token) {
@@ -45,7 +47,7 @@ function headers(token) {
     'User-Agent': `${name}/${version}`, originator: 'dsh-codex-subscription-bridge' };
 }
 
-/** Map the subscription route's terminal usage record; absent fields stay absent. */
+/** Map the subscription backend's terminal usage record; absent fields stay absent. */
 function responseUsage(value, diagnostic) {
   const wire = object(value);
   const inputTokens = wire.input_tokens, outputTokens = wire.output_tokens;
@@ -136,6 +138,15 @@ export class DirectBridge {
             if (!Number.isSafeInteger(entry.context_window) || entry.context_window <= 0) throw new BridgeError('PROTOCOL_INVALID');
             model.contextWindow = entry.context_window;
           }
+          // The backend's own client derives its compaction limit from a per-model
+          // effective percent, so a disclosed percent is read here. Absence stays
+          // optional and the shipped ratio is the fallback; a malformed disclosed
+          // value fails closed like the window does.
+          if (entry.effective_context_window_percent !== undefined) {
+            if (!Number.isSafeInteger(entry.effective_context_window_percent) ||
+                entry.effective_context_window_percent < 1 || entry.effective_context_window_percent > PERCENT_MAX) throw new BridgeError('PROTOCOL_INVALID');
+            model.effectivePercent = entry.effective_context_window_percent;
+          }
           // The backend also discloses this model's reasoning levels and, when
           // it names one, the default it would apply. Both stay optional so an
           // undisclosed model simply offers no effort selector.
@@ -171,11 +182,7 @@ export class DirectBridge {
     // Project offloaded image occurrences into text placeholders before
     // validation, matching the DeepSeek adapter's projection order.
     const messages = projectOffloadedImages(options.messages, ref => offloadedImageText(ref, this.imageAccess(ref)));
-    // Server-side compaction is always requested. Retained limits admit a
-    // transcript whose covered prefix a checkpoint may replace; the wire window
-    // is still validated below under the ordinary limits.
-    const originalPlan = validateInput({ ...options, messages }, true); string(options.model);
-    let plan = originalPlan;
+    string(options.model);
     const capture = new CompactionCapture(); let scope, compactThreshold;
     const controller = this.controller(options.signal, this.turnTimeoutMs); let response;
     let phase = 'MODEL_CATALOG';
@@ -240,6 +247,20 @@ export class DirectBridge {
       const models = await this.catalog(controller.signal, true);
       const selected = models.find(model => model.id === options.model);
       if (selected === undefined) throw new BridgeError('MODEL_UNAVAILABLE');
+      // The request bound and the compaction threshold come from the same
+      // disclosed window and the same per-model percent, so the model has to be
+      // resolved before validation. Retained limits admit a transcript that may
+      // be trimmed from the oldest end to fit the wire bound below. Trimming
+      // enforces that resource limit; it is not what keeps the request inside the
+      // model window, because the backend compacts a request past the window.
+      const retainedLimits = requestLimits(selected.contextWindow, true, selected.effectivePercent);
+      const wireLimits = requestLimits(selected.contextWindow, false, selected.effectivePercent);
+      // The persisted window bound comes from the same disclosed window as the
+      // threshold. It bounds opaque content the bridge cannot measure in tokens.
+      capture.limit = wireLimits.checkpointBytes;
+      phase = 'INPUT';
+      const originalPlan = validateInput({ ...options, messages }, true, retainedLimits);
+      let plan = originalPlan;
       // The host selects only declared levels, but a direct caller can name any
       // bounded id; a choice the model does not disclose fails closed here.
       if (plan.reasoning !== undefined && !(selected.reasoningLevels ?? []).some(level => level.id === plan.reasoning.effort)) {
@@ -247,17 +268,46 @@ export class DirectBridge {
       }
       const token = await this.own(() => this.auth.token(controller.signal), controller.signal);
       scope = compactionScope(compactionAccount(token), options.model, originalPlan);
-      compactThreshold = threshold(selected.contextWindow);
-      const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope);
+      compactThreshold = threshold(selected.contextWindow, selected.effectivePercent);
+      // The transport framing must stay above the admitted window, not at it:
+      // one compaction item travels inside a single event frame and repeats in
+      // up to three events (added, done and the terminal echo). The window
+      // estimate is the capture bound, so content the capture refuses gently —
+      // an encoding denser than the estimate — still streams and the turn keeps
+      // its answer; framing fails only past twice the estimate. Without a
+      // threshold no compaction item can appear and the default bounds stand.
+      const itemFrame = compactThreshold === undefined ? undefined : 2 * wireLimits.checkpointBytes;
+      // The event count rises with the framing bounds: a long answer streams
+      // many small deltas — including reasoning deltas the bridge does not
+      // forward — and the default 4096-event count fails such a turn before
+      // any text is delivered. The count sizes from the same admitted window
+      // at a conservative 128-byte event envelope estimate, so the admitted
+      // byte budget bounds the count too; the aggregate byte limit stays the
+      // hard backstop for streams of smaller events.
+      const framing = itemFrame === undefined ? undefined
+        : { frameLimit: itemFrame, totalLimit: 3 * itemFrame + 4 * FRAME_LIMIT,
+            eventLimit: Math.min(EVENT_LIMIT_CAP, Math.ceil(itemFrame / 128)) };
+      const checkpoint = compactThreshold === undefined ? {} : inspectCheckpoint(messages, originalPlan, scope, Date.now(), wireLimits.checkpointBytes);
       // A refusal is the model-switch, expiry and edited-history boundary: the
       // opaque state cannot carry over, so the host log names it before the
       // bounded local history is resent on its own.
       if (checkpoint.refusal !== undefined) this.warn(`The encrypted subscription compaction state was refused (${checkpoint.refusal}); resending the bounded local history.`);
       // A selected checkpoint replaces only its exact covered prefix. Otherwise
-      // the retained transcript is revalidated under the ordinary wire limits.
-      if (checkpoint.items !== undefined) plan = compactPlan(originalPlan, checkpoint);
+      // the retained transcript is revalidated under the window-derived wire limits.
+      const fullHistory = () => {
+        const fitted = trimOldest(originalPlan, wireLimits);
+        if (fitted.trimmed > 0) this.warn(`The full history was trimmed from the oldest end (${fitted.trimmed} items) to fit the request bound.`);
+        return fitted;
+      };
+      if (checkpoint.items !== undefined) {
+        plan = compactPlan(originalPlan, checkpoint, wireLimits);
+        // Dropping the oldest covered items is recovery, not refusal: the turn
+        // still runs on a shorter window, matching the official client's behavior
+        // when the window is exceeded while compacting. The log names the count.
+        if (plan.trimmed > 0) this.warn(`The subscription compaction window was trimmed from the oldest end (${plan.trimmed} items) to fit the request bound.`);
+      }
       else {
-        try { plan = validateInput({ ...options, messages }); }
+        try { plan = { ...originalPlan, ...fullHistory() }; }
         catch (error) {
           // Without a reusable checkpoint the full local transcript is the only
           // remaining input; name that boundary instead of the generic shape failure.
@@ -287,81 +337,118 @@ export class DirectBridge {
           return result;
         }, controller.signal);
       };
-      response = await openTurn();
-      // Only an explicit parameter rejection authorizes one bounded full-history retry.
-      // Never retry partial streams, quota/auth failures, or arbitrary upstream errors.
-      if (compactThreshold !== undefined && [400, 422].includes(response.status)) {
-        let rejected = false;
-        try {
-          const body = await this.own(() => readJson(response, 16 * 1024, controller.signal), controller.signal);
-          rejected = body?.error?.param === 'context_management' &&
-            ['unsupported_parameter', 'unknown_parameter'].includes(body.error.code);
-        } catch { if (controller.signal.aborted) throw new BridgeError('ABORTED'); }
-        if (rejected) {
+      let attempt = 0;
+      while (true) {
+        response = await openTurn();
+        // Only an explicit parameter rejection authorizes one bounded full-history
+        // retry, and only before anything was delivered. The endpoint reports it in the
+        // structured error body on this path; the measured path reports it as an SSE
+        // error event, handled below. Both are read only to recognize the fixed code
+        // and the fixed parameter name.
+        if (compactThreshold !== undefined && attempt === 0 && [400, 422].includes(response.status)) {
+          let rejected;
+          try {
+            const body = await this.own(() => readJson(response, 16 * 1024, controller.signal), controller.signal);
+            if (parameterRejection(errorFields(body?.error))) rejected = true;
+          } catch { if (controller.signal.aborted) throw new BridgeError('ABORTED'); }
+          if (rejected) {
+            // A rejected parameter is not resent, so the retry drops it.
+            compactThreshold = undefined;
+            controller.removeBodyAbort?.();
+            await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
+            plan = { ...originalPlan, ...fullHistory() };
+            attempt += 1;
+            continue;
+          }
+        }
+        if (!response.ok) throw await classifyStatusError(response.status, response, controller.signal);
+        // The subscription backend can send valid SSE without an SSE MIME header.
+        // Trust the bounded frame/event parser and terminal state, not Content-Type.
+        phase = 'SSE_FRAME';
+        let rejectedParameter = false;
+        // The retry after a rejected parameter drops the threshold, so it also
+        // drops the raised bounds: no compaction item can arrive on that stream.
+        for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller), compactThreshold === undefined ? undefined : framing)) {
+          try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
+          if (!CONSUMED_EVENTS.has(event.type) && !TERMINAL_FAILURES.has(event.type)) continue;
+          if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
+            phase = event.type.endsWith('.delta') ? 'SSE_TEXT_DELTA' : 'SSE_TEXT_COMPLETION';
+            const block = getBlock(event.item_id, event.content_index);
+            if (block.ended) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
+            let text;
+            if (event.type.endsWith('.delta')) {
+              if (typeof event.delta !== 'string' || Buffer.byteLength(event.delta) > 256 * 1024) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_DELTA');
+              text = event.delta;
+            }
+            else {
+              if (typeof event.text !== 'string' || !event.text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
+              text = event.text.slice(block.text.length);
+            }
+            outputBytes += Buffer.byteLength(text); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
+            if (!block.started) { block.started = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-start', index: block.index, blockType: 'text' }; }
+            if (text) { block.text += text; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'text-delta', index: block.index, text }; }
+            if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
+          } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
+            phase = 'SSE_OUTPUT_ITEM';
+            if (!['message', 'reasoning', 'function_call', 'compaction'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+            if (event.type === 'response.output_item.done') {
+              capture.observe(event);
+              yield* reconcile(event.item);
+            }
+          } else if (event.type === 'response.completed') {
+            phase = 'SSE_TERMINAL';
+            if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
+            if (event.response.output !== undefined && event.response.output !== null) {
+              if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', 'compaction'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
+            }
+            for (const item of event.response.output ?? []) yield* reconcile(item);
+            for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
+            complete = true;
+            if (event.response.usage !== undefined && event.response.usage !== null) { if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'usage', usage: responseUsage(event.response.usage, 'SSE_TERMINAL') }; }
+            if (controller.signal.aborted) throw new BridgeError('ABORTED');
+            const emitted = [...blocks.values()].map(block => block.type === 'tool-call'
+              ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text });
+            const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan, emitted);
+            // A refused checkpoint costs the next turn its replay window, not this
+            // turn's answer, so it is logged rather than raised.
+            if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
+            if (capture.trimmed > 0) this.warn(`The published subscription compaction window was trimmed from the oldest end (${capture.trimmed} items) to fit its bound.`);
+            yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
+          } else if (TERMINAL_FAILURES.has(event.type)) {
+            const fields = errorFields(event.error);
+            // On this backend a rejected parameter arrives as a structured SSE error
+            // event rather than in the HTTP body. Nothing delivered to the host yet is
+            // the boundary that still allows the one bounded retry.
+            if (compactThreshold !== undefined && attempt === 0 && blocks.size === 0 && parameterRejection(fields)) { rejectedParameter = true; break; }
+            throw classifyErrorFields(fields);
+          }
+          // Any other event is a notification the bridge does not project. It is
+          // ignored rather than failing a turn whose answer was already
+          // delivered; the consumed branches above remain the only paths that
+          // can produce text or tool calls.
+          }
+        if (rejectedParameter) {
+          // A rejected parameter is not resent, so the retry drops it. The stream
+          // ended at the error event, so nothing was delivered on this attempt.
+          compactThreshold = undefined;
           controller.removeBodyAbort?.();
           await this.track(Promise.resolve(response.body?.cancel()).catch(() => {}), controller);
-          plan = validateInput({ ...options, messages });
-          compactThreshold = undefined;
-          response = await openTurn();
+          plan = { ...originalPlan, ...fullHistory() };
+          attempt += 1;
+          continue;
         }
+        if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
+        return;
       }
-      if (!response.ok) throw await classifyStatusError(response.status, response, controller.signal);
-      // The subscription backend can send valid SSE without an SSE MIME header.
-      // Trust the bounded frame/event parser and terminal state, not Content-Type.
-      phase = 'SSE_FRAME';
-      for await (const event of events(response.body, controller.signal, promise => this.track(promise, controller))) {
-        try { string(event.type); } catch (error) { throw classified(error, 'SSE_EVENT_TYPE'); }
-        if (!CONSUMED_EVENTS.has(event.type) && !TERMINAL_FAILURES.has(event.type)) continue;
-        if (event.type === 'response.output_text.delta' || event.type === 'response.output_text.done') {
-          phase = event.type.endsWith('.delta') ? 'SSE_TEXT_DELTA' : 'SSE_TEXT_COMPLETION';
-          const block = getBlock(event.item_id, event.content_index);
-          if (block.ended) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
-          let text;
-          if (event.type.endsWith('.delta')) {
-            if (typeof event.delta !== 'string' || Buffer.byteLength(event.delta) > 256 * 1024) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_DELTA');
-            text = event.delta;
-          }
-          else {
-            if (typeof event.text !== 'string' || !event.text.startsWith(block.text)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_TEXT_COMPLETION');
-            text = event.text.slice(block.text.length);
-          }
-          outputBytes += Buffer.byteLength(text); if (outputBytes > 256 * 1024) throw new BridgeError('LIMIT_EXCEEDED');
-          if (!block.started) { block.started = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-start', index: block.index, blockType: 'text' }; }
-          if (text) { block.text += text; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'text-delta', index: block.index, text }; }
-          if (event.type.endsWith('.done')) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
-        } else if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-          phase = 'SSE_OUTPUT_ITEM';
-          if (!['message', 'reasoning', 'function_call', 'compaction'].includes(object(event.item).type)) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-          if (event.type === 'response.output_item.done') {
-            capture.observe(event);
-            yield* reconcile(event.item);
-          }
-        } else if (event.type === 'response.completed') {
-          phase = 'SSE_TERMINAL';
-          if (object(event.response).status !== 'completed') throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
-          if (event.response.output !== undefined && event.response.output !== null) {
-            if (!Array.isArray(event.response.output) || event.response.output.length > 128 || event.response.output.some(item => !['message', 'reasoning', 'function_call', 'compaction'].includes(item?.type))) throw new BridgeError('PROTOCOL_INVALID', 'SSE_OUTPUT_ITEM');
-          }
-          for (const item of event.response.output ?? []) yield* reconcile(item);
-          for (const block of blocks.values()) if (!block.ended) { block.ended = true; if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'block-end', index: block.index, block: { type: 'text', text: block.text } }; }
-          complete = true;
-          if (event.response.usage !== undefined && event.response.usage !== null) { if (controller.signal.aborted) throw new BridgeError('ABORTED'); yield { type: 'usage', usage: responseUsage(event.response.usage, 'SSE_TERMINAL') }; }
-          if (controller.signal.aborted) throw new BridgeError('ABORTED');
-          const replayState = compactThreshold === undefined ? undefined : capture.finish(event.response.output, scope, originalPlan,
-            [...blocks.values()].map(block => block.type === 'tool-call'
-              ? { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments } : { type: 'text', text: block.text }));
-          // A refused checkpoint costs the next turn its replay window, not this
-          // turn's answer, so it is logged rather than raised.
-          if (capture.refusal !== undefined) this.warn(`The subscription compaction checkpoint was not published (${capture.refusal}); the bounded local history is resent.`);
-          yield { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' }, ...(replayState === undefined ? {} : { replayState }) }; return;
-        } else if (TERMINAL_FAILURES.has(event.type)) throw new BridgeError('UPSTREAM_FAILED', 'SSE_TERMINAL');
-        // Any other event is a notification the bridge does not project. It is
-        // ignored rather than failing a turn whose answer was already
-        // delivered; the consumed branches above remain the only paths that
-        // can produce text or tool calls.
-      }
-      if (!complete) throw new BridgeError('PROTOCOL_INVALID', 'SSE_INCOMPLETE');
-    } catch (error) { if (controller.timedOut) throw new BridgeError('TIMEOUT'); if (controller.signal.aborted) throw new BridgeError('ABORTED'); throw classified(error, phase); }
+    } catch (error) {
+      if (controller.timedOut) throw new BridgeError('TIMEOUT');
+      if (controller.signal.aborted) throw new BridgeError('ABORTED');
+      const failed = classified(error, phase);
+      // A resource-limit failure carries only structured numbers; the owner's
+      // log names the bound they hit, with no request or response content.
+      if (failed.sseLimit !== undefined) this.warn(`${failed.message} (${failed.sseCount} of ${failed.sseLimit} in the admitted window.)`);
+      throw failed;
+    }
     finally { controller.abort(); controller.removeBodyAbort?.(); await this.track(Promise.resolve(response?.body?.cancel()).catch(() => {}), controller); controller.release(); }
   }
   /** Read referenced image versions and enforce the aggregate offload budget. */

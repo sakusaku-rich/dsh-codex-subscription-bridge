@@ -8,14 +8,15 @@ const messages = Object.freeze({
   // optional reset hint below is the only message part derived from upstream
   // data, and it is a validated integer, never upstream text.
   QUOTA: 'The ChatGPT plan usage limit was reached.',
-  UNSUPPORTED_OPTION: 'The request option is not supported by this subscription route.',
+  UNSUPPORTED_OPTION: 'The request option is not supported by this subscription endpoint.',
   PLATFORM_UNSUPPORTED: 'This bridge currently supports macOS only.',
   NODE_VERSION_UNSUPPORTED: 'Use Node.js 22 >=22.23.3 or the supported Electron 44.0.0 Desktop host.',
   CONFIG_INVALID: 'The bridge configuration is invalid.',
-  INPUT_UNSUPPORTED: 'The conversation does not match the bounded request shape this subscription route accepts.',
+  INPUT_UNSUPPORTED: 'The conversation does not match the bounded request shape this subscription endpoint accepts.',
   COMPACTION_UNAVAILABLE: 'The encrypted server-side compaction state cannot be reused, and the full conversation is too large to send. Start a new conversation.',
-  UNSUPPORTED_CONTENT: 'The conversation contains content this subscription route cannot carry.',
-  IMAGE_OFFLOAD_REQUIRED: 'The conversation images exceed the subscription route request image budget. The oldest conversation images must be offloaded before retrying.',
+  CONTEXT_LIMIT: 'The conversation is larger than the context this subscription model can carry. Start a new conversation.',
+  UNSUPPORTED_CONTENT: 'The conversation contains content this subscription endpoint cannot carry.',
+  IMAGE_OFFLOAD_REQUIRED: 'The conversation images exceed the image budget for a single subscription request. The oldest conversation images must be offloaded before retrying.',
   MODEL_UNAVAILABLE: 'The selected subscription model is unavailable.',
   PROTOCOL_INVALID: 'The subscription service returned an unsupported protocol message.',
   UPSTREAM_FAILED: 'The subscription service request failed.',
@@ -25,8 +26,9 @@ const messages = Object.freeze({
   CLOSED: 'The bridge is closed.',
 });
 const diagnostics = new Set([
-  'COMPACTION', 'HTTP_REQUEST', 'HTTP_JSON_BODY', 'MODEL_CATALOG', 'AUTH_REFRESH',
-  'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_EVENT_TYPE',
+  'INPUT', 'COMPACTION', 'HTTP_REQUEST', 'HTTP_JSON_BODY', 'MODEL_CATALOG', 'AUTH_REFRESH',
+  'AUTH_REFRESH_UNCERTAIN', 'SSE_FRAME', 'SSE_FRAME:FRAME', 'SSE_FRAME:TOTAL', 'SSE_FRAME:EVENTS',
+  'SSE_EVENT_TYPE',
   'SSE_TEXT_DELTA', 'SSE_TEXT_COMPLETION',
   'SSE_OUTPUT_ITEM', 'SSE_TOOL_CALL', 'SSE_TERMINAL', 'SSE_INCOMPLETE',
   'TOOL_INPUT', 'IMAGE_PREPARE', 'IMAGE_OFFLOAD', 'STOP', 'TEMPERATURE', 'MAX_TOKENS',
@@ -53,6 +55,12 @@ export class BridgeError extends Error {
     this.offloadImages = extras !== null && typeof extras === 'object' &&
       Number.isSafeInteger(extras.offloadImages) && extras.offloadImages > 0 ? extras.offloadImages : undefined;
     this.resetMinutes = resetMinutes;
+    // Structured SSE resource-limit numbers stay out of the fixed message: the
+    // label above names the bound, and the owner's log receives the numbers.
+    this.sseCount = extras !== null && typeof extras === 'object' &&
+      Number.isSafeInteger(extras.sseCount) && extras.sseCount > 0 ? extras.sseCount : undefined;
+    this.sseLimit = extras !== null && typeof extras === 'object' &&
+      Number.isSafeInteger(extras.sseLimit) && extras.sseLimit > 0 ? extras.sseLimit : undefined;
   }
 }
 /** Reconstruct from fixed code/label allowlists; never trust a mutable message. */
@@ -60,13 +68,33 @@ export function classified(error, diagnostic) {
   const safe = error instanceof BridgeError ? error : undefined;
   return new BridgeError(safe ? safe.code : 'UPSTREAM_FAILED',
     safe && diagnostics.has(safe.diagnostic) ? safe.diagnostic : diagnostic,
-    safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes } : undefined);
+    safe ? { offloadImages: safe.offloadImages, resetMinutes: safe.resetMinutes,
+      sseCount: safe.sseCount, sseLimit: safe.sseLimit } : undefined);
 }
 export const failure = (error) => {
   const safe = classified(error);
   return { code: safe.code, message: safe.message,
     ...(safe.offloadImages === undefined ? {} : { offloadImages: safe.offloadImages }) };
 };
+/**
+ * Read the structured fields of a subscription error body. Only fixed codes and
+ * the fixed parameter name are recognized; upstream message text is never kept,
+ * so the fixed messages above remain the only user-visible text.
+ */
+const FIELD_LIMIT = 256;
+export function errorFields(error) {
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
+  const field = value => typeof value === 'string' && Buffer.byteLength(value) <= FIELD_LIMIT ? value : '';
+  return { code: field(error.code), type: field(error.type), param: field(error.param) };
+}
+// The only parameter the bridge may drop and resend without.
+export const REJECTED_PARAMETER = 'context_management';
+const PARAM_REJECTION_CODES = new Set(['unsupported_parameter', 'unknown_parameter']);
+export const parameterRejection = fields => fields.param === REJECTED_PARAMETER && PARAM_REJECTION_CODES.has(fields.code);
+// Structured context-limit codes the subscription endpoint reports.
+const CONTEXT_LIMIT_CODES = new Set(['context_length_exceeded']);
+export const classifyErrorFields = fields => new BridgeError(
+  CONTEXT_LIMIT_CODES.has(fields.code || fields.type) ? 'CONTEXT_LIMIT' : 'UPSTREAM_FAILED', 'SSE_TERMINAL');
 export function object(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BridgeError('PROTOCOL_INVALID');
   return value;

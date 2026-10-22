@@ -16,7 +16,7 @@ assert.equal(manifest.name, '@deepseek-ai/dsh'); assert.equal(manifest.version, 
 for (const [name, version] of [['cordis', '4.0.4'], ['dsh-llm', '0.2.0-rc.2']]) {
   assert.equal(JSON.parse(await readFile(join(modules, '@deepseek-ai', name, 'package.json'), 'utf8')).version, version);
 }
-for (const [name, version] of [['@modelcontextprotocol/client', '2.2.0'], ['@modelcontextprotocol/core', '2.2.0'], ['fflate', '0.8.3']]) {
+for (const [name, version] of [['@modelcontextprotocol/client', '2.3.1'], ['@modelcontextprotocol/core', '2.3.1'], ['fflate', '0.8.3']]) {
   assert.equal(JSON.parse(await readFile(join(modules, name, 'package.json'), 'utf8')).version, version, 'Use the locked security-fixed verification runtime.');
 }
 // The opt-in preset mirrors the pinned Harness composition, and this runtime is
