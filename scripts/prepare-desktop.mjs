@@ -12,7 +12,7 @@ const executable = join(app, 'Contents/MacOS/DeepSeek Harness');
 const resources = join(app, 'Contents/Resources');
 const modules = join(resources, 'app.asar/dsh/node_modules');
 const facts = JSON.parse(execFileSync(executable, ['-p', `JSON.stringify({versions:process.versions,app:require(${JSON.stringify(join(resources, 'app.asar/package.json'))}),cordis:require(${JSON.stringify(join(modules, '@deepseek-ai/cordis/package.json'))}).version,llm:require(${JSON.stringify(join(modules, '@deepseek-ai/dsh-llm/package.json'))}).version})`], { env: { ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] }));
-if (facts.app.version !== '0.2.0-rc.2' || facts.versions.node !== '24.18.1' || facts.versions.electron !== '44.0.0' || facts.cordis !== '4.0.4' || facts.llm !== '0.2.0-rc.2') throw new Error('The installed Desktop does not match the verified host.');
+if (facts.app.version !== '0.2.1-rc.2' || facts.versions.node !== '24.21.0' || facts.versions.electron !== '44.7.0' || facts.cordis !== '4.0.5' || facts.llm !== '0.2.1-rc.2') throw new Error('The installed Desktop does not match the verified host.');
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
 execFileSync(process.execPath, [join(repo, 'scripts/prepare-profile.mjs'), ...args], { env: process.env, stdio: 'pipe', timeout: 45000 });
 const harness = join(root, 'harness'); const profile = join(harness, 'profiles/desktop');

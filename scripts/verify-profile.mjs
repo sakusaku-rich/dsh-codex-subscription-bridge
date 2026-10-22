@@ -12,8 +12,8 @@ if (!cli || !isAbsolute(cli) || !npmCli || !isAbsolute(npmCli)) throw new Error(
 const runtime = dirname(dirname(await realpath(cli)));
 const modules = dirname(dirname(runtime));
 const manifest = JSON.parse(await readFile(join(runtime, 'package.json'), 'utf8'));
-assert.equal(manifest.name, '@deepseek-ai/dsh'); assert.equal(manifest.version, '0.2.0-rc.2');
-for (const [name, version] of [['cordis', '4.0.4'], ['dsh-llm', '0.2.0-rc.2']]) {
+assert.equal(manifest.name, '@deepseek-ai/dsh'); assert.equal(manifest.version, '0.2.1-rc.2');
+for (const [name, version] of [['cordis', '4.0.5'], ['dsh-llm', '0.2.1-rc.2']]) {
   assert.equal(JSON.parse(await readFile(join(modules, '@deepseek-ai', name, 'package.json'), 'utf8')).version, version);
 }
 for (const [name, version] of [['@modelcontextprotocol/client', '2.3.1'], ['@modelcontextprotocol/core', '2.3.1'], ['fflate', '0.8.3']]) {

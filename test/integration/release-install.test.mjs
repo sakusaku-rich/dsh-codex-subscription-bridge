@@ -71,7 +71,7 @@ function installedDesktopExecutable() {
   const marked = /\{.*\}/u.exec(line.slice('FACTS'.length));
   if (marked === null) return undefined;
   const facts = JSON.parse(marked[0]);
-  return facts.version === '0.2.0-rc.2' && facts.electron === '44.0.0' && facts.node === '24.18.1' ? executable : undefined;
+  return facts.version === '0.2.1-rc.2' && facts.electron === '44.7.0' && facts.node === '24.21.0' ? executable : undefined;
 }
 
 test('release installer refuses an unknown surface', { timeout: 60_000 }, async () => {
@@ -100,8 +100,8 @@ test('release installer prepares a signed-out Desktop profile from the released 
     // verifies, and records the host pair rather than a runtime copy.
     const manifest = JSON.parse(await readFile(join(target, 'manifest.json'), 'utf8'));
     assert.equal(manifest.surface, 'desktop');
-    assert.equal(manifest.electron, '44.0.0');
-    assert.equal(manifest.hostNode, '24.18.1');
+    assert.equal(manifest.electron, '44.7.0');
+    assert.equal(manifest.hostNode, '24.21.0');
     assert.equal(manifest.release, TAG);
     assert.equal(manifest.sha256, packageDigest);
     assert.equal(manifest.workingTreeMayContainChanges, false);
@@ -165,7 +165,7 @@ test('release installer verifies a synthetic release and prepares a signed-out p
     // installer, it states that no working tree contributed to the artifact.
     assert.deepEqual(JSON.parse(await readFile(join(target, 'manifest.json'), 'utf8')), {
       schema: 1, source: 'release', release: TAG, package: PACKAGE_ASSET, sha256: packageDigest,
-      node: process.versions.node, harness: '0.2.0-rc.2', workingTreeMayContainChanges: false,
+      node: process.versions.node, harness: '0.2.1-rc.2', workingTreeMayContainChanges: false,
     });
 
     // Preparation is signed out: doctor reports a missing store and no

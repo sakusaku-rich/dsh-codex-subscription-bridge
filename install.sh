@@ -44,7 +44,7 @@ Options:
   --tag <vX.Y.Z>          The released tag to install. Required.
   --surface <web|desktop> Which verified host to target. Defaults to web.
                           Desktop requires the installed DeepSeek Harness
-                          Desktop 0.2.0-rc.2 at /Applications and uses its own
+                          Desktop 0.2.1-rc.2 at /Applications and uses its own
                           Electron host; a different build is refused.
 
 Exactly one of --directory or --profile is required.

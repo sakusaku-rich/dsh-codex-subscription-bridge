@@ -7,7 +7,10 @@ import { assetName, createDigest, digestMatches, expectedDigest, parseChecksums,
 
 assertNodeVersion(); assertPlatform();
 
-const HARNESS_VERSION = '0.2.0-rc.2';
+const HARNESS_VERSION = '0.2.1-rc.2';
+const CORDIS_VERSION = '4.0.5';
+const DESKTOP_NODE = '24.21.0';
+const DESKTOP_ELECTRON = '44.7.0';
 const PLUGIN_NAME = 'dsh-codex-subscription-bridge';
 // The verification baseline is a fixed leaf set. `overrides` in this script
 // pins the same security-fixed versions the committed verification runtime uses.
@@ -175,8 +178,8 @@ async function installedDesktop() {
   const facts = JSON.parse(execFileSync(executable, ['-p', probe], {
     env: { ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
   }));
-  if (facts.app.version !== HARNESS_VERSION || facts.versions.electron !== '44.0.0' || facts.versions.node !== '24.18.1' ||
-      facts.cordis !== '4.0.4' || facts.llm !== HARNESS_VERSION) {
+  if (facts.app.version !== HARNESS_VERSION || facts.versions.electron !== DESKTOP_ELECTRON || facts.versions.node !== DESKTOP_NODE ||
+      facts.cordis !== CORDIS_VERSION || facts.llm !== HARNESS_VERSION) {
     throw new Error('The installed Desktop does not match the verified host pair; refusing to prepare a Desktop profile.');
   }
   return { executable, version: facts.app.version, electron: facts.versions.electron, node: facts.versions.node, buildCommit: facts.app.dshBuildCommit };
