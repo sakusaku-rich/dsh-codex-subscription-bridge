@@ -4,7 +4,7 @@ How this provider talks to the Codex subscription backend, and the guarantees th
 
 ## Public surface
 
-The provider registers as `codex-subscription` and accepts no configuration. Any key fails with `CONFIG_INVALID`. No token, endpoint or `.env` credential location is accepted. It declares `maxRetries: 0`, so a failed turn is reported rather than retried silently. Models come from the account's live catalog with each entry's disclosed context window and reasoning levels. Every model declares `inputModalities: ['text', 'image']`.
+The provider registers as `codex-subscription` and accepts no configuration. Any key fails with `CONFIG_INVALID`. No token, endpoint or `.env` credential location is accepted. It declares `maxRetries: 0`, so a failed turn is reported rather than retried silently. The only internal retry is the single bounded full-history resend after an explicit `context_management` parameter rejection, and only while nothing has been delivered to the host. Models come from the account's live catalog with each entry's disclosed context window and reasoning levels. Every model declares `inputModalities: ['text', 'image']`.
 
 ## Request flow
 
@@ -48,11 +48,11 @@ Terminal usage maps Responses' inclusive `input_tokens` to Harness' disjoint pro
 
 ## Server-side compaction
 
-Server-side compaction is always requested when the selected model discloses a usable context window. The request carries `context_management` with a threshold of `floor(contextWindow × effectivePercent)`. `effectivePercent` is the catalog-disclosed per-model value. The shipped 95% is the fallback for an undisclosed model. The request byte bound is derived from the same window and percent, so the model catalog lookup runs before validation.
+Server-side compaction is always requested when the selected model discloses a usable context window. The request carries `context_management` with a threshold of `floor(contextWindow × effectivePercent / 100)`. `effectivePercent` is the catalog-disclosed per-model value, an integer from 1 to 100, so it is divided by 100 to get the ratio. The shipped 95% is the fallback for an undisclosed model. The request byte bound is derived from the same window and percent, so the model catalog lookup runs before validation.
 
-The backend requires `store: false` and rejects `previous_response_id`, so the backend holds no conversation and every turn's input is bounded by the bridge.
+The backend requires `store: false` and rejects `previous_response_id`, so no server-side conversation is stored or chained and every turn's input is bounded by the bridge.
 
-The compaction window lives in Harness replay metadata as the bounded wire items the backend returned for one turn. A turn reuses only a window it can prove. A window that cannot be proven is refused rather than trusted and named in the host log. The turn then sends the full bounded history, trimming the oldest items to fit when it exceeds the wire bounds. A tool call and its executed result are dropped as one unit. An image occurrence is never dropped because the host owns the attachment store. A history with nothing left to trim fails with `COMPACTION_UNAVAILABLE`. An explicit unsupported-parameter rejection retries once with the bounded full history.
+The compaction window lives in Harness replay metadata as the bounded wire items the backend returned for one turn. A turn reuses only a window it can prove. A window that cannot be proven is refused rather than trusted and named in the host log. The turn then sends the full bounded history, trimming the oldest items to fit when it exceeds the wire bounds. A tool call and its executed result are dropped as one unit. An image occurrence is never dropped because the host owns the attachment store. A history with nothing left to trim fails with `INPUT_UNSUPPORTED`; only the full-history path after an explicit window refusal reports that failure as `COMPACTION_UNAVAILABLE`. An explicit unsupported-parameter rejection retries once with the bounded full history.
 
 Harness local summaries and token accounting are unchanged by default. The opt-in preset that replaces them for this provider is described in [the installation guide](INSTALL.md#consolidate-on-server-side-compaction-opt-in). The client plugin marks the issuing turn in the chat from the assistant message's client-visible replay metadata. [The compaction contract](COMPACTION.md) owns the request shape, binding, wire bounds, refusal labels and remaining limits.
 
@@ -82,12 +82,14 @@ The following bounds are enforced.
 | --- | --- |
 | Owned operations | 4 concurrent, including cancellation cleanup |
 | Deadlines | Discovery 30 seconds, turn 120 seconds, JSON request timeout 15 seconds |
-| JSON/event frames | 1 MiB |
-| Aggregate SSE | 4 MiB aggregate, 4096 frames; with a disclosed compaction window the frames and the count rise with the framing limits, the count sized at a 128-byte envelope estimate and capped at 65536 |
+| JSON/event frames | 1 MiB default; a stream that requests compaction raises the event frame to twice the window bound |
+| Aggregate SSE | 4 MiB aggregate and 4096 events by default; with compaction requested the aggregate is three times the raised frame plus the default frame, and the event count is derived from the same frame at a 128-byte envelope estimate, capped at 65536 |
 | Output text | 128 blocks, 256 KiB |
-| Input messages | 1024, at most 64 blocks per non-tool message |
+| Input items | 1024 wire items, at most 64 blocks per non-tool message; the retained transcript is bounded to 4096 items |
 | Tool passthrough | 256 definitions, 256 KiB aggregate, 64-character names in `[A-Za-z0-9_-]`, 8 KiB descriptions, 64 KiB JSON object parameters, 256-byte `call_id` values, 2 MiB tool outputs, 128 tool-update entries |
-| Images | 4 MiB pixels, 4096-pixel long edge, 1 MiB per encoded image, 20 MiB aggregate base64 with a 10 MiB quantum, 32 MiB attachment sanity check | Input text and tool-history bytes are bounded by the disclosed window expressed at a conservative 8 bytes per token. 256 KiB and 2 MiB are kept as the floor when no window is disclosed. The response-side tool-call bound stays 2 MiB.
+| Images | 4 MiB pixels, 4096-pixel long edge, 1 MiB per encoded image, 20 MiB aggregate base64 with a 10 MiB quantum, 32 MiB attachment sanity check |
+
+Input text and tool-history bytes are bounded by the disclosed window expressed at a conservative 8 bytes per token, with 256 KiB and 2 MiB kept as the floors when no window is disclosed; the response-side tool-call bound stays 2 MiB. With no disclosed window the derived value equals the combined floor, so text and tool history are each bounded by that same 2.25 MiB combined floor. [The compaction contract](COMPACTION.md#bounds) owns the derived budgets.
 
 That bound is a resource limit for one request, not a guard against rejection. The backend compacts a request whose measured count is past the model window. A request past the window in the bridge's byte estimate is therefore sent as it is.
 
@@ -109,7 +111,7 @@ HTTP 429 responses are classified from a bounded error body. A recognized plan u
 
 The hint is the only message part derived from upstream data. Upstream text is never copied into errors.
 
-Image acceptance on the subscription backend, per-model entitlement, and upstream acceptance of `temperature` on the subscription backend are unverified.
+Image acceptance on the subscription backend rests on the owner's reported processed image turn on the installed Desktop runtime, which is a report of use rather than a measured record. Vision-token accounting, per-model entitlement, and upstream acceptance of `temperature` on the subscription backend remain unverified.
 
 Real-account evidence and its limits are recorded in [verification](VERIFICATION.md). Direct connection is not evidence of official third-party service support or absence of vulnerabilities.
 
