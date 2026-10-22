@@ -213,7 +213,7 @@ The code is not an access token. It disappears after cancellation, completion, o
 
 The generated auth helper remains optional for developer/recovery diagnosis. `doctor` does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
 
-The helper exposes `login`, `status`, `doctor`, and `logout`. From a source checkout it is `node src/auth-cli.js <command>`. The packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness.
+The helper exposes `login`, `status`, `doctor`, and `logout`. From a source checkout it is `node lib/auth-cli.js <command>`, after `npm run build`. The packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness.
 
 A Web profile also gets its own `auth.sh`, which passes that profile's HOME explicitly. A Desktop profile has no helper, because the plugin imports host peers that only the application resolves. Sign-in, status and logout happen in the settings panel there.
 
