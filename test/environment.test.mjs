@@ -16,7 +16,7 @@ test('malformed launch snapshots fail closed', () => {
 });
 test('Desktop uses launcher-owned Harness home for its separate credential store', async () => {
   const { authDirectory } = await import('../src/auth.js');
-  assert.equal(authDirectory({ HOME: '/synthetic/shell-home', DSH_HOME: '/synthetic/desktop-harness' }, '44.0.0'), '/synthetic/desktop-harness/.dsh-codex-subscription-bridge');
+  assert.equal(authDirectory({ HOME: '/synthetic/shell-home', DSH_HOME: '/synthetic/desktop-harness' }, '44.7.0'), '/synthetic/desktop-harness/.dsh-codex-subscription-bridge');
   assert.equal(authDirectory({ HOME: '/synthetic/home', DSH_HOME: '/synthetic/harness' }, null), '/synthetic/home/.dsh-codex-subscription-bridge');
-  assert.throws(() => authDirectory({ HOME: '/synthetic/home', DSH_HOME: 'relative' }, '44.0.0'), { code: 'CONFIG_INVALID' });
+  assert.throws(() => authDirectory({ HOME: '/synthetic/home', DSH_HOME: 'relative' }, '44.7.0'), { code: 'CONFIG_INVALID' });
 });

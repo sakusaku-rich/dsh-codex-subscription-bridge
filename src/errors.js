@@ -10,7 +10,7 @@ const messages = Object.freeze({
   QUOTA: 'The ChatGPT plan usage limit was reached.',
   UNSUPPORTED_OPTION: 'The request option is not supported by this subscription endpoint.',
   PLATFORM_UNSUPPORTED: 'This bridge currently supports macOS only.',
-  NODE_VERSION_UNSUPPORTED: 'Use Node.js 22 >=22.23.3 or the supported Electron 44.0.0 Desktop host.',
+  NODE_VERSION_UNSUPPORTED: 'Use Node.js 22 >=22.23.3 or the supported Electron 44.7.0 Desktop host.',
   CONFIG_INVALID: 'The bridge configuration is invalid.',
   INPUT_UNSUPPORTED: 'The conversation does not match the bounded request shape this subscription endpoint accepts.',
   COMPACTION_UNAVAILABLE: 'The encrypted server-side compaction state cannot be reused, and the full conversation is too large to send. Start a new conversation.',
@@ -31,7 +31,7 @@ const diagnostics = new Set([
   'SSE_EVENT_TYPE',
   'SSE_TEXT_DELTA', 'SSE_TEXT_COMPLETION',
   'SSE_OUTPUT_ITEM', 'SSE_TOOL_CALL', 'SSE_TERMINAL', 'SSE_INCOMPLETE',
-  'TOOL_INPUT', 'IMAGE_PREPARE', 'IMAGE_OFFLOAD', 'STOP', 'TEMPERATURE', 'MAX_TOKENS',
+  'TOOL_INPUT', 'IMAGE_PREPARE', 'IMAGE_OFFLOAD', 'IMAGE_TARGET', 'STOP', 'TEMPERATURE', 'MAX_TOKENS',
 ]);
 // Longest reset hint the classifier may derive, in minutes (one week).
 const RESET_MINUTES_LIMIT = 10080;

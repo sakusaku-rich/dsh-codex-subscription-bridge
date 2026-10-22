@@ -11,6 +11,6 @@ test('initial platform contract admits macOS and refuses unverified OSes',async(
 });
 
 test('Desktop admission requires the exact tested Electron and Node pair', () => {
- assert.doesNotThrow(() => assertNodeVersion('24.18.1', '44.0.0'));
- for (const [node, electron] of [['24.18.1', null], ['24.18.1','43.0.0'],['24.21.0','44.0.0'],['24.18.0','44.0.0']]) assert.throws(() => assertNodeVersion(node, electron), {code:'NODE_VERSION_UNSUPPORTED'});
+ assert.doesNotThrow(() => assertNodeVersion('24.21.0', '44.7.0'));
+ for (const [node, electron] of [['24.21.0', null], ['24.21.0','44.0.0'],['24.18.1','44.7.0'],['24.21.1','44.7.0']]) assert.throws(() => assertNodeVersion(node, electron), {code:'NODE_VERSION_UNSUPPORTED'});
 });
