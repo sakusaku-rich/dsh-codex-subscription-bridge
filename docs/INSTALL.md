@@ -84,8 +84,10 @@ sh install.sh --tag v0.0.4 --directory "$PWD/artifacts/subscription-web"
 
 | Surface | Profile | Launcher | Host |
 | --- | --- | --- | --- |
-| `web` (default) | `subscription-web` | `start.sh` | The pinned standalone Node 22.23.3 runtime fetched during preparation. |
+| `web` (default) | `subscription-web` | `start.sh` | The pinned Harness 0.2.0-rc.2 runtime fetched during preparation, run through the Node 22.23.3 executable that ran preparation. |
 | `desktop` | `desktop` | `desktop.sh` | The installed DeepSeek Harness Desktop 0.2.0-rc.2, used with its exact Electron 44.0.0 / Node 24.18.1 pair. |
+
+Preparation does not download Node. It records the Node executable that ran it, so the profile keeps depending on that executable and on the fetched runtime tree.
 
 For a Desktop profile, prepare with `--surface desktop` and start it with the generated `desktop.sh`:
 
@@ -132,7 +134,7 @@ A release carries four assets. The installer bundle is separate from the publish
 - Development tooling in the published package.
 - An existing output directory.
 
-For both install paths the parent directory must exist and the destination must not. The sections below on what preparation creates, how to start and sign in, how to update, and how to remove apply to both paths.
+For the isolated `--directory` install paths the parent directory must exist and the destination must not; `--profile` targets a profile that already exists. The sections below on what preparation creates, how to start and sign in, how to update, and how to remove apply to both paths.
 
 ## Consolidate on server-side compaction (opt-in)
 
@@ -155,7 +157,7 @@ Then optionally set it as the new-task default in **Settings → Agent presets**
 
 Removing the package does not remove that entry, because the installer never writes `cordis.patch.yml`. Delete the line when you uninstall, or the loader reports an unmatched patch entry on every start. An isolated profile needs no cleanup — the whole directory goes away.
 
-The replacement extends the host's stock engine. It delegates every provider except `codex-subscription`; those requests then rely on the encrypted server-side window. Every other preset keeps the stock engine, so other providers are unaffected.
+The replacement extends the host's stock engine. It delegates every other provider to the stock engine; only `codex-subscription` requests rely on the encrypted server-side window. Every other preset keeps the stock engine, so other providers are unaffected.
 
 Before relying on it, confirm all three behaviors after the restart:
 
@@ -168,8 +170,8 @@ Know the failure modes before enabling it:
 - **It depends on a host-internal class.** The module subclasses `@deepseek-ai/dsh-compaction-basic`, which the Harness bundle provides. If a harness upgrade removes or renames that package, the preset fails its activation audit and **only that preset stops composing**. `preset-standard` and the other shipped presets keep working, and the Plugins page shows the row as failed to load. Disable the row to restore the stock behavior.
 - **It mirrors a pinned composition.** The preset copies the shipped standard list. A Harness release that adds, removes or reconfigures a child leaves this copy stale until it is regenerated with `npm run preset:sync`. The profile verification path runs `npm run preset:check` and fails on drift. A release that changes the `compaction` group's shape is the dangerous case. The swap stops applying and double summarization silently returns; the drift check catches this.
 - **A harness upgrade can also soften it.** If the reconciled method changes shape, the override stops applying. The replacement then behaves exactly like the stock engine. Nothing breaks, but server-side consolidation no longer happens.
-- **A window can be refused.** The window belongs to one account, model, instructions and tools. Switching models, resuming the same conversation after 24 hours, or editing history refuses it. The bridge then resends the bounded local history, trimming the oldest items to fit. When nothing is left to drop, the turn fails with `COMPACTION_UNAVAILABLE` and asks for a new conversation. See [the compaction contract](COMPACTION.md).
-- **The persisted window holds opaque encrypted content.** It is the bounded, allowlisted wire items the backend returned for one turn. It is stored in Harness assistant replay metadata and inherits the host session storage/export access boundary. `store: false` means the backend retains no conversation content.
+- **A window can be refused.** The window belongs to one account, model, instructions and tools. Switching models, resuming the same conversation after 24 hours, or editing history refuses it. The bridge then resends the bounded local history, trimming the oldest items to fit. When nothing is left to drop, the turn fails and asks for a new conversation: `INPUT_UNSUPPORTED` on the ordinary path, reported as `COMPACTION_UNAVAILABLE` only after an explicit window refusal. See [the compaction contract](COMPACTION.md).
+- **The persisted window holds opaque encrypted content.** It is the bounded, allowlisted wire items the backend returned for one turn. It is stored in Harness assistant replay metadata and inherits the host session storage/export access boundary. `store: false` requests a turn that stores no conversation content; it is not a guarantee about what the service logs or retains.
 - **The context indicator keeps growing.** Harness prices the retained local surface, not the request this turn appends, so usage display does not reflect the backend conversation.
 
 ## Prepare an isolated profile from a source checkout
@@ -243,4 +245,4 @@ Do not copy old `auth.json` or share a refresh-token copy across installations. 
 3. Review the path and remove only the dedicated profile directory with your file manager. It contains the private HOME, history, workspace, cache, plugin artifact and helpers. Retain any workspace files you need first.
 4. Do not remove a shared checkout/runtime used by other profiles.
 
-No normal Harness profile or Codex authentication store is modified by this guide. Uninstalling is not a guarantee of server-side revocation or forensic erasure.
+Apart from the documented `--profile` path, this guide modifies no normal Harness profile, and it never touches a Codex authentication store. Uninstalling is not a guarantee of server-side revocation or forensic erasure.
