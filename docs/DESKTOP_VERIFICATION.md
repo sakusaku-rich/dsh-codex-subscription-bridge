@@ -2,9 +2,11 @@
 
 ## Scope
 
-macOS Desktop 0.2.0-rc.2, build `5e9e301dd9dc8923b2762f76dacfc5751f6ca851`, uses Electron 44.0.0 / Node 24.18.1 for plugins, not the separate tools Node. The exact pair is admitted after synthetic store/refresh/cancellation/streaming, packaged CLI/SDK, and installed Desktop runtime/profile verification. Full GUI and real subscription behavior still require manual verification. Other Desktop versions and Intel macOS are not claimed as verified, and a different Desktop version requires fresh compatibility verification: do not bypass the host guard or edit a Desktop-bundled runtime.
+macOS Desktop 0.2.1-rc.2, build `332895e0f7c9d4dbfb29729f5eb367fa263ff986`, uses Electron 44.7.0 / Node 24.21.0 for plugins, not the separate tools Node. The exact pair is admitted after synthetic store/refresh/cancellation/streaming, packaged CLI/SDK, and installed Desktop runtime/profile verification. Full GUI and real subscription behavior still require manual verification. Other Desktop versions and Intel macOS are not claimed as verified, and a different Desktop version requires fresh compatibility verification: do not bypass the host guard or edit a Desktop-bundled runtime.
 
-The host bundles Undici 7.29.0. Plugin HTTP instead uses bundled Undici 7.29.1 and an owned Agent; host global fetch and dispatcher are not used. This addresses the plugin's dependency baseline without changing Desktop. It does not fix or establish security of other Electron, Chromium, or Harness features. [Upstream Undici advisory](https://github.com/nodejs/undici/security/advisories/GHSA-rfgv-xxqx-mfg5). [Electron 44.0.0 release](https://releases.electronjs.org/release/v44.0.0).
+The 0.2.0-rc.2 host (Electron 44.0.0 / Node 24.18.1) was the previously verified pair and is no longer admitted: the pinned peers moved to Cordis 4.0.5 and LLM 0.2.1-rc.2, so that build would run the plugin against unpinned runtime. Its earlier checks are kept in [the verification record](VERIFICATION.md#runtime-and-platform-evidence).
+
+The 0.2.1-rc.2 host bundles Undici 7.29.1, the version the plugin pins. Plugin HTTP still runs through its own owned Agent rather than host global fetch or the host dispatcher, so the plugin's dependency baseline does not depend on what the application happens to bundle. It does not fix or establish security of other Electron, Chromium, or Harness features. [Upstream Undici advisory](https://github.com/nodejs/undici/security/advisories/GHSA-rfgv-xxqx-mfg5). [Electron 44.7.0 release](https://releases.electronjs.org/release/v44.7.0).
 
 ## Prepare a separate profile
 
@@ -56,6 +58,6 @@ For the installed application, without real authentication:
 DSH_DESKTOP_EXECUTABLE="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" npm run test:desktop
 ```
 
-This checks the runtime pair, root suite, packaged CLI/SDK synthetic conversation, and a disposable profile against installed Desktop's ASAR runtime resolver. The CI alternative pins Electron 44.0.0 under `verification/desktop`, explicitly runs its checksum-verifying binary downloader, and runs the same host checks. The actual installed-ASAR lane is local only; CI does not have Harness Desktop.
+This checks the runtime pair, root suite, packaged CLI/SDK synthetic conversation, and a disposable profile against installed Desktop's ASAR runtime resolver. The CI alternative pins Electron 44.7.0 under `verification/desktop`, explicitly runs its checksum-verifying binary downloader, and runs the same host checks. The actual installed-ASAR lane is local only; CI does not have Harness Desktop.
 
 For updates, use a new reviewed checkout/artifact and a new directory. After a Desktop update the exact host guard may refuse startup; revalidate instead of bypassing it. Stop the profile, log out in the settings panel (this surface has no helper), and remove only its reviewed dedicated directory when finished. See [troubleshooting](TROUBLESHOOTING.md).
