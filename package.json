@@ -32,13 +32,13 @@
       "default": "./lib/index.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./presets/codex-subscription.patch.yml": "./presets/codex-subscription.patch.yml",
     "./compaction": "./lib/compaction-engine.js",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
-    "lib/types",
     "presets",
     "cordis.patch.yml",
     "client.js",
@@ -109,9 +109,6 @@
   "dependencies": {
     "undici": "7.29.1"
   },
-  "bundledDependencies": [
-    "undici"
-  ],
   "bundleDependencies": [
     "undici"
   ]
