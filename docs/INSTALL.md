@@ -181,6 +181,7 @@ From the reviewed checkout, with the required Node active:
 ```sh
 node --version
 npm ci --ignore-scripts
+npm run build
 npm ci --ignore-scripts --prefix verification/runtime
 mkdir -p artifacts
 npm run prepare:profile -- --directory "$PWD/artifacts/subscription-web"

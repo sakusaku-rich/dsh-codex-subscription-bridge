@@ -22,6 +22,7 @@ From a reviewed checkout, with the standalone Node 22.23.3 used for preparation:
 
 ```sh
 npm ci --ignore-scripts
+npm run build
 npm ci --ignore-scripts --prefix verification/runtime
 mkdir -p artifacts
 npm run prepare:desktop -- --directory "$PWD/artifacts/desktop-verification"

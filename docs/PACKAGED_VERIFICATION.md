@@ -5,6 +5,8 @@
 `verification/runtime` pins Harness CLI 0.2.1-rc.2 and a separate complete lockfile. Install with scripts disabled. The plugin's shipped package does not include this verification runtime or add its dependencies to the host.
 
 ```sh
+npm ci --ignore-scripts
+npm run build
 npm ci --ignore-scripts --prefix verification/runtime
 DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
 ```
