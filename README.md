@@ -89,13 +89,7 @@ To let Codex own condensation for this provider instead, enable the agent preset
 
 Then optionally set "Codex subscription" as the new-task default in **Settings → Agent presets**.
 
-Before enabling it, know that:
-
-- Only this provider's behavior changes. Every other provider, and every other preset, keeps the stock engine.
-- The preset subclasses a host-internal class. It also mirrors the pinned Harness composition. A Harness upgrade can therefore stop that one preset from composing, or leave the mirror stale.
-  The dangerous case is a reshaped `compaction` group, which silently restores double summarization.
-  [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records those failure modes, the checks to run after restarting, and how a source checkout detects drift.
-- Delete that line when you remove the package, as [the installation guide](docs/INSTALL.md#remove-this-dedicated-installation) explains.
+Before enabling it, know that only this provider's behavior changes — every other provider, and every other preset, keeps the stock engine — and that the preset subclasses a host-internal class and mirrors the pinned Harness composition, so a Harness upgrade can stop that one preset from composing or leave the mirror stale. [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records the failure modes, the checks to run after restarting, and how a source checkout detects drift. Delete that line when you remove the package.
 
 ## What the provider sends and enforces
 
@@ -116,7 +110,7 @@ This is an experimental prototype.
 
 Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition.
 
-Real-account evidence covers sign-in, multi-turn generation, more than nine hundred forwarded tool calls, the disclosed reasoning levels, and server-side compaction issuance, reuse and model-switch handling.
+Real-account evidence covers sign-in, multi-turn generation, tool passthrough, the disclosed reasoning levels, and server-side compaction issuance, reuse and model-switch handling.
 
 [The verification record](docs/VERIFICATION.md#real-account-evidence-and-limits) records exactly what is confirmed and what remains unverified. Do not treat this prototype as a completed security audit.
 

@@ -1,6 +1,6 @@
 # Authentication panel design
 
-The panel is the settings card the bundled client registers as `settings.section`; it is the supported in-Harness way to sign in, read status and log out on the Web and Desktop surfaces. The authentication CLI is the supported non-UI equivalent on the standalone Web surface only: a Desktop profile has no working helper, because the plugin imports host peers that only the application's profile boot resolves.
+The panel is the settings card the bundled client registers as `settings.section`; it is the supported in-Harness way to sign in, read status and log out on the Web and Desktop surfaces. The authentication CLI is the supported non-UI equivalent on the standalone Web surface only; [the Desktop guide](DESKTOP_VERIFICATION.md) records why a Desktop profile has no helper.
 
 ## Surface and gating
 

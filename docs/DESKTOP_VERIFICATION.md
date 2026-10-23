@@ -32,7 +32,7 @@ The new directory must not exist. Both paths verify the installed application at
 
 The prepared directory records package integrity and Desktop build; the release path records the release tag and verified digest instead of a commit. Both surfaces list the web application bundle, because the Desktop host reads `ctx.connection` and `ctx.webServer` while booting, before any profile is served. `desktop.sh` runs the normal GUI. No login or GUI is automatically started by preparation.
 
-Neither preparation path writes an `auth.sh` for a Desktop profile. An earlier revision did, and it never worked reliably: it launched the plugin directly rather than through the application's profile boot, so the host peers the plugin imports were resolved only by Node's ordinary directory walk. A profile that happened to sit under a tree also containing those peers made the helper appear to work, which is why the failure looked intermittent.
+Neither preparation path writes an `auth.sh` for a Desktop profile: the helper launches the plugin directly rather than through the application's profile boot, so the host peers the plugin imports resolve only by Node's ordinary directory walk, which is why it cannot work there.
 
 The helper is not replaced, because the application already provides everything it offered: sign-in, status and logout are in the settings panel, which is the supported path for every Desktop profile. The Web surface keeps its helper, since that profile carries its own runtime and the helper resolves correctly there. Use the in-app panel for Desktop diagnosis.
 
