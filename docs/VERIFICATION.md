@@ -8,6 +8,7 @@ Use Node 22.23.3 on macOS and the committed lockfiles:
 
 ```sh
 npm ci --ignore-scripts
+npm run build
 npm ci --ignore-scripts --prefix verification/runtime
 npm run verify
 npm run test:install
@@ -33,6 +34,8 @@ npm audit --audit-level=low --prefix verification/runtime
 | An adapter protocol or transport failure | `npm run verify` (root suite) |
 
 The `test:profile`, `test:auth-ui` and `test:desktop` rows need the pinned runtimes installed by the commands above: the first two use `verification/runtime`, and without it they fail to resolve `@deepseek-ai/dsh` rather than reporting a real defect. The `test:desktop` lane requires the pinned `verification/desktop` Electron package (or an explicit executable) and runs the root suite on the Desktop host. The Desktop release surface is covered independently by `test:release-install`, which drives the installed application's own resolver.
+
+Every test file imports the compiled modules under `lib/`, so a single-file check such as the first row reports the current source only after `npm run build` has run.
 
 The root suite uses the small pinned Cordis/LLM peer dependency tree. The separate installation and profile checks require the full locked Harness 0.2.1-rc.2 runtime. All automated authentication and service fixtures are synthetic and disposable. Tests never import existing Codex credentials or send real model requests.
 
@@ -306,7 +309,7 @@ The pinned Harness moved from 0.2.0-rc.2 to 0.2.1-rc.2, and the old pair was dro
 
 Two contract changes reached the bridge. `LlmAdapter.imageRequestTarget(_provider, _model, image)` is a new adapter hook whose base default reports the normalized source; because the bridge resizes user images before serializing them, that default would describe a different image than the one sent, so the adapter now returns the same projection `src/image.ts` uses (4 MiB pixel budget, 4096 long edge, 1 MiB request cap) and a test asserts the reported target matches the serialized image for both an in-budget and an over-budget image. `IMAGE_TARGET` was added to the diagnostics set. `INVARIANT` is no longer part of the error-code set, so the bridge no longer emits it.
 
-`nativeAuth` is reported through the configurable-provider directory, not through provider info: `LlmProviderInfo` carries `id` and `name` alone, so the bridge declares one directory entry for its own route with `nativeAuth: { env: [], oauth: true }` and `declared: false`. The entry names the bridge's profile entry id as its settings namespace while the bridge declares no Config schema, and the settings service skips an entry whose schema has no live field, so the route stays visible in pickers without a settings row. That is the intended shape: the bridge has nothing configurable, and any non-empty configuration is still refused as `CONFIG_INVALID`. `test/package.test.mjs` asserts the entry as declared and that it is withdrawn with the fiber. How the Models settings page renders this entry on the 0.2.1-rc.2 host is not verified.
+`nativeAuth` is reported through the configurable-provider directory, not through provider info: `LlmProviderInfo` carries `id` and `name` alone, so the bridge declares one directory entry for its own route with `nativeAuth: { env: [], oauth: true }` and `declared: false`. The entry names the bridge's profile entry id as its settings namespace while the bridge declares no Config schema, and the settings service skips an entry whose schema has no live field, so the route stays visible in pickers without a settings row. That is the intended shape: the bridge has nothing configurable, and any non-empty configuration is still refused as `CONFIG_INVALID`. The namespace is the bridge's profile entry id in `cordis.patch.yml`, and the two have to stay identical: the bridge registers no settings namespace of its own, so that entry is the only name the settings surface has for the route. `test/package.test.mjs` asserts the entry as declared and that it is withdrawn with the fiber. How the Models settings page renders this entry on the 0.2.1-rc.2 host is not verified.
 
 The installed-ASAR lane needed one change for the Connection contract: `createSharedFetchHandler(channel).fetch(request, peer)` now takes the caller's Peer and refuses a non-owner principal, so the fixture supplies an owner peer. The bundled pnpm also moved to `Contents/Resources/runtime/primary-runtime/dependencies/pnpm/bin/pnpm.cjs`; the finder resolves the new path, and the runtime manifest still names 11.28.5, which the bundled binary reports.
 
@@ -318,13 +321,13 @@ Not verified on this host: full GUI launch, real sign-in, refresh and revocation
 
 ### Package shape (2026-10-23)
 
-The sources moved to TypeScript under `src/`, and the package now ships the compiled per-module output under `lib/` with declarations under `lib/types/`, which is the shape official Harness packages publish: `main` and `types`, an exports map with a `types` condition and a `./package.json` export, and a `files` list limited to shipped artifacts. `client.js` stays plain JavaScript because it is a browser module loaded through `window.__ModuleLoader__` with a React dependency that this package does not own.
+The sources moved to TypeScript under `src/`, and the package now ships the compiled per-module output under `lib/` with declarations under `lib/types/`, which is the shape official Harness packages publish: `main` and `types`, an exports map with a `types` condition, a `./package.json` export, and every patch path the bundle names, and a `files` list limited to shipped artifacts. `client.js` stays plain JavaScript because it is a browser module loaded through `window.__ModuleLoader__` with a React dependency that this package does not own.
 
 The toolchain is development-only and pinned to `typescript` 7.0.2 and `@types/node` 22.20.5, the newest 22.x line so the declared types stay at the Node 22.23.3 baseline rather than the Electron host's newer runtime. No tool with an install script was added, so CI's `--ignore-scripts` still resolves the tree.
 
-The conversion was checked by comparing every compiled module against the pre-conversion source. After normalising comments and whitespace the only differences are added class field declarations, identifier aliases and parenthesised casts. Seven `any` sites remain, each commented: the host `Agent` type and the image attachment reference type are not re-exported by the pinned peers, and the base compaction class constructor signature cannot be named from this package.
+The conversion was checked by comparing every compiled module against the pre-conversion source. After normalising comments and whitespace the only differences are added class field declarations, identifier aliases and parenthesised casts. Six `any` sites remain, each commented: the host `Agent` type and the image attachment reference type are not re-exported by the pinned peers, and the base compaction class constructor signature cannot be named from this package.
 
-Consumers moved with the sources: 63 import paths across tests and scripts, the check script gained a compiler step, the release asset stages `lib/runtime.js` and `lib/errors.js`, `bin` points at `lib/auth-cli.js`, and the installed-ASAR lane resolves package modules through `lib/`.
+Consumers moved with the sources: 63 import paths across tests and scripts, the check script gained a compiler step that resolves the compiler through the installed package rather than a fixed path, the release asset stages `lib/runtime.js` and `lib/errors.js`, `bin` points at `lib/auth-cli.js`, and the installed-ASAR lane resolves package modules through `lib/`.
 
 Verified on 2026-10-23 with the toolchain above: the compiler reports no errors, the 145-test root suite passes, and the installation, release-install, packaged profile, profile-install, auth UI HTTP and installed-ASAR Desktop lanes all pass on Node 22.23.3. The packaged profile lane resolves the plugin entry through the new exports map, so the map is exercised rather than only asserted. Not verified: how the Desktop settings page renders the package, and whether a real GUI session loads the compiled entry through the plugin loader.
 
