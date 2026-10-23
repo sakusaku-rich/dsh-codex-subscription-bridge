@@ -38,6 +38,10 @@ test('real Harness service registers the guarded provider and disposes it', asyn
       settingsNs: 'llm-codex-subscription', settingsPath: [], declared: false,
       nativeAuth: { env: [], oauth: true },
     }]);
+    // The namespace is the profile entry id the shipped patch declares, because the
+    // bridge registers no settings namespace of its own; the two cannot drift apart.
+    const patchId = (await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')).match(/- id: (\S+)/u)[1];
+    assert.equal(ctx.llm.listConfigurableProviders()[0].settingsNs, patchId, 'the settings namespace must match the profile entry id');
     await assert.rejects(ctx.llm.listModels('codex-subscription'), { code: 'AUTH_REQUIRED' });
     const chunks = [];
     for await (const chunk of ctx.llm.stream({ provider: 'codex-subscription', model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic message' }] }] })) chunks.push(chunk);
