@@ -557,7 +557,13 @@ export class DirectBridge {
       return { visualTokens: estimateVisionTokens(target.width, target.height), text: requestImageHandleText(ref, target, this.imageAccess(ref)) };
     }) };
   }
-  /** Report the projection the request serializer uses, so host consumers measure the same image. */
+  /**
+   * Report the projection the request serializer uses, so host consumers measure
+   * the same image. A reference the bridge cannot validate fails closed here
+   * instead of reporting the normalized source the way the base hook does: the
+   * serializer would refuse that same reference at input validation, so a target
+   * for it could only describe an image this route never sends.
+   */
   imageRequestTarget(_provider: string, model: string, image: ImageRef): ImageDimensions & { maxBytes: number } {
     string(model);
     const ref = object(image) as ImageRef;
