@@ -267,13 +267,23 @@ test('starting the node without a checkpoint is refused', () => {
   f.disposers.forEach((dispose) => dispose());
 });
 
-test('the marker renders as a note element', () => {
+test('the marker renders as a div', () => {
   const f = fixture();
   const view = f.registrations.find((entry) => entry.options.name === 'conversation.chat.node').view;
 
   const element = view({ node: { data: { items: 2, model: 'gpt-6-luna' } } });
 
   assert.equal(element.type, 'div');
+
+  f.disposers.forEach((dispose) => dispose());
+});
+
+test('the marker carries the note role', () => {
+  const f = fixture();
+  const view = f.registrations.find((entry) => entry.options.name === 'conversation.chat.node').view;
+
+  const element = view({ node: { data: { items: 2, model: 'gpt-6-luna' } } });
+
   assert.equal(element.props.role, 'note');
 
   f.disposers.forEach((dispose) => dispose());
