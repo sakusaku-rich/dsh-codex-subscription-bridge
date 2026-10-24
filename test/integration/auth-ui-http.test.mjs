@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
-import { execFile, execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -10,13 +10,7 @@ import { pathToFileURL } from 'node:url';
 const run = promisify(execFile);
 const repo = process.cwd();
 
-/** Resolve the npm CLI entry point the same way install.sh does, so a direct `node --test` run behaves as an npm script run. */
-function resolveNpmCli() {
-  const found = spawnSync('/usr/bin/which', ['npm'], { encoding: 'utf8' }).stdout.trim();
-  return execFileSync(process.execPath, ['-e', 'console.log(require("node:fs").realpathSync(process.argv[1]))', found], { encoding: 'utf8' }).trim();
-}
-
-const npmCli = process.env.npm_execpath ?? resolveNpmCli();
+const npmCli = process.env.npm_execpath;
 
 /** The module url form the driver needs. */
 const url = (path) => pathToFileURL(path).href;

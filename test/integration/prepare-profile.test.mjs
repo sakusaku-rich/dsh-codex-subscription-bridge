@@ -5,13 +5,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 
-/** Resolve the npm CLI entry point the same way install.sh does, so a direct `node --test` run behaves as an npm script run. */
-function resolveNpmCli() {
-  const found = spawnSync('/usr/bin/which', ['npm'], { encoding: 'utf8' }).stdout.trim();
-  return execFileSync(process.execPath, ['-e', 'console.log(require("node:fs").realpathSync(process.argv[1]))', found], { encoding: 'utf8' }).trim();
-}
-
-const npmCli = process.env.npm_execpath ?? resolveNpmCli();
+const npmCli = process.env.npm_execpath;
 const repo = process.cwd();
 const runtimeCli = join(repo, 'verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js');
 
