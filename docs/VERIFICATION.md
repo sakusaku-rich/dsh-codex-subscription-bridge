@@ -337,6 +337,6 @@ The profile recorded above was repointed at the locally built tarball, the bridg
 
 ### Review fixes (2026-10-24)
 
-The review pass removed the duplicate bundled-dependency field and the redundant `files` entry, exported both patch paths the bundle names, resolved the check step's compiler through the installed package, pinned the settings namespace to the profile entry id with a test, and added the build step to the reproducible checks. Three cases were split so each name states what it guarantees: the image target refusal path, the configurable-provider directory entry, and the patch exports.
+The review pass removed the duplicate bundled-dependency field and the redundant `files` entry. It exported both patch paths the bundle names, resolved the check step's compiler through the installed package, pinned the settings namespace to the profile entry id with a test, and added the build step to the reproducible checks. Three cases were split so each name states what it guarantees: the image target refusal path, the configurable-provider directory entry, and the patch exports.
 
-Verified on 2026-10-24 with the same toolchain: the compiler reports no errors, the 148-test root suite passes on standalone Node 22.23.3, and the installation, release-install, packaged profile, profile-install and auth UI HTTP lanes pass. Not re-run on the installed Electron executable.
+Verified on 2026-10-24 with the same toolchain: the compiler reports no errors, and the 148-test root suite passes on standalone Node 22.23.3. The installation, release-install, packaged profile, profile-install and auth UI HTTP lanes pass. Not re-run on the installed Electron executable.
