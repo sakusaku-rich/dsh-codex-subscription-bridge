@@ -31,6 +31,19 @@ test('real Harness service registers the guarded provider and disposes it', asyn
   await new Promise((resolve) => setImmediate(resolve));
   try {
     assert.deepEqual(ctx.llm.listProviders(), [{ id: 'codex-subscription', name: 'Codex (ChatGPT subscription)' }]);
+    await assert.rejects(ctx.llm.listModels('codex-subscription'), { code: 'AUTH_REQUIRED' });
+    const chunks = [];
+    for await (const chunk of ctx.llm.stream({ provider: 'codex-subscription', model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic message' }] }] })) chunks.push(chunk);
+    assert.equal(chunks.at(-1).reason.failure.code, 'AUTH_REQUIRED');
+  } finally { await fiber.dispose(); }
+  assert.deepEqual(ctx.llm.listProviders(), []);
+  await service.dispose(); await rm(root, { recursive: true, force: true });
+});
+test('the configurable-provider directory entry is declared as the bridge owns it and withdrawn with the fiber', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-public-plugin-'));
+  const ctx = new Context(); ctx.provide('launchEnvironment', { getFrom: name => name === 'HOME' ? { value: root } : undefined }); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
+  await new Promise((resolve) => setImmediate(resolve));
+  try {
     // The settings page reads the authentication posture from the directory, not
     // from provider info, so the entry is asserted as the bridge declares it.
     assert.deepEqual(ctx.llm.listConfigurableProviders(), [{
@@ -42,12 +55,7 @@ test('real Harness service registers the guarded provider and disposes it', asyn
     // bridge registers no settings namespace of its own; the two cannot drift apart.
     const patchId = (await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')).match(/- id: (\S+)/u)[1];
     assert.equal(ctx.llm.listConfigurableProviders()[0].settingsNs, patchId, 'the settings namespace must match the profile entry id');
-    await assert.rejects(ctx.llm.listModels('codex-subscription'), { code: 'AUTH_REQUIRED' });
-    const chunks = [];
-    for await (const chunk of ctx.llm.stream({ provider: 'codex-subscription', model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic message' }] }] })) chunks.push(chunk);
-    assert.equal(chunks.at(-1).reason.failure.code, 'AUTH_REQUIRED');
   } finally { await fiber.dispose(); }
-  assert.deepEqual(ctx.llm.listProviders(), []);
   assert.deepEqual(ctx.llm.listConfigurableProviders(), []);
   await service.dispose(); await rm(root, { recursive: true, force: true });
 });
