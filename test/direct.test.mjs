@@ -139,16 +139,18 @@ test('a serialized refresh writes the rotated grant once', async () => {
 
 test('the refresh request goes to the fixed issuer with the refresh grant', async () => {
   const root = await tempRoot('dsh-direct-test-');
+  let request;
   const http = new Http(async (url, options) => {
-    assert.equal(url, `${ISSUER}/oauth/token`);
-    assert.equal(options.redirect, 'error');
-    assert.equal(options.body.get('grant_type'), 'refresh_token');
+    request = { url, options };
     return json({ ...tokens(), refresh_token: 'rotated-secret' });
   });
   const store = new AuthStore(join(root, 'auth'), http);
   await store.transaction(() => store.write(tokens(1)));
 
   await store.token();
+
+  assert.equal(request.url, `${ISSUER}/oauth/token`);
+  assert.equal(request.options.body.get('grant_type'), 'refresh_token');
 
   await rm(root, { recursive: true, force: true });
 });
@@ -245,13 +247,16 @@ test('userinfo in the URL is refused', async () => {
   await assert.rejects(http.json('https://user:pass@chatgpt.com/backend-api/codex/models'), { code: 'CONFIG_INVALID' });
 });
 
-test('the transport requests redirect-error mode so credentials are not forwarded', async () => {
+test('the transport requests redirect-error mode', async () => {
+  let request;
   const http = new Http(async (_, options) => {
-    assert.equal(options.redirect, 'error');
-    throw new Error('secret-token');
+    request = options;
+    throw new Error('synthetic failure');
   });
 
-  await assert.rejects(http.json(`${BASE}/models`), { code: 'UPSTREAM_FAILED' });
+  await http.json(`${BASE}/models`).catch(() => {});
+
+  assert.equal(request.redirect, 'error');
 });
 
 test('an upstream failure diagnostic never carries the thrown secret', async () => {
