@@ -301,13 +301,23 @@ test('the marker label names server-side compaction', () => {
   f.disposers.forEach((dispose) => dispose());
 });
 
-test('the marker detail carries the item count and the model', () => {
+test('the marker detail carries the item count', () => {
   const f = fixture();
   const view = f.registrations.find((entry) => entry.options.name === 'conversation.chat.node').view;
 
   const element = view({ node: { data: { items: 2, model: 'gpt-6-luna' } } });
 
   assert.match(element.children[1].children[0], /encrypted window, 2 items/u);
+
+  f.disposers.forEach((dispose) => dispose());
+});
+
+test('the marker detail carries the model it names', () => {
+  const f = fixture();
+  const view = f.registrations.find((entry) => entry.options.name === 'conversation.chat.node').view;
+
+  const element = view({ node: { data: { items: 2, model: 'gpt-6-luna' } } });
+
   assert.match(element.children[1].children[0], /gpt-6-luna/u);
 
   f.disposers.forEach((dispose) => dispose());
