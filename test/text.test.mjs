@@ -80,8 +80,17 @@ test('image blocks are collected in request order', () => {
 
   const result = validateInput(request);
 
-  assert.equal(result.images.size, 2);
   assert.deepEqual(result.imageBlocks, [block, second]);
+});
+
+test('the image map carries one entry per attachment', () => {
+  const block = image();
+  const second = image({ attachment: { attachmentId: `sha256:${'cd'.repeat(32)}`, mediaType: 'image/jpeg', bytes: 2, width: 10, height: 5 } });
+  const request = input({ messages: [{ role: 'user', content: [block, { type: 'text', text: 'Synthetic prompt' }, second] }] });
+
+  const result = validateInput(request);
+
+  assert.equal(result.images.size, 2);
 });
 
 test('an image entry keeps its own attachment reference', () => {
