@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, access, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -437,7 +437,7 @@ test('the Desktop installer creates the profile directory', { timeout: 600_000, 
   const root = await mkdtemp(join(tmpdir(), 'dsh-release-desktop-'));
   const { target } = await install(root, join(root, 'desktop-profile'), ['--surface', 'desktop']);
 
-  await access(join(target, 'harness/profiles/desktop'));
+  assert.ok(await stat(join(target, 'harness/profiles/desktop')));
 
   await rm(root, { recursive: true, force: true });
 });
