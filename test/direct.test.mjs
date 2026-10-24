@@ -147,7 +147,17 @@ test('the refresh request goes to the fixed issuer with the refresh grant', asyn
   await rm(root, { recursive: true, force: true });
 });
 
-test('a terminal refresh failure quarantines the grant and stops retrying', async () => {
+test('a terminal refresh failure quarantines the grant', async () => {
+  const root = await tempRoot('dsh-direct-test-');
+  const store = new AuthStore(join(root, 'auth'), new Http(async () => json({ error: 'invalid_grant' }, 400)));
+  await store.transaction(() => store.write(tokens(1)));
+
+  await assert.rejects(store.token(), { code: 'AUTH_REQUIRED' });
+
+  await rm(root, { recursive: true, force: true });
+});
+
+test('a quarantined grant is not refreshed again', async () => {
   const root = await tempRoot('dsh-direct-test-');
   let calls = 0;
   const store = new AuthStore(join(root, 'auth'), new Http(async () => {
@@ -164,7 +174,18 @@ test('a terminal refresh failure quarantines the grant and stops retrying', asyn
   await rm(root, { recursive: true, force: true });
 });
 
-test('a quota refresh failure retains the refresh grant and retries', async () => {
+test('a quota refresh failure keeps the grant for the next request', async () => {
+  const root = await tempRoot('dsh-direct-test-');
+  const store = new AuthStore(join(root, 'auth'), new Http(async () => json({ error: 'rate_limit' }, 429)));
+  await store.transaction(() => store.write(tokens(1)));
+
+  await assert.rejects(store.token(), { code: 'RATE_LIMIT' });
+  await assert.rejects(store.token(), { code: 'RATE_LIMIT' });
+
+  await rm(root, { recursive: true, force: true });
+});
+
+test('a quota refresh failure retries the refresh on the next request', async () => {
   const root = await tempRoot('dsh-direct-test-');
   let calls = 0;
   const store = new AuthStore(join(root, 'auth'), new Http(async () => {
