@@ -267,19 +267,35 @@ test('a window past its bound drops the oldest covered items instead of refusing
   assert.ok(capture.trimmed > 0);
 });
 
-test('the persisted digest is computed over the trimmed window', async () => {
-  const limit = requestLimits(WINDOW).checkpointBytes;
+/** A window over an oversized item and 60 replies, trimmed to the bound. */
+function trimmedWindow(limit) {
   const big = { type: 'compaction', id: 'cp-1', encrypted_content: 'y'.repeat(1000000) };
   const many = Array.from({ length: 60 }, (_, index) => reply(`${index} ${'z'.repeat(20000)}`));
   const plan = { input: [], tools: [] };
   const capture = new CompactionCapture(limit);
-
   const replayState = capture.finish([big, ...many], compactionScope('synthetic-account', 'synthetic', plan), plan,
     many.map((value) => ({ type: 'text', text: value.content[0].text })));
+  return { replayState, items: replayState.response[CHECKPOINT_KEY].items, many };
+}
 
-  const items = replayState.response[CHECKPOINT_KEY].items;
+test('the trimmed window stays inside its bound', async () => {
+  const limit = requestLimits(WINDOW).checkpointBytes;
+  const { items } = trimmedWindow(limit);
+
   assert.ok(windowBytesOf(items) <= limit);
+});
+
+test('the oldest covered items are dropped from the window', async () => {
+  const limit = requestLimits(WINDOW).checkpointBytes;
+  const { items, many } = trimmedWindow(limit);
+
   assert.ok(items.length < many.length + 1);
+});
+
+test('the persisted digest is computed over the trimmed window', async () => {
+  const limit = requestLimits(WINDOW).checkpointBytes;
+  const { replayState, items } = trimmedWindow(limit);
+
   assert.equal(digest(items), replayState.response[CHECKPOINT_KEY].digest);
 });
 
@@ -634,7 +650,7 @@ test('unrepresented streamed text publishes no checkpoint', async () => {
   await f.bridge.close();
 });
 
-test('covered image attachments are not read or resent', async () => {
+test('a covered attachment is counted once in the repeated plan', async () => {
   const image = { type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 32, height: 32 } };
   const start = { role: 'user', content: [image, { type: 'text', text: 'Describe' }] };
   const plan = validateInput(options([start]));
@@ -831,28 +847,46 @@ test('the public adapter carries checkpoints through the pinned Harness runtime'
   await rm(root, { recursive: true, force: true });
 });
 
-test('the declared levels make the host effort selector available and the default comes from the backend', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-compaction-public-'));
+/** A mounted public adapter over a synthetic store and the declared level list. */
+async function levelsAdapter(root) {
   const store = new AuthStore(authDirectory({ HOME: root }));
-  const originalOpen = Http.prototype.open;
   const ctx = new Context();
-  let service, fiber;
-
   await store.transaction(() => store.write({ access_token: token('synthetic-account'), refresh_token: 'synthetic-refresh' }));
   Http.prototype.open = async () => Response.json({ models: [{ slug: 'synthetic', display_name: 'Synthetic', visibility: 'list', context_window: 272000,
     supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }], default_reasoning_level: 'medium' }] });
   ctx.provide('launchEnvironment', { getFrom: (key) => ['HOME', 'DSH_HOME'].includes(key) ? { value: root } : undefined });
-  service = ctx.plugin(LlmRuntime);
-  fiber = ctx.plugin(plugin);
+  const service = ctx.plugin(LlmRuntime);
+  const fiber = ctx.plugin(plugin);
   await new Promise((resolve) => setImmediate(resolve));
+  return { ctx, service, fiber };
+}
+
+test('the declared levels make the host effort selector available', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-compaction-public-'));
+  const originalOpen = Http.prototype.open;
+  const { ctx, service, fiber } = await levelsAdapter(root);
 
   const info = await ctx.llm.resolveModelInfo('codex-subscription', 'synthetic');
 
   assert.deepEqual(info.reasoning.efforts.map((effort) => effort.id), ['low', 'medium', 'high']);
+
+  await fiber.dispose();
+  await service.dispose();
+  Http.prototype.open = originalOpen;
+  await rm(root, { recursive: true, force: true });
+});
+
+test('the default effort comes from the backend', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-compaction-public-'));
+  const originalOpen = Http.prototype.open;
+  const { ctx, service, fiber } = await levelsAdapter(root);
+
+  const info = await ctx.llm.resolveModelInfo('codex-subscription', 'synthetic');
+
   assert.equal(info.reasoning.defaultEffort, 'medium');
 
-  await fiber?.dispose();
-  await service?.dispose();
+  await fiber.dispose();
+  await service.dispose();
   Http.prototype.open = originalOpen;
   await rm(root, { recursive: true, force: true });
 });
