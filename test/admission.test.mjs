@@ -61,6 +61,14 @@ test('pre-aborted discovery never enters store preparation', async () => {
 });
 
 test('pre-aborted authentication reports ABORTED', async () => {
+  const { store } = countingStore();
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(store.token(controller.signal), { code: 'ABORTED' });
+});
+
+test('pre-aborted authentication never reaches the network', async () => {
   const { store, calls } = countingStore();
   const controller = new AbortController();
   controller.abort();
