@@ -14,6 +14,7 @@ function bridgeFor(events) {
     : new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''))));
 }
 
+/** Consume a stream and return its chunks. */
 async function collect(bridge) {
   const chunks = [];
   for await (const chunk of bridge.stream(request)) chunks.push(chunk);

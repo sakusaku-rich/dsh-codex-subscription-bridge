@@ -10,10 +10,7 @@ function specifier(path) {
   return JSON.stringify(new URL(path, import.meta.url).href);
 }
 
-/**
- * A child that mounts the plugin on a real service over a synthetic store and an
- * in-memory HTTPS seam, then runs `body` as its guarantee.
- */
+/** A child that mounts the plugin on a real service over a synthetic store and an in-memory HTTPS seam, then runs `body` as its guarantee. */
 function driver(body) {
   return `import assert from 'node:assert/strict';
 import { Context } from ${specifier('../node_modules/@deepseek-ai/cordis/lib/index.js')};

@@ -15,13 +15,10 @@ const npmCli = process.env.npm_execpath;
 /** The module url form the driver needs. */
 const url = (path) => pathToFileURL(path).href;
 
+/** The isolated home the driver runs under. */
 const environment = (root) => ({ HOME: join(root, 'home'), DSH_HOME: join(root, 'harness'), PATH: '/usr/bin:/bin', DSH_TELEMETRY_DISABLED: 'true' });
 
-/**
- * Install the bridge into a disposable profile, boot it with a synthetic login
- * and answer with the observations the case asserts. The driver keeps the whole
- * transfer path in one file so the case can assert one guarantee from it.
- */
+/** Run the packaged client against the mounted adapter and answer with the observations the case asserts. */
 async function drive(root) {
   const env = environment(root);
   const profile = join(env.DSH_HOME, 'profiles', 'auth-ui-test');
@@ -53,7 +50,9 @@ AuthStore.prototype.login = async function (announce, signal) {
 const base = 'http://127.0.0.1:' + ctx.webServer.port;
 const owner = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
+/** A client request frame for the given method. */
 const message = (method, payload) => JSON.stringify({type: 'client-request', rpcId: 'fixture', method, payload});
+/** A request to an auth route with the given headers. */
 const request = (method, payload, headers = {}) => fetch(base + '/api/' + method, {method: 'POST', headers: {'Content-Type': 'application/json', ...headers}, body: message(method, payload)});
 const observations = {cacheControl: []};
 observations.unauthenticated = (await request('codex-subscription-auth/status', {clientId: owner})).status;

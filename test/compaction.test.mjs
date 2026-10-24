@@ -14,21 +14,30 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+/** A user message with one text block. */
 const user = (text) => ({ role: 'user', content: [{ type: 'text', text }] });
 const compact = { type: 'compaction', id: 'cp-1', encrypted_content: 'synthetic-opaque-checkpoint' };
+/** An assistant message with one output text block. */
 const reply = (text) => ({ type: 'message', id: 'msg-1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] });
+/** A request for the given messages. */
 const options = (messages) => ({ provider: 'codex-subscription', model: 'synthetic', messages });
 // The fixture's disclosed window. The request byte bound and the compaction
 // threshold both derive from it, so payloads that must be refused are sized
 // against the bound rather than a fixed constant.
 const WINDOW = 272000;
 const TEXT_BOUND = requestLimits(WINDOW).textBytes;
+/** A synthetic JWT carrying the given account. */
 const token = (account) => `x.${Buffer.from(JSON.stringify({ exp: 4000000000, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
+/** An SSE response carrying the given events. */
 const sse = (values) => new Response(values.map((value) => `data: ${JSON.stringify(value)}\n\n`).join(''));
+/** A terminal event with the given output. */
 const complete = (output) => ({ type: 'response.completed', response: { status: 'completed', output } });
+/** The sha256 hex the window stores for a value. */
 const digest = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+/** The digest Harness computes over the blocks it can prove. */
 const contentDigest = (blocks) => createHash('sha256').update(JSON.stringify(blocks.filter((block) => block.type === 'text' || block.type === 'tool-call')
   .map((block) => block.type === 'text' ? { type: 'text', text: block.text } : { type: 'tool-call', id: block.id, name: block.name, arguments: block.arguments }))).digest('hex');
+/** The serialized size of a window as the bound measures it. */
 const windowBytesOf = (values) => 2 + values.reduce((total, value) => total + Buffer.byteLength(JSON.stringify(value)) + 1, 0);
 
 /** A bridge that answers each request with the next fixture response and records the request bodies. */
@@ -49,6 +58,7 @@ function fixture(responses, settings = {}, warnings = []) {
   return { bridge, payloads, warnings, account: (value) => { account = value; } };
 }
 
+/** Consume a stream and rebuild the assistant message from its chunks. */
 async function run(bridge, request) {
   const chunks = [];
   for await (const chunk of bridge.stream(request)) chunks.push(chunk);

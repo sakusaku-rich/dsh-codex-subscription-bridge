@@ -4,11 +4,16 @@ import { createSubscriptionCompactionEngine, ownsSubscriptionCompaction } from '
 import { CompactionCapture, CHECKPOINT_MAX_AGE, compactionScope, inspectCheckpoint } from '../lib/compaction.js';
 import { validateInput } from '../lib/text.js';
 
+/** A user message with one text block. */
 const user = (text) => ({ role: 'user', content: [{ type: 'text', text }] });
 const compact = { type: 'compaction', id: 'cp-1', encrypted_content: 'synthetic-opaque-checkpoint' };
+/** An assistant message with one output text block. */
 const reply = (text) => ({ type: 'message', id: 'msg-1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] });
+/** A request for the given messages. */
 const options = (messages) => ({ provider: 'codex-subscription', model: 'synthetic', messages });
+/** A host hook route carrying the given provider. */
 const route = (provider) => ({ session: { requestHeader: () => ({ config: { provider, model: 'synthetic' } }) } });
+/** A plain copy of a value. */
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 /** A base engine that records every condensation it is asked to perform. */

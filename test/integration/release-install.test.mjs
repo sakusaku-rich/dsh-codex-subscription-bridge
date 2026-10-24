@@ -16,13 +16,7 @@ const npmCli = process.env.npm_execpath
   ?? execFileSync(process.execPath, ['-e', 'console.log(require("node:fs").realpathSync(process.argv[1]))',
     execFileSync('/usr/bin/which', ['npm'], { encoding: 'utf8' }).trim()], { encoding: 'utf8' }).trim();
 
-/**
- * Build a synthetic release in the layout `install.sh` expects, using the real
- * release build script. This exercises the bundle the project would actually
- * publish: the installer bundle asset, the plugin package asset and a
- * SHA256SUMS manifest. Nothing here contacts the network or the real
- * repository, and no credentials or model requests are involved.
- */
+/** Publish a synthetic release asset and its SHA256SUMS manifest into the given root. */
 async function publishSyntheticRelease(root, { corrupt } = {}) {
   const release = join(root, 'release');
   execFileSync(process.execPath, [npmCli, 'run', 'prepare:release', '--', '--tag', TAG, '--directory', release], { encoding: 'utf8', timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
@@ -36,6 +30,7 @@ async function publishSyntheticRelease(root, { corrupt } = {}) {
   return { release, digests, digest: digestOf(BUNDLE), packageDigest: digestOf(PACKAGE_ASSET) };
 }
 
+/** Run the installer for a release into a directory. */
 function runInstaller(release, directory, extraArguments = []) {
   return spawnSync('/bin/sh', [installer, '--tag', TAG, '--directory', directory, ...extraArguments], {
     encoding: 'utf8',
@@ -45,10 +40,7 @@ function runInstaller(release, directory, extraArguments = []) {
   });
 }
 
-/**
- * Whether the verified Desktop host is installed. CI has no Harness Desktop, so
- * the Desktop surface assertions are skipped there rather than weakened.
- */
+/** Whether the verified Desktop host is installed, so the Desktop cases skip on CI rather than weaken. */
 function installedDesktopExecutable() {
   const app = '/Applications/DeepSeek Harness.app';
   const executable = join(app, 'Contents/MacOS/DeepSeek Harness');

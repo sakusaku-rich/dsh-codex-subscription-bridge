@@ -2,15 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { events } from '../lib/sse.js';
 
+/** Consume the framed events of a body. */
 async function collect(body, limits) {
   const result = [];
   for await (const value of events(body, new AbortController().signal, undefined, limits)) result.push(value);
   return result;
 }
 
+/** A single SSE frame body. */
 const frame = (text) => new Response(text + '\r\n\r\n').body;
 const PREFIX = 'data: {"type":"test","text":"';
 const SUFFIX = '"}';
+/** A frame payload of the given length. */
 const frameText = (length) => PREFIX + 'x'.repeat(length - Buffer.byteLength(PREFIX + SUFFIX)) + SUFFIX;
 
 test('incremental framing preserves split UTF-8 across single-byte fragments', async () => {

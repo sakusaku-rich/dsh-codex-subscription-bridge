@@ -8,10 +8,7 @@ import { tmpdir } from 'node:os';
 
 const run = promisify(execFile);
 
-/**
- * A child that holds the store lock, releases it from the contender's mkdir hook under
- * `scenario`, and reports what the contending transaction did.
- */
+/** A child that holds the store lock, releases it from the contender's mkdir hook under `scenario`, and reports what the contender did. */
 async function race(root, scenario) {
   const driver = `
 import fs from 'node:fs';

@@ -6,11 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 
-/**
- * The downloader is embedded in install.sh so the whole transfer path ships in
- * one inspectable file. This extracts it so its redirect and allowlist rules can
- * be exercised directly, without publishing a release or contacting GitHub.
- */
+/** Extract the downloader source install.sh carries into one inspectable file. */
 async function extractDownloader(root) {
   const installer = await readFile(join(process.cwd(), 'install.sh'), 'utf8');
   const match = /cat > "\$WORK\/fetch\.mjs" <<'FETCH'\n([\s\S]*?)\nFETCH\n/u.exec(installer);
