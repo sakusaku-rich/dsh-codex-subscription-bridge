@@ -9,14 +9,19 @@ import { BridgeError, failure } from '../lib/errors.js';
 import { Http, BASE, ISSUER } from '../lib/http.js';
 
 const jwt = (exp = Math.floor(Date.now() / 1000) + 3600, account = 'synthetic-account') => `x.${Buffer.from(JSON.stringify({ exp, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.x`;
+/** A grant with the given expiry. */
 const tokens = (exp) => ({ access_token: jwt(exp), refresh_token: 'synthetic-refresh-secret' });
 const model = { slug: 'test-model', display_name: 'Test', visibility: 'list', supported_in_api: false };
+/** A JSON response with the given status. */
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+/** An SSE response carrying the given events. */
 const sse = (...values) => new Response(values.map((value) => `data: ${JSON.stringify(value)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
 const delta = { type: 'response.output_text.delta', item_id: 'message-1', content_index: 0, delta: 'Hello' };
 const completed = { type: 'response.completed', response: { status: 'completed', output: [] } };
+/** A request for the default model with the given extras. */
 const input = (extra = {}) => ({ provider: 'codex-subscription', model: 'test-model', messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }], ...extra });
 
+/** Consume a stream and return its chunks. */
 async function collect(stream) {
   const result = [];
   for await (const chunk of stream) result.push(chunk);
@@ -41,6 +46,7 @@ function bridgeForCatalog(handler) {
   return new DirectBridge({ token: async () => jwt() }, new Http(async () => handler()));
 }
 
+/** A temporary directory the case removes as its teardown. */
 async function tempRoot(prefix) {
   return mkdtemp(join(tmpdir(), prefix));
 }
@@ -274,9 +280,18 @@ test('the catalog shares one request across concurrent calls', async () => {
     return json({ models: [model] });
   });
 
-  const models = await Promise.all(Array.from({ length: 12 }, () => bridge.listModels()));
+  await Promise.all(Array.from({ length: 12 }, () => bridge.listModels()));
 
   assert.equal(calls, 1);
+
+  await bridge.close();
+});
+
+test('each concurrent catalog call answers with the model list', async () => {
+  const bridge = bridgeForCatalog(() => json({ models: [model] }));
+
+  const models = await Promise.all(Array.from({ length: 12 }, () => bridge.listModels()));
+
   assert.equal(models[0].length, 1);
 
   await bridge.close();
