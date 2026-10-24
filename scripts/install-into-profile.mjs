@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, copyFile, access, stat } from 'node
 import { createReadStream } from 'node:fs';
 import { isAbsolute, join, dirname, basename, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertNodeVersion, assertPlatform } from '../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../lib/runtime.js';
 import { assetName, createDigest, digestMatches, expectedDigest, parseChecksums, releaseTag, sha256Hex } from './lib/release.mjs';
 
 /**
@@ -18,7 +18,10 @@ assertNodeVersion(); assertPlatform();
 
 const PLUGIN_NAME = 'dsh-codex-subscription-bridge';
 const DESKTOP_APP = '/Applications/DeepSeek Harness.app';
-const HARNESS_VERSION = '0.2.0-rc.2';
+const HARNESS_VERSION = '0.2.1-rc.2';
+const CORDIS_VERSION = '4.0.5';
+const DESKTOP_NODE = '24.21.0';
+const DESKTOP_ELECTRON = '44.7.0';
 
 const usage = 'Run node scripts/install-into-profile.mjs --profile <absolute profile directory> --artifact <downloaded tgz> --checksums <downloaded SHA256SUMS> --tag <vX.Y.Z> --pnpm-cli <absolute pnpm entry point>.';
 const flags = ['--profile', '--artifact', '--checksums', '--tag', '--pnpm-cli'];
@@ -150,8 +153,8 @@ async function installedDesktop() {
   const facts = JSON.parse(execFileSync(executable, ['-p', probe], {
     env: { ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
   }));
-  if (facts.app.version !== HARNESS_VERSION || facts.versions.electron !== '44.0.0' || facts.versions.node !== '24.18.1' ||
-      facts.cordis !== '4.0.4' || facts.llm !== HARNESS_VERSION) {
+  if (facts.app.version !== HARNESS_VERSION || facts.versions.electron !== DESKTOP_ELECTRON || facts.versions.node !== DESKTOP_NODE ||
+      facts.cordis !== CORDIS_VERSION || facts.llm !== HARNESS_VERSION) {
     throw new Error('The installed Desktop does not match the verified host pair; refusing to modify its profile.');
   }
   return { executable, version: facts.app.version, electron: facts.versions.electron, node: facts.versions.node, buildCommit: facts.app.dshBuildCommit };

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateInput, PROVIDER, TEXT_LIMIT, MESSAGE_LIMIT, TOOL_PARAMETERS_LIMIT, TOOLS_BYTES_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, IMAGE_MEDIA_TYPES, reasoningLevels, REASONING_LEVEL_LIMIT } from '../src/text.js';
-import { REQUEST_IMAGE_ATTACHMENT_MAX_BYTES } from '../src/image.js';
+import { validateInput, PROVIDER, TEXT_LIMIT, MESSAGE_LIMIT, TOOL_PARAMETERS_LIMIT, TOOLS_BYTES_LIMIT, CALL_ID_LIMIT, TOOL_BYTES_LIMIT, IMAGE_MEDIA_TYPES, reasoningLevels, REASONING_LEVEL_LIMIT } from '../lib/text.js';
+import { REQUEST_IMAGE_ATTACHMENT_MAX_BYTES } from '../lib/image.js';
 const input = (overrides = {}) => ({ provider: PROVIDER, messages: [{ role: 'user', content: [{ type: 'text', text: 'Synthetic prompt' }] }], ...overrides });
 const image = (overrides = {}) => ({ type: 'image', attachment: { attachmentId: `sha256:${'ab'.repeat(32)}`, mediaType: 'image/png', bytes: 1024, width: 1024, height: 768 }, ...overrides });
 

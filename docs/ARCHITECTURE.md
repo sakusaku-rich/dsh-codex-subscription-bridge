@@ -40,7 +40,7 @@ SSE accepts bounded text, reasoning/lifecycle metadata, and completed `function_
 
 Events the bridge does not consume are ignored rather than failing a turn, because failing a turn for one discards an answer that was already delivered. The consumed set is closed and explicit — `response.output_text.delta`/`.done`, `response.output_item.added`/`.done`, and `response.completed`. Each consumed event is still validated strictly, so those branches remain the only paths that can project text, tool calls or usage. An unrecognized event contributes nothing even when it carries content-shaped fields. `error`, `response.failed`, `response.incomplete` and the refusal events stay fatal, and EOF without completion still fails as `SSE_INCOMPLETE`.
 
-This deliberately does not try to enumerate the backend's notification vocabulary. The reference implementation the verified Harness bundles (`@earendil-works/pi-ai`) dispatches the same consumed set and has no catch-all that fails an unknown event. An allowlist that aborts on anything unrecognized is therefore stricter than the host it feeds. That is how `response.metadata`, the annotation events and the reasoning-notification variants each discarded a usable answer.
+This deliberately does not try to enumerate the backend's notification vocabulary. The reference implementation the verified Harness bundles (`@earendil-works/pi-ai`) dispatches the same consumed set and has no catch-all that fails an unknown event. An allowlist that aborts on anything unrecognized is therefore stricter than the host it feeds. The incidents that established this are recorded in [verification](VERIFICATION.md#notification-events-fail-turns-2026-10-17).
 
 Completed message items also reconcile text when terminal output is null, without duplicating earlier completion events. A completed `function_call` item is reconciled idempotently against streamed tool calls. Matching name and arguments replay is accepted. Anything else fails with a fixed protocol error. Replay metadata is the one exception to failing closed. Because the answer has already been delivered by the time a checkpoint is built, an unprovable compaction window is withheld and logged instead of failing the turn. The streamed completed items — not the terminal array, which the live backend trims — define the output order.
 
@@ -83,7 +83,7 @@ The following bounds are enforced.
 | Owned operations | 4 concurrent, including cancellation cleanup |
 | Deadlines | Discovery 30 seconds, turn 120 seconds, JSON request timeout 15 seconds |
 | JSON/event frames | 1 MiB default; a stream that requests compaction raises the event frame to twice the window bound |
-| Aggregate SSE | 4 MiB aggregate and 4096 events by default; with compaction requested the aggregate is three times the raised frame plus the default frame, and the event count is derived from the same frame at a 128-byte envelope estimate, capped at 65536 |
+| Aggregate SSE | 4 MiB aggregate and 4096 events by default. With compaction requested the aggregate is three times the raised frame plus the default aggregate. The event count is derived from the same frame at a 128-byte envelope estimate, capped at 65536 |
 | Output text | 128 blocks, 256 KiB |
 | Input items | 1024 wire items, at most 64 blocks per non-tool message; the retained transcript is bounded to 4096 items |
 | Tool passthrough | 256 definitions, 256 KiB aggregate, 64-character names in `[A-Za-z0-9_-]`, 8 KiB descriptions, 64 KiB JSON object parameters, 256-byte `call_id` values, 2 MiB tool outputs, 128 tool-update entries |
@@ -111,7 +111,7 @@ HTTP 429 responses are classified from a bounded error body. A recognized plan u
 
 The hint is the only message part derived from upstream data. Upstream text is never copied into errors.
 
-Image acceptance on the subscription backend rests on the owner's reported processed image turn on the installed Desktop runtime, which is a report of use rather than a measured record. Vision-token accounting, per-model entitlement, and upstream acceptance of `temperature` on the subscription backend remain unverified.
+Image acceptance on the subscription backend rests on the owner's reported pass, not on a measured record. [The verification record](VERIFICATION.md#real-account-evidence-and-limits) states which passes were reported and which were measured. Vision-token accounting, per-model entitlement, and upstream acceptance of `temperature` on the subscription backend remain unverified.
 
 Real-account evidence and its limits are recorded in [verification](VERIFICATION.md). Direct connection is not evidence of official third-party service support or absence of vulnerabilities.
 

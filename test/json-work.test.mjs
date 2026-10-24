@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readBytes, readJson } from '../src/http.js';
+import { readBytes, readJson } from '../lib/http.js';
 
 test('ready tiny and empty JSON fragments yield to cancellation and deadlines', async () => {
   for (const empty of [false, true]) {

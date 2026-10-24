@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm,readFile,access,chmod} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {AuthStore} from '../src/auth.js';
+import {AuthStore} from '../lib/auth.js';
 test('doctor is secret-free, read-only, and never steals a lock or refreshes',async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-doctor-'));const dir=join(root,'auth');let calls=0;const store=new AuthStore(dir,{open(){calls++;throw new Error('Network must not run')}});
  try{

@@ -17,9 +17,9 @@ test('the shipped preset mirrors the standard composition and is inserted disabl
   assert.equal(lines.filter(line => line === '        order: 9').length, 1, 'ordered after the shipped presets');
   assert.ok(lines.includes('        name: Codex subscription'), 'the roster needs a name');
   assert.ok(lines.some(line => line.startsWith('        description: ')), 'the roster needs a description');
-  assert.equal(childIds.length, 19, 'the pinned standard composition has 19 children');
+  assert.equal(childIds.length, 22, 'the pinned standard composition has 22 children');
   assert.equal(childIds[0], 'persona');
-  assert.equal(childIds.at(-1), 'tool-plugin-manager');
+  assert.equal(childIds.at(-1), 'tool-plugin-market');
   assert.ok(childIds.every(id => /^[a-z0-9-]+$/u.test(id)), 'child ids stay printable');
 });
 
@@ -81,7 +81,13 @@ test('the package ships the preset as a second bundle patch', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   assert.deepEqual(manifest.dsh.bundle.patch, ['./cordis.patch.yml', './presets/codex-subscription.patch.yml']);
   assert.ok(manifest.files.includes('presets'), 'the artifact ships');
-  assert.equal(manifest.exports['./compaction'], './src/compaction-engine.js');
+  assert.equal(manifest.exports['./compaction'], './lib/compaction-engine.js');
   assert.equal(manifest.scripts['preset:sync'], 'node scripts/sync-preset.mjs');
   assert.equal(manifest.scripts['preset:check'], 'node scripts/sync-preset.mjs --check');
+});
+
+test('every patch path the bundle names resolves through the package exports', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  // A consumer that resolves the package, not the directory, can only reach an exported path.
+  for (const patch of manifest.dsh.bundle.patch) assert.equal(manifest.exports[patch], patch, `${patch} is not exported`);
 });

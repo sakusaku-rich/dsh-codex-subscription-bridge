@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 const run = promisify(execFile);
 
 test('lock-release interleaving retries without bypassing safety, cancellation or deadline checks', async () => {
-  const moduleUrl = new URL('../src/auth.js', import.meta.url).href;
+  const moduleUrl = new URL('../lib/auth.js', import.meta.url).href;
   const driver = `
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

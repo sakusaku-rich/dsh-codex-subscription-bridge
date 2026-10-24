@@ -15,14 +15,14 @@ The one-command path below installs a published release. Replace `v0.0.4` in the
 | --- | --- |
 | macOS CLI/SDK provider (text, tool passthrough, images) | Synthetic packaged integration verified |
 | macOS Web profile | Setup/startup verified; full real conversation pending |
-| macOS Desktop 0.2.0-rc.2 | Electron 44.0.0 / Node 24.18.1 synthetic host/profile verified, and owner-operated real GUI, sign-in and service use verified |
+| macOS Desktop 0.2.1-rc.2 | Electron 44.7.0 / Node 24.21.0 synthetic host and profile verified. Owner-operated real GUI, sign-in and service use on this host are still pending |
 | Linux / Windows / other OS | Not supported; rejected before authentication |
 
 The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified.
 
 Use Node 22.23.3, the verified baseline (Undici 6.28.1, OpenSSL 3.5.8):
 
-- The root and verification-runtime manifests and lockfiles require Node 22 >= 22.23.3. The root engine also admits the Desktop 24.18.1 pair.
+- The root and verification-runtime manifests and lockfiles require Node 22 >= 22.23.3. The root engine also admits the Desktop 24.21.0 pair.
 - `.node-version` and `.nvmrc` pin 22.23.3 exactly.
 - The public adapter and authentication CLI reject older or unverified runtimes.
 
@@ -84,8 +84,8 @@ sh install.sh --tag v0.0.4 --directory "$PWD/artifacts/subscription-web"
 
 | Surface | Profile | Launcher | Host |
 | --- | --- | --- | --- |
-| `web` (default) | `subscription-web` | `start.sh` | The pinned Harness 0.2.0-rc.2 runtime fetched during preparation, run through the Node 22.23.3 executable that ran preparation. |
-| `desktop` | `desktop` | `desktop.sh` | The installed DeepSeek Harness Desktop 0.2.0-rc.2, used with its exact Electron 44.0.0 / Node 24.18.1 pair. |
+| `web` (default) | `subscription-web` | `start.sh` | The pinned Harness 0.2.1-rc.2 runtime fetched during preparation, run through the Node 22.23.3 executable that ran preparation. |
+| `desktop` | `desktop` | `desktop.sh` | The installed DeepSeek Harness Desktop 0.2.1-rc.2, used with its exact Electron 44.7.0 / Node 24.21.0 pair. |
 
 Preparation does not download Node. It records the Node executable that ran it, so the profile keeps depending on that executable and on the fetched runtime tree.
 
@@ -115,7 +115,7 @@ When you override `DSH_INSTALL_SOURCE` with a `file://` mirror, that directory m
 
 Supplying only the plugin package fails with `ENOENT` for the bundle.
 
-Preparation needs network access once, to fetch the pinned Harness `0.2.0-rc.2` runtime from the npm registry. Every install runs with lifecycle scripts disabled (`--ignore-scripts`). The resolved Harness and security-fixed leaf versions are asserted after resolution. The verified plugin package is then installed from the local file with `--offline`.
+Preparation needs network access once, to fetch the pinned Harness `0.2.1-rc.2` runtime from the npm registry. Every install runs with lifecycle scripts disabled (`--ignore-scripts`). The resolved Harness and security-fixed leaf versions are asserted after resolution. The verified plugin package is then installed from the local file with `--offline`.
 
 ### What the release publishes
 
@@ -181,6 +181,7 @@ From the reviewed checkout, with the required Node active:
 ```sh
 node --version
 npm ci --ignore-scripts
+npm run build
 npm ci --ignore-scripts --prefix verification/runtime
 mkdir -p artifacts
 npm run prepare:profile -- --directory "$PWD/artifacts/subscription-web"
@@ -213,7 +214,7 @@ The code is not an access token. It disappears after cancellation, completion, o
 
 The generated auth helper remains optional for developer/recovery diagnosis. `doctor` does not contact OpenAI or create a missing store. Never paste codes or credentials into an issue.
 
-The helper exposes `login`, `status`, `doctor`, and `logout`. From a source checkout it is `node src/auth-cli.js <command>`. The packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness.
+The helper exposes `login`, `status`, `doctor`, and `logout`. From a source checkout it is `node lib/auth-cli.js <command>`, after `npm run build`. The packaged command is `dsh-codex-subscription-auth`. Run it with the same inherited HOME as Harness.
 
 A Web profile also gets its own `auth.sh`, which passes that profile's HOME explicitly. A Desktop profile has no helper, because the plugin imports host peers that only the application resolves. Sign-in, status and logout happen in the settings panel there.
 

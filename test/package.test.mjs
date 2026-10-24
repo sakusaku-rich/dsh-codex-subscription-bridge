@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Context } from '@deepseek-ai/cordis';
 import { LlmRuntime } from '@deepseek-ai/dsh-llm';
-import * as plugin from '../src/index.js';
+import * as plugin from '../lib/index.js';
 
 /**
  * Environment for a child that must run this package in isolation.
@@ -39,6 +39,26 @@ test('real Harness service registers the guarded provider and disposes it', asyn
   assert.deepEqual(ctx.llm.listProviders(), []);
   await service.dispose(); await rm(root, { recursive: true, force: true });
 });
+test('the configurable-provider directory entry is declared as the bridge owns it and withdrawn with the fiber', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-public-plugin-'));
+  const ctx = new Context(); ctx.provide('launchEnvironment', { getFrom: name => name === 'HOME' ? { value: root } : undefined }); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
+  await new Promise((resolve) => setImmediate(resolve));
+  try {
+    // The settings page reads the authentication posture from the directory, not
+    // from provider info, so the entry is asserted as the bridge declares it.
+    assert.deepEqual(ctx.llm.listConfigurableProviders(), [{
+      provider: 'codex-subscription', displayName: 'Codex (ChatGPT subscription)',
+      settingsNs: 'llm-codex-subscription', settingsPath: [], declared: false,
+      nativeAuth: { env: [], oauth: true },
+    }]);
+    // The namespace is the profile entry id the shipped patch declares, because the
+    // bridge registers no settings namespace of its own; the two cannot drift apart.
+    const patchId = (await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')).match(/- id: (\S+)/u)[1];
+    assert.equal(ctx.llm.listConfigurableProviders()[0].settingsNs, patchId, 'the settings namespace must match the profile entry id');
+  } finally { await fiber.dispose(); }
+  assert.deepEqual(ctx.llm.listConfigurableProviders(), []);
+  await service.dispose(); await rm(root, { recursive: true, force: true });
+});
 test('plugin rejects credential and safety override configuration', () => {
   for (const config of [{ accessToken: 'secret-test-value' }, { allowApiKey: true }, { command: '/bin/sh' }, { enableLive: true }]) {
     assert.throws(() => plugin.apply({}, config), { code: 'CONFIG_INVALID' });
@@ -48,7 +68,8 @@ test('tarball installs and composes in an isolated Harness service fixture', asy
   const temp = await mkdtemp(join(tmpdir(), 'dsh-subscription-fixture-'));
   try {
     const metadata = JSON.parse(execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temp, '--cache', join(temp, 'cache')], { encoding: 'utf8' }))[0];
-    assert.ok(metadata.files.some((file) => file.path === 'src/index.js'));
+    assert.ok(metadata.files.some((file) => file.path === 'lib/index.js'));
+    assert.ok(metadata.files.some((file) => file.path === 'lib/types/index.d.ts'));
     assert.ok(metadata.files.some((file) => file.path === 'cordis.patch.yml'));
     assert.ok(metadata.files.some((file) => file.path === 'LICENSE'));
     assert.equal(metadata.files.some((file) => /^(test|work)\//u.test(file.path) || (file.path.startsWith('node_modules/') && !file.path.startsWith('node_modules/undici/'))), false);
@@ -89,7 +110,7 @@ test('the plugin selects its store from the environment it is handed', async () 
     await mkdir(handed, { mode: 0o700 });
     const code = `import {Context} from '@deepseek-ai/cordis';
 import {LlmRuntime} from '@deepseek-ai/dsh-llm';
-import * as plugin from ${JSON.stringify(resolve('src/index.js'))};
+import * as plugin from ${JSON.stringify(resolve('lib/index.js'))};
 const ctx = new Context(); const service = ctx.plugin(LlmRuntime); const fiber = ctx.plugin(plugin);
 await new Promise(resolve => setImmediate(resolve));
 try { await ctx.llm.listModels('codex-subscription'); console.log('NONE'); }

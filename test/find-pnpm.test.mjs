@@ -27,7 +27,7 @@ test('the pnpm finder resolves the Desktop bundled package manager', { timeout: 
   assert.equal(result.stderr, '');
 });
 
-test('the pnpm finder never falls back to the caller PATH', { timeout: 120_000 }, () => {
+test('the pnpm finder does not consult the caller PATH and resolves the bundled package manager', { timeout: 120_000 }, () => {
   // A `pnpm` earlier on PATH must not be selected. The finder takes no arguments
   // and reads no environment, so injecting one proves it is not consulted.
   const shim = spawnSync('/bin/sh', ['-c', 'command -v pnpm || true'], { encoding: 'utf8' });
@@ -38,6 +38,6 @@ test('the pnpm finder never falls back to the caller PATH', { timeout: 120_000 }
   });
   if (result.status === 0) {
     assert.notEqual(result.stdout.trim(), systemPnpm, 'the finder resolved the PATH pnpm instead of the bundled one');
-    assert.match(result.stdout.trim(), /DeepSeek Harness\.app\/Contents\/Resources\/runtime\/pnpm/u);
+    assert.match(result.stdout.trim(), /DeepSeek Harness\.app\/Contents\/Resources\/runtime\/primary-runtime\/dependencies\/pnpm/u);
   }
 });

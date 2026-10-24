@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { BridgeError } from '../../src/errors.js';
+import { BridgeError } from '../../lib/errors.js';
 
 /** Release host and repository are fixed; an installer never takes an origin override. */
 export const RELEASE_HOST = 'github.com';

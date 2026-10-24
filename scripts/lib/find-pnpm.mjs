@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertNodeVersion, assertPlatform } from '../../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../../lib/runtime.js';
 
 /**
  * Resolve the pnpm entry point bundled with the installed Desktop.
@@ -17,7 +17,7 @@ assertNodeVersion(); assertPlatform();
 
 const DESKTOP_APP = '/Applications/DeepSeek Harness.app';
 const EXECUTABLE = join(DESKTOP_APP, 'Contents/MacOS/DeepSeek Harness');
-const BUNDLED_PNPM = join(DESKTOP_APP, 'Contents/Resources/runtime/pnpm/bin/pnpm.cjs');
+const BUNDLED_PNPM = join(DESKTOP_APP, 'Contents/Resources/runtime/primary-runtime/dependencies/pnpm/bin/pnpm.cjs');
 
 try {
   await access(BUNDLED_PNPM);

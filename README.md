@@ -15,8 +15,8 @@ Whether connecting a ChatGPT subscription through this adapter is permitted unde
 - A ChatGPT subscription with Codex backend access.
 - Device-code sign-in enabled for the account or workspace.
 - macOS on Apple Silicon with Node 22.23.3 for the standalone CLI/SDK/Web provider. The version is pinned by `.node-version` and `.nvmrc`. Linux, Windows and other runtimes are rejected before authentication. Intel macOS passes the platform gate but is not independently verified.
-- DeepSeek Harness Desktop 0.2.0-rc.2 is additionally supported only with its exact Electron 44.0.0 / Node 24.18.1 host pair. See [the support matrix](docs/INSTALL.md#support-and-prerequisites).
-- An installed DeepSeek Harness Desktop 0.2.0-rc.2 to add the bridge to, or a released, integrity-verified artifact to prepare a new isolated profile from. A Desktop profile additionally requires the verified Desktop host pair.
+- DeepSeek Harness Desktop 0.2.1-rc.2 is the supported Desktop host, and only with its exact Electron 44.7.0 / Node 24.21.0 host pair. See [the support matrix](docs/INSTALL.md#support-and-prerequisites).
+- An installed DeepSeek Harness Desktop 0.2.1-rc.2 to add the bridge to, or a released, integrity-verified artifact to prepare a new isolated profile from. A Desktop profile additionally requires the verified Desktop host pair.
 
 Installing into a normal profile is supported only through the documented `--profile` path. That path backs the profile up first.
 
@@ -93,7 +93,6 @@ Before enabling it, know that:
 
 - Only this provider's behavior changes. Every other provider, and every other preset, keeps the stock engine.
 - The preset subclasses a host-internal class. It also mirrors the pinned Harness composition. A Harness upgrade can therefore stop that one preset from composing, or leave the mirror stale.
-  The dangerous case is a reshaped `compaction` group, which silently restores double summarization.
   [The installation guide](docs/INSTALL.md#consolidate-on-server-side-compaction-opt-in) records those failure modes, the checks to run after restarting, and how a source checkout detects drift.
 - Delete that line when you remove the package, as [the installation guide](docs/INSTALL.md#remove-this-dedicated-installation) explains.
 
@@ -116,13 +115,13 @@ This is an experimental prototype.
 
 Synthetic verification covers authentication, refresh, streaming, cancellation, tool-call passthrough, image input, and packaged Harness CLI/SDK composition.
 
-Real-account evidence covers sign-in, multi-turn generation, more than nine hundred forwarded tool calls, the disclosed reasoning levels, and server-side compaction issuance, reuse and model-switch handling.
+Real-account evidence covers sign-in, multi-turn generation, tool passthrough, the disclosed reasoning levels, and server-side compaction issuance, reuse and model-switch handling.
 
 [The verification record](docs/VERIFICATION.md#real-account-evidence-and-limits) records exactly what is confirmed and what remains unverified. Do not treat this prototype as a completed security audit.
 
 ## Development
 
-Harness 0.2.0-rc.2 and Cordis 4.0.4 remain pinned. The shipped plugin needs no dependency lifecycle scripts. The reproducible check commands are recorded in [the verification record](docs/VERIFICATION.md#reproducible-checks), including the packaged profile checks.
+Harness 0.2.1-rc.2 and Cordis 4.0.5 remain pinned. Sources are TypeScript under `src/`, and the package ships the compiled per-module output under `lib/` with declarations under `lib/types/`, which is the shape official Harness packages publish. The shipped plugin needs no dependency lifecycle scripts. The build toolchain (`typescript` 7.0.2 and `@types/node` 22.20.5, pinned to the Node 22 baseline) stays development-only. The reproducible check commands are recorded in [the verification record](docs/VERIFICATION.md#reproducible-checks), including the packaged profile checks.
 
 A real-account check is separate and requires authorization. The prepared `scripts/smoke-account.mjs --allow-real-account` command sends one fixed short prompt using the dedicated login. It may consume subscription quota. It may refresh this plugin's stored tokens. It has not been run for the direct implementation.
 

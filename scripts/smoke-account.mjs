@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis';
 import { LlmRuntime } from '@deepseek-ai/dsh-llm';
-import * as plugin from '../src/index.js';
-import { BridgeError, failure } from '../src/errors.js';
+import * as plugin from '../lib/index.js';
+import { BridgeError, failure } from '../lib/errors.js';
 
 // Preparation only: never run this without the owner's explicit authorization.
 const args = process.argv.slice(2);

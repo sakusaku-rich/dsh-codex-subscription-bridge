@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { assertNodeVersion, assertPlatform } from '../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../lib/runtime.js';
 
 /**
  * Load a prepared Desktop profile through the installed application's own ASAR

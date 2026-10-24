@@ -75,12 +75,10 @@ Do not apply recursive chmod/chown. Do not change someone else's store. Inspect 
 
 ## Runtime, protocol, or quota failures
 
-`NODE_VERSION_UNSUPPORTED` requires Node 22 >=22.23.3, or the tested Desktop Electron 44.0.0 / Node 24.18.1 pair. `PLATFORM_UNSUPPORTED` means macOS is required. [Desktop verification](DESKTOP_VERIFICATION.md) records which other versions are admitted.
+`NODE_VERSION_UNSUPPORTED` requires Node 22 >=22.23.3, or the tested Desktop Electron 44.7.0 / Node 24.21.0 pair. `PLATFORM_UNSUPPORTED` means macOS is required. [Desktop verification](DESKTOP_VERIFICATION.md) records which other versions are admitted.
 
 Protocol diagnostics contain fixed stage labels such as `SSE_FRAME` or `SSE_TERMINAL`. When reporting, share only the label, the reviewed commit, the runtime, and sanitized reproduction steps, as [the security requirements](../SECURITY.md#reporting-a-problem) require.
 
 A terminal `QUOTA` means the ChatGPT plan usage limit was reached. It may carry a "Try again in about N minutes." hint. Transient `RATE_LIMIT` covers all other rate-limit responses. Repeated re-login does not establish or increase allowance. No quota interpretation or automatic retry policy is implemented beyond surfacing that fixed message.
 
-`PROTOCOL_INVALID` with `SSE_EVENT_UNSUPPORTED` appeared in releases up to v0.0.3. It meant the stream carried an event the bridge did not recognize. The turn was failed for a content-free notification rather than for corrupt content, so an answer that had already streamed was discarded.
-
-That label no longer exists. Events the bridge does not consume are now ignored. Every event it does consume is still validated strictly. Seeing this label means the installed build predates the fix, so update the profile rather than re-logging in — it is not a credential or quota problem. Do not paste raw stream bodies.
+`PROTOCOL_INVALID` with `SSE_EVENT_UNSUPPORTED` appears only on builds up to v0.0.3. The label no longer exists. Events the bridge does not consume are ignored, and every event it does consume is still validated strictly. Seeing this label means the installed build predates the fix, so update the profile rather than re-logging in — it is not a credential or quota problem. Do not paste raw stream bodies.

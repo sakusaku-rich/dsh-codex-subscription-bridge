@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,access} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {DirectBridge} from '../src/direct.js';
-import {AuthStore} from '../src/auth.js';
-import {Http} from '../src/http.js';
-import {BridgeError} from '../src/errors.js';
+import {DirectBridge} from '../lib/direct.js';
+import {AuthStore} from '../lib/auth.js';
+import {Http} from '../lib/http.js';
+import {BridgeError} from '../lib/errors.js';
 test('close waits for an owned authentication transaction and lock release',async()=>{
  const root=await mkdtemp(join(tmpdir(),'dsh-shutdown-'));let entered;const ready=new Promise(resolve=>entered=resolve);
  const store=new AuthStore(join(root,'auth'));let settled=false;

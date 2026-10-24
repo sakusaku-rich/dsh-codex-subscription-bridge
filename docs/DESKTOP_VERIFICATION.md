@@ -2,9 +2,11 @@
 
 ## Scope
 
-macOS Desktop 0.2.0-rc.2, build `5e9e301dd9dc8923b2762f76dacfc5751f6ca851`, uses Electron 44.0.0 / Node 24.18.1 for plugins, not the separate tools Node. The exact pair is admitted after synthetic store/refresh/cancellation/streaming, packaged CLI/SDK, and installed Desktop runtime/profile verification. Full GUI and real subscription behavior still require manual verification. Other Desktop versions and Intel macOS are not claimed as verified, and a different Desktop version requires fresh compatibility verification: do not bypass the host guard or edit a Desktop-bundled runtime.
+macOS Desktop 0.2.1-rc.2, build `332895e0f7c9d4dbfb29729f5eb367fa263ff986`, uses Electron 44.7.0 / Node 24.21.0 for plugins, not the separate tools Node. The exact pair is admitted after synthetic store/refresh/cancellation/streaming, packaged CLI/SDK, and installed Desktop runtime/profile verification. Full GUI and real subscription behavior still require manual verification. Other Desktop versions and Intel macOS are not claimed as verified, and a different Desktop version requires fresh compatibility verification: do not bypass the host guard or edit a Desktop-bundled runtime.
 
-The host bundles Undici 7.29.0. Plugin HTTP instead uses bundled Undici 7.29.1 and an owned Agent; host global fetch and dispatcher are not used. This addresses the plugin's dependency baseline without changing Desktop. It does not fix or establish security of other Electron, Chromium, or Harness features. [Upstream Undici advisory](https://github.com/nodejs/undici/security/advisories/GHSA-rfgv-xxqx-mfg5). [Electron 44.0.0 release](https://releases.electronjs.org/release/v44.0.0).
+The 0.2.0-rc.2 host (Electron 44.0.0 / Node 24.18.1) was the previously verified pair and is no longer admitted: the pinned peers moved to Cordis 4.0.5 and LLM 0.2.1-rc.2, so that build would run the plugin against unpinned runtime. Its earlier checks are kept in [the verification record](VERIFICATION.md#runtime-and-platform-evidence).
+
+The 0.2.1-rc.2 host bundles Undici 7.29.1, the version the plugin pins. Plugin HTTP still runs through its own owned Agent rather than host global fetch or the host dispatcher, so the plugin's dependency baseline does not depend on what the application happens to bundle. It does not fix or establish security of other Electron, Chromium, or Harness features. [Upstream Undici advisory](https://github.com/nodejs/undici/security/advisories/GHSA-rfgv-xxqx-mfg5). [Electron 44.7.0 release](https://releases.electronjs.org/release/v44.7.0).
 
 ## Prepare a separate profile
 
@@ -20,6 +22,7 @@ From a reviewed checkout, with the standalone Node 22.23.3 used for preparation:
 
 ```sh
 npm ci --ignore-scripts
+npm run build
 npm ci --ignore-scripts --prefix verification/runtime
 mkdir -p artifacts
 npm run prepare:desktop -- --directory "$PWD/artifacts/desktop-verification"
@@ -29,7 +32,7 @@ The new directory must not exist. Both paths verify the installed application at
 
 The prepared directory records package integrity and Desktop build; the release path records the release tag and verified digest instead of a commit. Both surfaces list the web application bundle, because the Desktop host reads `ctx.connection` and `ctx.webServer` while booting, before any profile is served. `desktop.sh` runs the normal GUI. No login or GUI is automatically started by preparation.
 
-Neither preparation path writes an `auth.sh` for a Desktop profile. An earlier revision did, and it never worked reliably: it launched the plugin directly rather than through the application's profile boot, so the host peers the plugin imports were resolved only by Node's ordinary directory walk. A profile that happened to sit under a tree also containing those peers made the helper appear to work, which is why the failure looked intermittent.
+Neither preparation path writes an `auth.sh` for a Desktop profile. The helper launches the plugin directly rather than through the application's profile boot, so the host peers the plugin imports resolve only by Node's ordinary directory walk. That is why it cannot work there.
 
 The helper is not replaced, because the application already provides everything it offered: sign-in, status and logout are in the settings panel, which is the supported path for every Desktop profile. The Web surface keeps its helper, since that profile carries its own runtime and the helper resolves correctly there. Use the in-app panel for Desktop diagnosis.
 
@@ -38,7 +41,7 @@ The helper is not replaced, because the application already provides everything 
 1. Quit every existing DeepSeek Harness Desktop instance normally. The app uses a single-instance lock; otherwise the new invocation may focus the old window.
 2. Start `sh artifacts/desktop-verification/desktop.sh` from Terminal, keeping it open. This launcher is only for selecting the dedicated verification profile.
 3. Open **Settings → ChatGPT subscription**. Click **Log in**, click the displayed one-time sign-in code to copy it, and paste it on the linked OpenAI page. The panel updates after approval; no authentication script is needed for this flow.
-4. Select `Codex (ChatGPT subscription)` and an advertised model. Send a short prompt, then ask a follow-up. Tool passthrough has since been exercised on this runtime (hundreds of forwarded calls across the plugin's own sessions), and an image turn has since been processed on it; record separately whether images work on a fresh pass. Cancel another turn and verify a later request still works. These requests consume allowance and can refresh this login.
+4. Select `Codex (ChatGPT subscription)` and an advertised model. Send a short prompt, then ask a follow-up. Verify tool passthrough and image input again on this host. The previous host's reported pass does not carry over to 0.2.1-rc.2, so record the results separately. Cancel another turn and verify a later request still works. These requests consume allowance and can refresh this login.
 5. Record the reviewed commit, model and pass/fail result. Share only fixed error labels; never share codes, auth files, bootstrap URLs or raw logs/bodies.
 6. Use **Log out** in the same settings section to remove the local login when finished. Quit Desktop before filesystem recovery/removal.
 
@@ -56,6 +59,6 @@ For the installed application, without real authentication:
 DSH_DESKTOP_EXECUTABLE="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" npm run test:desktop
 ```
 
-This checks the runtime pair, root suite, packaged CLI/SDK synthetic conversation, and a disposable profile against installed Desktop's ASAR runtime resolver. The CI alternative pins Electron 44.0.0 under `verification/desktop`, explicitly runs its checksum-verifying binary downloader, and runs the same host checks. The actual installed-ASAR lane is local only; CI does not have Harness Desktop.
+This checks the runtime pair, root suite, packaged CLI/SDK synthetic conversation, and a disposable profile against installed Desktop's ASAR runtime resolver. The CI alternative pins Electron 44.7.0 under `verification/desktop`, explicitly runs its checksum-verifying binary downloader, and runs the same host checks. The actual installed-ASAR lane is local only; CI does not have Harness Desktop.
 
 For updates, use a new reviewed checkout/artifact and a new directory. After a Desktop update the exact host guard may refuse startup; revalidate instead of bypassing it. Stop the profile, log out in the settings panel (this surface has no helper), and remove only its reviewed dedicated directory when finished. See [troubleshooting](TROUBLESHOOTING.md).

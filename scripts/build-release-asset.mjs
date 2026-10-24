@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs';
 import { isAbsolute, join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { assertNodeVersion, assertPlatform } from '../src/runtime.js';
+import { assertNodeVersion, assertPlatform } from '../lib/runtime.js';
 
 assertNodeVersion(); assertPlatform();
 
@@ -52,18 +52,18 @@ if (packed.files.some((file) => /^(assets|test|scripts|verification)\//u.test(fi
 
 // Only the release-relevant sources are copied into the bundle. `install.sh`
 // runs before any package is installed, so the prepare script and its two
-// shared modules must be present in the bundle itself; `src/runtime.js` is the
-// Node/platform gate and `src/errors.js` supplies the fixed error codes.
+// shared modules must be present in the bundle itself; `lib/runtime.js` is the
+// Node/platform gate and `lib/errors.js` supplies the fixed error codes.
 await mkdir(join(staging, 'scripts/lib'), { recursive: true, mode: 0o700 });
-await mkdir(join(staging, 'src'), { recursive: true, mode: 0o700 });
+await mkdir(join(staging, 'lib'), { recursive: true, mode: 0o700 });
 for (const [source, destination] of [
   ['install.sh', join(staging, 'install.sh')],
   ['scripts/prepare-release-profile.mjs', join(staging, 'scripts/prepare-release-profile.mjs')],
   ['scripts/install-into-profile.mjs', join(staging, 'scripts/install-into-profile.mjs')],
   ['scripts/lib/release.mjs', join(staging, 'scripts/lib/release.mjs')],
   ['scripts/lib/find-pnpm.mjs', join(staging, 'scripts/lib/find-pnpm.mjs')],
-  ['src/runtime.js', join(staging, 'src/runtime.js')],
-  ['src/errors.js', join(staging, 'src/errors.js')],
+  ['lib/runtime.js', join(staging, 'lib/runtime.js')],
+  ['lib/errors.js', join(staging, 'lib/errors.js')],
 ]) await copyFile(join(repo, source), destination);
 await writeFile(join(staging, 'README.md'), releaseNotes(tag, pluginAsset));
 

@@ -12,8 +12,8 @@ if (!cli || !isAbsolute(cli) || !npmCli || !isAbsolute(npmCli)) throw new Error(
 const runtime = dirname(dirname(await realpath(cli)));
 const modules = dirname(dirname(runtime));
 const manifest = JSON.parse(await readFile(join(runtime, 'package.json'), 'utf8'));
-assert.equal(manifest.name, '@deepseek-ai/dsh'); assert.equal(manifest.version, '0.2.0-rc.2');
-for (const [name, version] of [['cordis', '4.0.4'], ['dsh-llm', '0.2.0-rc.2']]) {
+assert.equal(manifest.name, '@deepseek-ai/dsh'); assert.equal(manifest.version, '0.2.1-rc.2');
+for (const [name, version] of [['cordis', '4.0.5'], ['dsh-llm', '0.2.1-rc.2']]) {
   assert.equal(JSON.parse(await readFile(join(modules, '@deepseek-ai', name, 'package.json'), 'utf8')).version, version);
 }
 for (const [name, version] of [['@modelcontextprotocol/client', '2.3.1'], ['@modelcontextprotocol/core', '2.3.1'], ['fflate', '0.8.3']]) {
@@ -56,7 +56,7 @@ try {
   await writeFile(join(root, '.env'), `CODEX_HOME=${join(root, 'adversarial-codex-home')}\nOPENAI_API_KEY=synthetic-project-key\n`);
   const cache = join(root, 'npm-cache');
   const packed = JSON.parse(execFileSync(process.execPath, [npmCli, 'pack', '--ignore-scripts', '--json', '--pack-destination', root, '--cache', cache], { encoding: 'utf8', env }))[0];
-  assert.ok(packed.files.some((file) => file.path === 'src/auth-cli.js'));
+  assert.ok(packed.files.some((file) => file.path === 'lib/auth-cli.js'));
   assert.equal(packed.files.some((file) => /^(assets|test|scripts|verification)\//u.test(file.path)), false);
   await writeFile(join(profile, 'package.json'), JSON.stringify({ private: true, type: 'module',
     dependencies: { 'dsh-codex-subscription-bridge': `file:${join(root, packed.filename)}` },
@@ -105,8 +105,8 @@ process.stdout.write('PACKAGED_PROFILE_OK\\n');
   // The preload only exists inside this disposable verification process.
   // It replaces HTTPS with deterministic in-memory responses, never real auth.
   const preload = join(root, 'synthetic-http.mjs');
-  await writeFile(preload, `import {AuthStore,authDirectory} from ${JSON.stringify(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/src/auth.js')).href)};
-import {Http} from ${JSON.stringify(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/src/http.js')).href)};
+  await writeFile(preload, `import {AuthStore,authDirectory} from ${JSON.stringify(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/lib/auth.js')).href)};
+import {Http} from ${JSON.stringify(pathToFileURL(join(profile, 'node_modules/dsh-codex-subscription-bridge/lib/http.js')).href)};
 const store=new AuthStore(authDirectory(process.env));
 const token='x.'+Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic'}})).toString('base64url')+'.x';
 await store.transaction(()=>store.write({access_token:token,refresh_token:'synthetic'}));

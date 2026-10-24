@@ -3,6 +3,8 @@
   "version": "0.0.4",
   "private": true,
   "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
   "description": "A direct DeepSeek Harness provider for dedicated ChatGPT subscription OAuth",
   "author": "sakusaku-rich",
   "repository": {
@@ -22,50 +24,40 @@
     "plugin"
   ],
   "engines": {
-    "node": ">=22.23.3 <23 || 24.18.1"
+    "node": ">=22.23.3 <23 || 24.21.0"
   },
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./compaction": "./src/compaction-engine.js",
-    "./client": "./client.js"
+    "./presets/codex-subscription.patch.yml": "./presets/codex-subscription.patch.yml",
+    "./compaction": "./lib/compaction-engine.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
   },
   "files": [
-    "src/index.js",
-    "src/direct.js",
-    "src/compaction.js",
-    "src/conversation.js",
-    "src/hashes.js",
-    "src/compaction-owner.js",
-    "src/compaction-engine.js",
-    "src/sse.js",
-    "src/auth.js",
-    "src/auth-cli.js",
-    "src/http.js",
-    "src/text.js",
-    "src/image.js",
-    "src/runtime.js",
-    "src/errors.js",
-    "src/environment.js",
-    "cordis.patch.yml",
+    "lib",
     "presets",
+    "cordis.patch.yml",
+    "client.js",
     "README.md",
     "SECURITY.md",
     "docs",
     "LICENSE",
-    "AGENTS.md",
-    "src/auth-ui.js",
-    "client.js"
+    "AGENTS.md"
   ],
   "scripts": {
     "check": "node scripts/check.mjs",
+    "build": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs",
-    "verify": "npm run check && npm test",
+    "verify": "npm run check && npm run build && npm test",
     "preset:sync": "node scripts/sync-preset.mjs",
     "preset:check": "node scripts/sync-preset.mjs --check",
     "test:profile": "node scripts/verify-profile.mjs",
     "prepare:profile": "node scripts/prepare-profile.mjs",
-    "prepare:release": "node scripts/build-release-asset.mjs",
+    "prepare:release": "npm run build && node scripts/build-release-asset.mjs",
     "test:install": "node --test test/integration/prepare-profile.test.mjs",
     "test:profile-install": "node --test test/integration/profile-install.test.mjs",
     "test:release-install": "node --test test/integration/release-install.test.mjs test/integration/release-download.test.mjs",
@@ -74,9 +66,9 @@
     "test:auth-ui": "node --test test/integration/auth-ui-http.test.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-compaction-basic": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-compaction-basic": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-compaction-basic": {
@@ -84,9 +76,11 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-compaction-basic": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2"
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-compaction-basic": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
   },
   "dsh": {
     "bundle": {
@@ -106,7 +100,7 @@
     }
   },
   "bin": {
-    "dsh-codex-subscription-auth": "./src/auth-cli.js"
+    "dsh-codex-subscription-auth": "./lib/auth-cli.js"
   },
   "os": [
     "darwin"
@@ -115,7 +109,7 @@
   "dependencies": {
     "undici": "7.29.1"
   },
-  "bundledDependencies": [
+  "bundleDependencies": [
     "undici"
   ]
 }

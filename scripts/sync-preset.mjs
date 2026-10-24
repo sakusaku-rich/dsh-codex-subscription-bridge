@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const harnessName = '@deepseek-ai/dsh-web-app';
-const harnessVersion = '0.2.0-rc.2';
+const harnessVersion = '0.2.1-rc.2';
 const sourcePreset = 'presets/standard.patch.yml';
 const outputPath = join(repo, 'presets', 'codex-subscription.patch.yml');
 const rowId = 'preset-codex-subscription';
@@ -35,7 +35,7 @@ const engine = 'dsh-codex-subscription-bridge/compaction';
 const shippedEngine = '@deepseek-ai/dsh-compaction-basic';
 const presetOrder = 9;
 const childIndent = 10;
-const children = 19;
+const children = 22;
 
 function count(text, pattern) {
   return [...text.matchAll(pattern)].length;

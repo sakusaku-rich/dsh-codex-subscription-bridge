@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DirectBridge} from '../src/direct.js';
-import {AuthStore} from '../src/auth.js';
-import {BridgeError} from '../src/errors.js';
+import {DirectBridge} from '../lib/direct.js';
+import {AuthStore} from '../lib/auth.js';
+import {BridgeError} from '../lib/errors.js';
 test('pre-aborted discovery never enters authentication or store preparation',async()=>{
  let called=0;const store=new AuthStore('/unused-synthetic-path');store.prepare=async()=>{called++};
  const bridge=new DirectBridge(store);const controller=new AbortController();controller.abort();

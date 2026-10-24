@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DirectBridge} from '../src/direct.js';
-import {Http} from '../src/http.js';
+import {DirectBridge} from '../lib/direct.js';
+import {Http} from '../lib/http.js';
 const token='x.'+Buffer.from(JSON.stringify({exp:Date.now()/1000+3600,'https://api.openai.com/auth':{chatgpt_account_id:'synthetic'}})).toString('base64url')+'.x';
 const item={type:'message',id:'message',role:'assistant',content:[{type:'output_text',text:'Complete text'}]};
 const collect=async events=>{const bridge=new DirectBridge({token:async()=>token},new Http(async url=>url.includes('/models?')?Response.json({models:[{slug:'test',display_name:'Test',visibility:'list'}]}):new Response(events.map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''))));
