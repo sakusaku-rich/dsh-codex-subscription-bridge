@@ -83,7 +83,7 @@ The following bounds are enforced.
 | Owned operations | 4 concurrent, including cancellation cleanup |
 | Deadlines | Discovery 30 seconds, turn 120 seconds, JSON request timeout 15 seconds |
 | JSON/event frames | 1 MiB default; a stream that requests compaction raises the event frame to twice the window bound |
-| Aggregate SSE | 4 MiB aggregate and 4096 events by default; with compaction requested the aggregate is three times the raised frame plus the default frame, and the event count is derived from the same frame at a 128-byte envelope estimate, capped at 65536 |
+| Aggregate SSE | 4 MiB aggregate and 4096 events by default. With compaction requested the aggregate is three times the raised frame plus the default aggregate. The event count is derived from the same frame at a 128-byte envelope estimate, capped at 65536 |
 | Output text | 128 blocks, 256 KiB |
 | Input items | 1024 wire items, at most 64 blocks per non-tool message; the retained transcript is bounded to 4096 items |
 | Tool passthrough | 256 definitions, 256 KiB aggregate, 64-character names in `[A-Za-z0-9_-]`, 8 KiB descriptions, 64 KiB JSON object parameters, 256-byte `call_id` values, 2 MiB tool outputs, 128 tool-update entries |
