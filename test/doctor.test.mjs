@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, readFile, access, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, access, chmod, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AuthStore } from '../lib/auth.js';
@@ -83,7 +83,7 @@ test('doctor does not modify the store it reads', async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test('doctor reports a lock it cannot attribute without removing it', async () => {
+test('doctor reports a lock it cannot attribute', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-doctor-'));
   const directory = join(root, 'auth');
   const store = storeAt(directory, { value: 0 });
@@ -93,7 +93,21 @@ test('doctor reports a lock it cannot attribute without removing it', async () =
   const result = await store.doctor();
 
   assert.equal(result.lock, 'present_owner_unknown');
-  await access(join(directory, 'auth.lock'));
+
+  await rm(join(directory, 'auth.lock'), { recursive: true });
+  await rm(root, { recursive: true, force: true });
+});
+
+test('doctor leaves a lock it cannot attribute in place', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-doctor-'));
+  const directory = join(root, 'auth');
+  const store = storeAt(directory, { value: 0 });
+  await store.prepare();
+  await mkdir(join(directory, 'auth.lock'), { mode: 0o700 });
+
+  await store.doctor();
+
+  assert.ok(await stat(join(directory, 'auth.lock')));
 
   await rm(join(directory, 'auth.lock'), { recursive: true });
   await rm(root, { recursive: true, force: true });
