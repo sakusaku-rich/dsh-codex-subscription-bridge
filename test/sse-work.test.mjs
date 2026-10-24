@@ -151,16 +151,39 @@ test('a raised event count alone lifts the bound within the default totals', asy
   assert.equal(result.length, 10000);
 });
 
-test('raised framing alone keeps the default event count and names the bound', async () => {
-  await assert.rejects(collect(new Response('data: {}\n\r\n'.repeat(4097)).body, undefined,
-    { frameLimit: 8 * 1024 * 1024, totalLimit: 64 * 1024 * 1024 }),
-  (error) => {
-    assert.equal(error.code, 'LIMIT_EXCEEDED');
-    assert.match(error.message, /SSE_FRAME:EVENTS/);
-    assert.equal(error.sseCount, 4097);
-    assert.equal(error.sseLimit, 4096);
-    return true;
-  });
+/** Refuse a stream of empty events past the default event count and return the error. */
+async function eventCountRefusal(limits) {
+  try {
+    await collect(new Response('data: {}\n\r\n'.repeat(4097)).body, limits);
+  }
+  catch (error) {
+    return error;
+  }
+  throw new Error('the stream was not refused');
+}
+
+test('raised framing alone still refuses past the event count', async () => {
+  const error = await eventCountRefusal({ frameLimit: 8 * 1024 * 1024, totalLimit: 64 * 1024 * 1024 });
+
+  assert.equal(error.code, 'LIMIT_EXCEEDED');
+});
+
+test('raised framing alone keeps the default event count', async () => {
+  const error = await eventCountRefusal({ frameLimit: 8 * 1024 * 1024, totalLimit: 64 * 1024 * 1024 });
+
+  assert.equal(error.sseLimit, 4096);
+});
+
+test('the event count refusal reports the count that exceeded the bound', async () => {
+  const error = await eventCountRefusal({ frameLimit: 8 * 1024 * 1024, totalLimit: 64 * 1024 * 1024 });
+
+  assert.equal(error.sseCount, 4097);
+});
+
+test('the event count refusal names the events bound in its message', async () => {
+  const error = await eventCountRefusal({ frameLimit: 8 * 1024 * 1024, totalLimit: 64 * 1024 * 1024 });
+
+  assert.match(error.message, /SSE_FRAME:EVENTS/);
 });
 
 test('default limits refuse the same stream of small deltas', async () => {
