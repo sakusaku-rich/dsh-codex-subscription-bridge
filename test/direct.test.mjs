@@ -193,6 +193,10 @@ test('the reported request-image target is the same projection the serializer us
   // target is not the pixel-budget projection alone.
   assert.deepEqual(bridge.imageRequestTarget('codex-subscription', 'test-model', { ...ref, width: 8000, height: 1000 }),
     { width: 4096, height: 512, maxBytes: 1048576 });
+  await bridge.close();
+});
+test('the reported request-image target refuses a reference the bridge cannot validate', async () => {
+  const bridge = new DirectBridge({ token: async () => jwt() }, new Http(async url => url.includes('/models?') ? json({ models: [model] }) : sse(delta, completed)));
   assert.throws(() => bridge.imageRequestTarget('codex-subscription', 'test-model', null), { code: 'PROTOCOL_INVALID' });
   for (const image of [{ width: 0, height: 10 }, { width: 10, height: 1.5 }, { width: 2 ** 53, height: 1 }]) {
     assert.throws(() => bridge.imageRequestTarget('codex-subscription', 'test-model', image), { code: 'UNSUPPORTED_CONTENT', diagnostic: 'IMAGE_TARGET' });
