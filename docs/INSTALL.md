@@ -15,7 +15,7 @@ The one-command path below installs a published release. Replace `v0.0.4` in the
 | --- | --- |
 | macOS CLI/SDK provider (text, tool passthrough, images) | Synthetic packaged integration verified |
 | macOS Web profile | Setup/startup verified; full real conversation pending |
-| macOS Desktop 0.2.1-rc.2 | Electron 44.7.0 / Node 24.21.0 synthetic host/profile verified; owner-operated real GUI, sign-in and service use on this host are still pending |
+| macOS Desktop 0.2.1-rc.2 | Electron 44.7.0 / Node 24.21.0 synthetic host and profile verified. Owner-operated real GUI, sign-in and service use on this host are still pending |
 | Linux / Windows / other OS | Not supported; rejected before authentication |
 
 The test machine is Apple Silicon on macOS 26.6.2. Intel macOS is not independently verified.

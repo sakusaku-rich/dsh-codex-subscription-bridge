@@ -11,7 +11,7 @@ npm ci --ignore-scripts --prefix verification/runtime
 DSH_VERIFY_CLI="$PWD/verification/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js" npm run test:profile
 ```
 
-`scripts/verify-profile.mjs` creates a disposable HOME, Harness home, profile, workspace, cache, and authentication directory. It installs the actual local npm tarball offline and supplies the exact host peer modules. The tarball carries the compiled `lib/` modules and their declarations, so `npm run build` must run before packing; `npm run verify` and `npm run prepare:release` both do. No existing profile, token file, or credential keyring is copied or read by the bridge.
+`scripts/verify-profile.mjs` creates a disposable HOME, Harness home, profile, workspace, cache, and authentication directory. It installs the actual local npm tarball offline and supplies the exact host peer modules. The tarball carries the compiled `lib/` modules and their declarations, so `npm run build` must run before packing. `npm run verify` and `npm run prepare:release` both do. No existing profile, token file, or credential keyring is copied or read by the bridge.
 
 The test executes the official `runProfile` composition API and the public CLI with the shipped base and SDK bundles. It checks provider registration, missing-auth refusal propagation, configured SDK text conversation through in-memory synthetic HTTPS responses, and complete shutdown. The test also plants a project `.env` with an alternative `CODEX_HOME` and a synthetic API key; the child must retain the inherited authentication location and receive no API key.
 

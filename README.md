@@ -121,7 +121,7 @@ Real-account evidence covers sign-in, multi-turn generation, tool passthrough, t
 
 ## Development
 
-Harness 0.2.1-rc.2 and Cordis 4.0.5 remain pinned. Sources are TypeScript under `src/`, and the package ships the compiled per-module output under `lib/` with declarations under `lib/types/`, which is the shape official Harness packages publish. The shipped plugin needs no dependency lifecycle scripts; the build toolchain (`typescript` 7.0.2 and `@types/node` 22.20.5, pinned to the Node 22 baseline) stays development-only. The reproducible check commands are recorded in [the verification record](docs/VERIFICATION.md#reproducible-checks), including the packaged profile checks.
+Harness 0.2.1-rc.2 and Cordis 4.0.5 remain pinned. Sources are TypeScript under `src/`, and the package ships the compiled per-module output under `lib/` with declarations under `lib/types/`, which is the shape official Harness packages publish. The shipped plugin needs no dependency lifecycle scripts. The build toolchain (`typescript` 7.0.2 and `@types/node` 22.20.5, pinned to the Node 22 baseline) stays development-only. The reproducible check commands are recorded in [the verification record](docs/VERIFICATION.md#reproducible-checks), including the packaged profile checks.
 
 A real-account check is separate and requires authorization. The prepared `scripts/smoke-account.mjs --allow-real-account` command sends one fixed short prompt using the dedicated login. It may consume subscription quota. It may refresh this plugin's stored tokens. It has not been run for the direct implementation.
 
