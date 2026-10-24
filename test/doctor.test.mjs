@@ -12,7 +12,7 @@ function storeAt(directory, calls) {
   return new AuthStore(directory, { open() { calls.value += 1; throw new Error('Network must not run'); } });
 }
 
-test('doctor reports a missing store without creating it', async () => {
+test('doctor reports a missing store', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-doctor-'));
   const directory = join(root, 'auth');
   const store = storeAt(directory, { value: 0 });
@@ -20,6 +20,17 @@ test('doctor reports a missing store without creating it', async () => {
   const result = await store.doctor();
 
   assert.equal(result.store, 'missing');
+
+  await rm(root, { recursive: true, force: true });
+});
+
+test('doctor does not create the store it reports as missing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-doctor-'));
+  const directory = join(root, 'auth');
+  const store = storeAt(directory, { value: 0 });
+
+  await store.doctor();
+
   await assert.rejects(access(directory), { code: 'ENOENT' });
 
   await rm(root, { recursive: true, force: true });
@@ -38,7 +49,21 @@ test('doctor reports a prepared store with no grant as missing', async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test('doctor reports an expired grant without refreshing it', async () => {
+test('doctor reports an expired grant', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-doctor-'));
+  const directory = join(root, 'auth');
+  const store = storeAt(directory, { value: 0 });
+  await store.prepare();
+  await store.transaction(() => store.write({ access_token: grantToken, refresh_token: 'synthetic-secret' }));
+
+  const result = await store.doctor();
+
+  assert.equal(result.auth, 'expired');
+
+  await rm(root, { recursive: true, force: true });
+});
+
+test('doctor does not refresh the grant it reports as expired', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-doctor-'));
   const directory = join(root, 'auth');
   const calls = { value: 0 };
@@ -46,9 +71,8 @@ test('doctor reports an expired grant without refreshing it', async () => {
   await store.prepare();
   await store.transaction(() => store.write({ access_token: grantToken, refresh_token: 'synthetic-secret' }));
 
-  const result = await store.doctor();
+  await store.doctor();
 
-  assert.equal(result.auth, 'expired');
   assert.equal(calls.value, 0);
 
   await rm(root, { recursive: true, force: true });
