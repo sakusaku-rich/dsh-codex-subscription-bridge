@@ -107,7 +107,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "undici": "7.29.1"
+    "undici": "7.30.1"
   },
   "bundleDependencies": [
     "undici"
